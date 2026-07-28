@@ -1,0 +1,82 @@
+Vagrant.configure("2") do |config|
+   config.vm.define "rmq01" do |rmq01|
+    rmq01.vm.box = "generic/debian12"
+    rmq01.vm.hostname = "rmq01"
+    rmq01.vm.network "private_network", ip: "192.168.56.16"
+    rmq01.vm.provider "virtualbox" do |vb|
+      vb.memory = "600"
+    end
+    rmq01.vm.provision "shell", path: "rabbitmq.sh"
+  end
+
+   config.vm.define "auth" do |auth|
+    auth.vm.box = "generic/debian12"
+    auth.vm.hostname = "auth"
+    auth.vm.network "private_network", ip: "192.168.56.17"
+    auth.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    auth.vm.provision "shell", path: "auth.sh"
+  end
+
+   config.vm.define "db" do |db|
+    db.vm.box = "generic/debian12"
+    db.vm.hostname = "db"
+    db.vm.network "private_network", ip: "192.168.56.18"
+    db.vm.provider "virtualbox" do |vb|
+      vb.memory = "600"
+    end
+    db.vm.provision "shell", path: "mongo.sh"
+  end
+
+
+   config.vm.define "admin" do |admin|
+    admin.vm.box = "generic/debian12"
+    admin.vm.hostname = "admin"
+    admin.vm.network "private_network", ip: "192.168.56.19"
+    admin.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    admin.vm.provision "shell", path: "admin.sh"
+  end
+
+  config.vm.define "realtime" do |realtime|
+    realtime.vm.box = "generic/debian12"
+    realtime.vm.hostname = "realtime"
+    realtime.vm.network "private_network", ip: "192.168.56.22"
+    realtime.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    realtime.vm.provision "shell", path: "realtime.sh"
+  end
+
+  config.vm.define "restaurant" do |restaurant|
+    restaurant.vm.box = "generic/debian12"
+    restaurant.vm.hostname = "restaurant"
+    restaurant.vm.network "private_network", ip: "192.168.56.20"
+    restaurant.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    restaurant.vm.provision "shell", path: "restaurant.sh"
+  end
+
+  config.vm.define "rider" do |rider|
+    rider.vm.box = "generic/debian12"
+    rider.vm.hostname = "rider"
+    rider.vm.network "private_network", ip: "192.168.56.21"
+    rider.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    rider.vm.provision "shell", path: "rider.sh"
+  end
+
+  config.vm.define "utils" do |utils|
+    utils.vm.box = "generic/debian12"
+    utils.vm.hostname = "utils"
+    utils.vm.network "private_network", ip: "192.168.56.23"
+    utils.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    utils.vm.provision "shell", path: "utils.sh"
+  end
+end
