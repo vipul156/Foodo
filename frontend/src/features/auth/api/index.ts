@@ -4,7 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { authApi, setToken, removeToken } from "@/lib/api-client";
+import { authApi, setSocketToken, clearSocketToken } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth-store";
 import type {
   IAuthResponse,
@@ -26,7 +26,7 @@ export function useLogin() {
     },
     onSuccess: (data) => {
       setUser(data.user);
-      setToken(data.token || "");
+      if (data.token) setSocketToken(data.token);
       queryClient.invalidateQueries({ queryKey: ["auth"] });
     },
   });
@@ -44,7 +44,7 @@ export function useRegister() {
     },
     onSuccess: (data) => {
       setUser(data.user);
-      setToken(data.token || "");
+      if (data.token) setSocketToken(data.token);
     },
   });
 }
@@ -75,36 +75,37 @@ export function useLogout() {
   const router = useRouter();
   const { logout: clearAuthState } = useAuthStore();
 
-  return () => {
+  return async () => {
     try {
-      // 1. Clear auth store (resets user, isAuthenticated, isLoading)
-      clearAuthState();
+      // 1. Call server logout to clear the session cookie
+      await authApi.post("/logout");
+    } catch {
+      // Ignore server errors — we still clear local state
+    }
 
-      // 2. Remove JWT token from localStorage
-      removeToken();
+    // Clear the socket token from sessionStorage
+    clearSocketToken();
+
+    try {
+      // 2. Clear auth store (resets user, isAuthenticated, isLoading)
+      clearAuthState();
 
       // 3. Clear Zustand persist storage explicitly
       if (typeof window !== "undefined") {
         localStorage.removeItem("foodo-auth");
       }
 
-      // 4. Invalidate all queries to prevent stale data
-      // (queryClient access requires useQueryClient, so we fall back to hard navigation)
-
-      // 5. Navigate to login — use hard navigation to ensure clean state
+      // 4. Navigate to login — use hard navigation to ensure clean state
       try {
         router.push("/login");
       } catch {
-        // Fallback if router is unavailable (e.g., during SSR or edge cases)
         if (typeof window !== "undefined") {
           window.location.href = "/login";
         }
       }
     } catch (error) {
       console.error("[Logout] Error during logout:", error);
-      // Fallback: force navigation even if cleanup fails
       if (typeof window !== "undefined") {
-        localStorage.removeItem("foodo_auth_token");
         localStorage.removeItem("foodo-auth");
         window.location.href = "/login";
       }

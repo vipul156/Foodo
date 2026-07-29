@@ -2,6 +2,7 @@
 // Foodo — Restaurants Feature: TanStack Query API Hooks
 // ============================================================
 
+import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { restaurantApi } from "@/lib/api-client";
 import type {
@@ -114,15 +115,10 @@ export function useCreateMenuItem() {
 
   return useMutation({
     mutationFn: async (data: FormData) => {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_RESTAURANT_SERVICE_URL}/menu-item/new`,
-        {
-          method: "POST",
-          credentials: "include",
-          body: data,
-        },
-      );
-      return res.json();
+      const res = await axios.post("/api/menu-item/new", data, {
+        withCredentials: true,
+      });
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menu-items"] });

@@ -13,17 +13,15 @@ export const initSocket = (server:http.Server) => {
 
     io.use((socket, next) => {
         try{
-            const token = socket.handshake.auth.token;
-            
-            if(!token){
+            // Get JWT from socket.handshake.auth.token (standard Socket.IO auth)
+            // The frontend passes this token after login/register.
+            const jwtToken = socket.handshake.auth.token;
+
+            if (!jwtToken) {
                 return next(new Error("Authentication error"));
             }
 
-            const decode = jwt.verify(token, process.env.JWT_SECRET!) as any;
-
-            if(!decode){
-                return next(new Error("Authentication error"));
-            }
+            const decode = jwt.verify(jwtToken, process.env.JWT_SECRET!) as any;
 
             // Support both JWT formats:
             // 1. Auth service: { id, email, role } — no .user wrapper

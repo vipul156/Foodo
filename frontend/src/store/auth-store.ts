@@ -29,9 +29,6 @@ export const useAuthStore = create<AuthState>()(
         }),
       setLoading: (isLoading) => set({ isLoading }),
       logout: () => {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("foodo_auth_token");
-        }
         set({ user: null, isAuthenticated: false, isLoading: false });
       },
     }),

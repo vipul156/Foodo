@@ -51,3 +51,9 @@ export const getUser = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
   return res.status(200).json({ message: "User fetched successfully", user });
 });
+
+export const logoutUser = tryCatch(async (req, res) => {
+  // Clear the session cookie — cookieSession sets it to null to delete it
+  req.session = null;
+  return res.status(200).json({ message: "Logged out successfully" });
+});

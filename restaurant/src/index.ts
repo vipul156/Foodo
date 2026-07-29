@@ -28,10 +28,10 @@ app.use(
 );
 
 app.use(express.json());
-app.use(restaurantRouter)
-app.use(menuItemRouter)
-app.use(cartRouter)
-app.use(orderRouter)
+app.use("/restaurant", restaurantRouter)
+app.use("/menu-item", menuItemRouter)
+app.use("/cart", cartRouter)
+app.use("/order", orderRouter)
 
 const PORT = process.env.PORT || 3003
 app.listen(PORT, () => {

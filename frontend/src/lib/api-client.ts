@@ -1,35 +1,54 @@
 // ============================================================
-// Foodo — API Client with Auth Interceptors
+// Foodo — API Client (Axios + Next.js Rewrites)
 // ============================================================
+// All requests go through Next.js rewrites at /api/*
+// Same-domain requests = cookies flow naturally.
+// No Authorization headers needed — cookie-based auth only.
 
-const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || "http://localhost:3000/api/auth";
-const RESTAURANT_SERVICE_URL = process.env.NEXT_PUBLIC_RESTAURANT_SERVICE_URL || "http://localhost:3001";
-const RIDER_SERVICE_URL = process.env.NEXT_PUBLIC_RIDER_SERVICE_URL || "http://localhost:3000/rider";
-const ADMIN_SERVICE_URL = process.env.NEXT_PUBLIC_ADMIN_SERVICE_URL || "http://localhost:3000/api";
+import axios from "axios";
+import type { AxiosRequestConfig } from "axios";
+import { getApiClient } from "./api";
 
-// ─── Token Management ───────────────────────────────────────
+// ─── Socket Token (in-memory + sessionStorage) ───────────────
+// HTTP API calls use cookie-based auth through Next.js proxy.
+// Socket.IO needs an explicit token via handshake.auth.
+// We store it in sessionStorage (cleared on tab close) so it
+// survives page refreshes but not new tab/window opens.
 
-const TOKEN_KEY = "foodo_auth_token";
+const SOCKET_TOKEN_KEY = "foodo_socket_token";
 
-export const getToken = (): string | null => {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-};
-
-export const setToken = (token: string): void => {
-  localStorage.setItem(TOKEN_KEY, token);
-};
-
-export const removeToken = (): void => {
-  localStorage.removeItem(TOKEN_KEY);
-};
-
-// ─── Fetch Wrapper ──────────────────────────────────────────
-
-interface FetchOptions extends Omit<RequestInit, "body"> {
-  body?: unknown;
-  params?: Record<string, string | number | undefined>;
+function getStoredToken(): string | null {
+  if (typeof window !== "undefined") {
+    return sessionStorage.getItem(SOCKET_TOKEN_KEY);
+  }
+  return null;
 }
+
+function setStoredToken(token: string): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem(SOCKET_TOKEN_KEY, token);
+  }
+}
+
+function clearStoredToken(): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.removeItem(SOCKET_TOKEN_KEY);
+  }
+}
+
+export function getSocketToken(): string | null {
+  return getStoredToken();
+}
+
+export function setSocketToken(token: string): void {
+  setStoredToken(token);
+}
+
+export function clearSocketToken(): void {
+  clearStoredToken();
+}
+
+// ─── Error Type ─────────────────────────────────────────────
 
 class ApiError extends Error {
   status: number;
@@ -43,94 +62,68 @@ class ApiError extends Error {
   }
 }
 
+// ─── Generic Request Helper ─────────────────────────────────
+
 async function request<T>(
-  baseUrl: string,
-  endpoint: string,
-  options: FetchOptions = {},
+  url: string,
+  config: AxiosRequestConfig = {},
 ): Promise<T> {
-  const { body, params, headers: customHeaders, ...rest } = options;
-
-  // Build URL with query params
-  let url = `${baseUrl}${endpoint}`;
-  if (params) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.append(key, String(value));
+  const client = getApiClient();
+  try {
+    const response = await client.request<T>({
+      url,
+      ...config,
     });
-    const qs = searchParams.toString();
-    if (qs) url += `?${qs}`;
-  }
-
-  // Build headers — auth is handled via session cookie (credentials: "include")
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(customHeaders as Record<string, string>),
-  };
-
-  // Build request — credentials: "include" sends session cookies cross-origin
-  const config: RequestInit = {
-    ...rest,
-    headers,
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  };
-
-  const response = await fetch(url, config);
-
-  // Handle errors
-  if (!response.ok) {
-    let errorData: unknown;
-    try {
-      errorData = await response.json();
-    } catch {
-      errorData = { message: response.statusText };
+    return response.data;
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new ApiError(
+        error.response.data?.message || error.message || "Request failed",
+        error.response.status,
+        error.response.data,
+      );
     }
-    throw new ApiError(
-      (errorData as { message?: string })?.message || "Request failed",
-      response.status,
-      errorData,
-    );
+    throw error;
   }
-
-  return response.json() as Promise<T>;
 }
 
-// ─── Service-specific clients ───────────────────────────────
+// ─── Service-specific API Clients ───────────────────────────
+// All use relative URLs which Next.js rewrites proxy to microservices.
 
 export const authApi = {
-  get: <T>(endpoint: string, options?: FetchOptions) =>
-    request<T>(AUTH_SERVICE_URL, endpoint, { ...options, method: "GET" }),
-  post: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(AUTH_SERVICE_URL, endpoint, { ...options, method: "POST", body }),
+  get: <T>(endpoint: string) =>
+    request<T>(`/api/auth${endpoint}`, { method: "GET" }),
+  post: <T>(endpoint: string, data?: unknown) =>
+    request<T>(`/api/auth${endpoint}`, { method: "POST", data }),
 };
 
 export const restaurantApi = {
-  get: <T>(endpoint: string, options?: FetchOptions) =>
-    request<T>(RESTAURANT_SERVICE_URL, endpoint, { ...options, method: "GET" }),
-  post: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(RESTAURANT_SERVICE_URL, endpoint, { ...options, method: "POST", body }),
-  put: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(RESTAURANT_SERVICE_URL, endpoint, { ...options, method: "PUT", body }),
-  delete: <T>(endpoint: string, options?: FetchOptions) =>
-    request<T>(RESTAURANT_SERVICE_URL, endpoint, { ...options, method: "DELETE" }),
+  get: <T>(endpoint: string, config?: AxiosRequestConfig) =>
+    request<T>(`/api${endpoint}`, { method: "GET", ...config }),
+  post: <T>(endpoint: string, data?: unknown, config?: AxiosRequestConfig) =>
+    request<T>(`/api${endpoint}`, { method: "POST", data, ...config }),
+  put: <T>(endpoint: string, data?: unknown, config?: AxiosRequestConfig) =>
+    request<T>(`/api${endpoint}`, { method: "PUT", data, ...config }),
+  delete: <T>(endpoint: string, config?: AxiosRequestConfig) =>
+    request<T>(`/api${endpoint}`, { method: "DELETE", ...config }),
 };
 
 export const riderApi = {
-  get: <T>(endpoint: string, options?: FetchOptions) =>
-    request<T>(RIDER_SERVICE_URL, endpoint, { ...options, method: "GET" }),
-  post: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(RIDER_SERVICE_URL, endpoint, { ...options, method: "POST", body }),
-  patch: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(RIDER_SERVICE_URL, endpoint, { ...options, method: "PATCH", body }),
-  put: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(RIDER_SERVICE_URL, endpoint, { ...options, method: "PUT", body }),
+  get: <T>(endpoint: string) =>
+    request<T>(`/api/rider${endpoint}`, { method: "GET" }),
+  post: <T>(endpoint: string, data?: unknown) =>
+    request<T>(`/api/rider${endpoint}`, { method: "POST", data }),
+  patch: <T>(endpoint: string, data?: unknown) =>
+    request<T>(`/api/rider${endpoint}`, { method: "PATCH", data }),
+  put: <T>(endpoint: string, data?: unknown) =>
+    request<T>(`/api/rider${endpoint}`, { method: "PUT", data }),
 };
 
 export const adminApi = {
-  get: <T>(endpoint: string, options?: FetchOptions) =>
-    request<T>(ADMIN_SERVICE_URL, endpoint, { ...options, method: "GET" }),
-  patch: <T>(endpoint: string, body?: unknown, options?: FetchOptions) =>
-    request<T>(ADMIN_SERVICE_URL, endpoint, { ...options, method: "PATCH", body }),
+  get: <T>(endpoint: string) =>
+    request<T>(`/api/admin${endpoint}`, { method: "GET" }),
+  patch: <T>(endpoint: string, data?: unknown) =>
+    request<T>(`/api/admin${endpoint}`, { method: "PATCH", data }),
 };
 
 export { ApiError };

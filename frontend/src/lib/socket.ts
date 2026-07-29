@@ -3,8 +3,8 @@
 // ============================================================
 
 import { io, Socket } from "socket.io-client";
-import { getToken } from "./api-client";
 import { useSocketStore } from "@/store/socket-store";
+import { getSocketToken } from "./api-client";
 
 const REALTIME_URL =
   process.env.NEXT_PUBLIC_REALTIME_SERVICE_URL || "http://localhost:3002";
@@ -12,14 +12,7 @@ const REALTIME_URL =
 let socket: Socket | null = null;
 
 /**
- * Get or create the Socket.IO connection.
- * Passes the JWT token in the handshake auth for the server to verify.
- *
- * NOTE: The realtime service expects `decode.user` in the JWT payload.
- * The auth service signs tokens as `{ id, email, role }` (no `.user` wrapper),
- * so the initial auth token may be rejected. If connection fails, obtain a
- * refreshed token (e.g. from the restaurant service's `/restaurant/my` endpoint
- * which returns `{ user: { ...user, restaurantId } }` wrapped tokens).
+ * Get the current socket instance.
  */
 export function getSocket(): Socket | null {
   return socket;
@@ -27,21 +20,19 @@ export function getSocket(): Socket | null {
 
 /**
  * Connect to the realtime Socket.IO server.
- * The server expects `auth: { token }` in the handshake and will
- * join the client to `user:<userId>` and `restaurant:<restaurantId>` rooms.
+ * Auth is handled via the session cookie (same-domain through Next.js proxy),
+ * so no token parameter is needed.
  */
-export function connectSocket(token?: string): Socket | null {
+export function connectSocket(): Socket | null {
   // Disconnect existing socket if any
   disconnectSocket();
 
-  const authToken = token || getToken();
-  if (!authToken) {
-    console.warn("[Socket] No auth token available — skipping connection");
-    return null;
-  }
+  // Get the JWT token from sessionStorage (set after login/register)
+  const token = getSocketToken();
+  console.log("[Socket] Token available:", !!token);
 
   socket = io(REALTIME_URL, {
-    auth: { token: authToken },
+    auth: { token }, // passes JWT via handshake.auth.token
     transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionAttempts: 5,

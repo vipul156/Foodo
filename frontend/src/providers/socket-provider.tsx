@@ -7,7 +7,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
-import { getToken } from "@/lib/api-client";
 
 export function SocketProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -15,11 +14,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const token = getToken();
-
-      // Connect when user becomes authenticated and we have a token
-      if (isAuthenticated && token) {
-        connectSocket(token);
+      // Connect when user becomes authenticated (auth via session cookie)
+      if (isAuthenticated) {
+        connectSocket();
       }
 
       // Disconnect when user logs out (was authenticated, now not)
