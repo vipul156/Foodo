@@ -24,28 +24,33 @@ git clone --depth 1 "$REPO" /tmp/Foodo
 
 cd "/tmp/Foodo/$SERVICE"
 
+echo "Loading environment variables..."
+
+if [ -f "/etc/foodo/$SERVICE.env" ]; then
+    set -a
+    . "/etc/foodo/$SERVICE.env"
+    set +a
+fi
+
 echo "Installing dependencies..."
 npm ci
 
 echo "Building..."
 npm run build
 
-echo "Installing production dependencies..."
-rm -rf node_modules
-npm ci --omit=dev
-
 echo "Creating application directory..."
 mkdir -p "$APP_DIR"
 
-echo "Copying runtime files..."
+echo "Copying standalone build..."
 
-cp -r .next "$APP_DIR/"
-cp -r node_modules "$APP_DIR/"
-cp package.json package-lock.json "$APP_DIR/"
+cp -r .next/standalone/* "$APP_DIR/"
+
+mkdir -p "$APP_DIR/.next"
+
+cp -r .next/standalone/.next/. "$APP_DIR/.next/"
+cp -r .next/static "$APP_DIR/.next/static"
 
 [ -d public ] && cp -r public "$APP_DIR/"
-[ -f next.config.js ] && cp next.config.js "$APP_DIR/"
-[ -f next.config.mjs ] && cp next.config.mjs "$APP_DIR/"
 
 echo "Cleaning source..."
 rm -rf /tmp/Foodo
@@ -60,12 +65,12 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-ExecStart=/usr/bin/npm run start
-Restart=always
-RestartSec=5
+ExecStart=/usr/bin/node server.js
 Environment=NODE_ENV=production
 Environment=PORT=3000
 EnvironmentFile=/etc/foodo/frontend.env
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

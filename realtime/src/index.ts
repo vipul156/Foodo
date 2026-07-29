@@ -3,6 +3,9 @@ import cors from "cors";
 import http from "http";
 import { initSocket } from "./socket.js";
 import { interRoute } from "./routes/internal.js";
+import dotenv from "dotenv"
+
+dotenv.config();
 
 const app = express();
 

@@ -118,9 +118,7 @@ export function useCreateMenuItem() {
         `${process.env.NEXT_PUBLIC_RESTAURANT_SERVICE_URL}/menu-item/new`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("foodo_auth_token")}`,
-          },
+          credentials: "include",
           body: data,
         },
       );

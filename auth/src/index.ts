@@ -5,10 +5,12 @@ import cookieSession from "cookie-session";
 import cors from 'cors'
 import { authRoute } from "./routes/auth.js";
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 dotenv.config();
 
 const app = express();
-app.use(cors())
+app.use(cors({ origin: FRONTEND_URL, credentials: true }))
 app.use(
   cookieSession({
     name: "session",

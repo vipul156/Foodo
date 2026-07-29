@@ -61,22 +61,17 @@ async function request<T>(
     if (qs) url += `?${qs}`;
   }
 
-  // Build headers
+  // Build headers — auth is handled via session cookie (credentials: "include")
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(customHeaders as Record<string, string>),
   };
 
-  // Attach auth token
-  const token = getToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  // Build request
+  // Build request — credentials: "include" sends session cookies cross-origin
   const config: RequestInit = {
     ...rest,
     headers,
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   };
 

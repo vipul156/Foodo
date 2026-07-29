@@ -6,12 +6,12 @@ export interface AuthRequest extends Request {
 }
 
 export const isAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = req.session?.token;
-  if (!token) {
+  const jwtToken = req.session?.jwt;
+  if (!jwtToken) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   try {
-    const decode = jwt.verify(token, process.env.JWT_SECRET!);
+    const decode = jwt.verify(jwtToken, process.env.JWT_SECRET!);
     req.user = decode as any;
   } catch (err) {
     return res.status(401).json({ message: "Unauthorized" });

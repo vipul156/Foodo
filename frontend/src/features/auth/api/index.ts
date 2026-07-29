@@ -72,12 +72,42 @@ export function useCurrentUser() {
 // ─── Logout ──────────────────────────────────────────────────
 
 export function useLogout() {
-  const { logout } = useAuthStore();
   const router = useRouter();
+  const { logout: clearAuthState } = useAuthStore();
 
   return () => {
-    logout();
-    removeToken();
-    router.push("/login");
+    try {
+      // 1. Clear auth store (resets user, isAuthenticated, isLoading)
+      clearAuthState();
+
+      // 2. Remove JWT token from localStorage
+      removeToken();
+
+      // 3. Clear Zustand persist storage explicitly
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("foodo-auth");
+      }
+
+      // 4. Invalidate all queries to prevent stale data
+      // (queryClient access requires useQueryClient, so we fall back to hard navigation)
+
+      // 5. Navigate to login — use hard navigation to ensure clean state
+      try {
+        router.push("/login");
+      } catch {
+        // Fallback if router is unavailable (e.g., during SSR or edge cases)
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+      }
+    } catch (error) {
+      console.error("[Logout] Error during logout:", error);
+      // Fallback: force navigation even if cleanup fails
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("foodo_auth_token");
+        localStorage.removeItem("foodo-auth");
+        window.location.href = "/login";
+      }
+    }
   };
 }

@@ -8,6 +8,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
+import { CartSheet } from "@/features/cart/components";
 import { ShoppingCart, User, LogOut, LayoutDashboard } from "lucide-react";
 
 export default function CustomerLayout({
@@ -17,6 +18,7 @@ export default function CustomerLayout({
 }) {
   const { user, isAuthenticated } = useAuthStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
   const logout = useLogout();
 
   // Determine dashboard link based on role
@@ -47,8 +49,9 @@ export default function CustomerLayout({
               <>
                 {/* Cart */}
                 <button
+                  onClick={() => setCartOpen(true)}
                   className="relative rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-                  aria-label="Cart"
+                  aria-label="Open cart"
                 >
                   <ShoppingCart className="h-5 w-5" />
                 </button>
@@ -177,6 +180,9 @@ export default function CustomerLayout({
           </div>
         </div>
       </footer>
+
+      {/* Cart Sheet */}
+      <CartSheet open={cartOpen} onClose={() => setCartOpen(false)} />
     </div>
   );
 }
