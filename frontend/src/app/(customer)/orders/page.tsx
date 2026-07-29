@@ -4,9 +4,17 @@
 
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/shared/glass-card";
 import { useGetMyOrders } from "@/features/orders/api";
+import { useSocketEvent } from "@/hooks/use-socket-event";
+import { useAuthStore } from "@/store/auth-store";
+import {
+  SOCKET_EVENTS,
+  type OrderUpdatePayload,
+  type OrderDeliveredPayload,
+} from "@/lib/socket-events";
 import type { IOrder } from "@/types";
 import {
   ArrowLeft,
@@ -21,7 +29,61 @@ import {
   CookingPot,
   Bike,
   XCircle,
+  Bell,
 } from "lucide-react";
+
+function useOrderSocket(refetch: () => void) {
+  const { user } = useAuthStore();
+  const [notification, setNotification] = useState<string | null>(null);
+
+  // Auto-dismiss notification after 4 seconds
+  useEffect(() => {
+    if (!notification) return;
+    const timer = setTimeout(() => setNotification(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notification]);
+
+  // Listen for order status updates
+  useSocketEvent(
+    SOCKET_EVENTS.ORDER_UPDATE,
+    useCallback(
+      (payload: unknown) => {
+        const data = payload as OrderUpdatePayload;
+        if (data?.orderId) {
+          refetch();
+          setNotification(`Order #${data.orderId.slice(-6)} is now ${data.status}`);
+        }
+      },
+      [refetch],
+    ),
+  );
+
+  // Listen for delivery updates (rider picked up / delivered)
+  useSocketEvent(
+    SOCKET_EVENTS.RIDER_ASSIGNED,
+    useCallback(
+      (payload: unknown) => {
+        refetch();
+        setNotification("Your rider is on the way! 🛵");
+      },
+      [refetch],
+    ),
+  );
+
+  // Listen for delivered event
+  useSocketEvent(
+    SOCKET_EVENTS.ORDER_DELIVERED,
+    useCallback(
+      (payload: unknown) => {
+        refetch();
+        setNotification("Your order has been delivered! Enjoy your meal 🎉");
+      },
+      [refetch],
+    ),
+  );
+
+  return notification;
+}
 
 const statusIcons: Record<string, React.ReactNode> = {
   placed: <Clock className="h-4 w-4 text-blue-500" />,
@@ -46,10 +108,19 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function OrdersPage() {
-  const { data: orders, isLoading, error } = useGetMyOrders();
+  const { data: orders, isLoading, error, refetch } = useGetMyOrders();
+  const notification = useOrderSocket(refetch);
 
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-8">
+      {/* Socket Notification Banner */}
+      {notification && (
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-medium text-primary animate-in slide-in-from-top-2">
+          <Bell className="h-4 w-4 shrink-0" />
+          <span>{notification}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
         <Link
@@ -61,7 +132,7 @@ export default function OrdersPage() {
         <div>
           <h1 className="text-2xl font-bold">My Orders</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Track all your orders in one place
+            Track all your orders in real-time
           </p>
         </div>
       </div>

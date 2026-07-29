@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { GlassCard } from "@/components/shared/glass-card";
 import { RoleGuard } from "@/components/shared/role-guard";
 import { useGetMyRestaurant } from "@/features/restaurants/api";
@@ -12,6 +12,11 @@ import {
   useGetRestaurantOrders,
   useUpdateOrderStatus,
 } from "@/features/orders/api";
+import { useSocketEvent } from "@/hooks/use-socket-event";
+import {
+  SOCKET_EVENTS,
+  type RiderAssignedPayload,
+} from "@/lib/socket-events";
 import type { IOrder, OrderStatus } from "@/types";
 import {
   Loader2,
@@ -26,6 +31,7 @@ import {
   ChevronUp,
   AlertCircle,
   PackageOpen,
+  Bell,
 } from "lucide-react";
 
 const statusConfig: Record<OrderStatus, { label: string; color: string; icon: React.ReactNode }> = {
@@ -284,9 +290,33 @@ export default function SellerOrdersPage() {
     );
   }
 
+  // Listen for rider assignment events to auto-refresh
+  useSocketEvent(
+    SOCKET_EVENTS.RIDER_ASSIGNED,
+    useCallback(
+      (payload: unknown) => {
+        const data = payload as RiderAssignedPayload;
+        if (data?.order?.restaurantId === restaurant?._id) {
+          refetch();
+        }
+      },
+      [refetch, restaurant?._id],
+    ),
+  );
+
+  const [notification, setNotification] = useState<string | null>(null);
+
   return (
     <RoleGuard allowedRoles={["seller"]}>
       <div className="space-y-6">
+        {/* Socket Notification Banner */}
+        {notification && (
+          <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-medium text-primary animate-in slide-in-from-top-2">
+            <Bell className="h-4 w-4 shrink-0" />
+            <span>{notification}</span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

@@ -4,11 +4,13 @@
 
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth-store";
+import { useLogout } from "@/features/auth/api";
 import { useGetMyRestaurant } from "@/features/restaurants/api";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogOut, User } from "lucide-react";
 
 export default function SellerLayout({
   children,
@@ -18,6 +20,21 @@ export default function SellerLayout({
   const { user } = useAuthStore();
   const { data: restaurant } = useGetMyRestaurant();
   const pathname = usePathname();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const logout = useLogout();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
 
   const isActive = (href: string) => pathname === href;
 
@@ -42,6 +59,17 @@ export default function SellerLayout({
           <SidebarLink href="/seller/analytics" label="Analytics" active={isActive("/seller/analytics")} />
           <SidebarLink href="/seller/settings" label="Settings" active={isActive("/seller/settings")} />
         </nav>
+
+        {/* Sidebar Logout */}
+        <div className="border-t border-border/50 p-4">
+          <button
+            onClick={() => logout()}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
+          </button>
+        </div>
       </aside>
 
       {/* Main Content */}
@@ -51,7 +79,14 @@ export default function SellerLayout({
           <h1 className="text-lg font-semibold">Seller Dashboard</h1>
           <div className="ml-auto flex items-center gap-3">
             <RestaurantStatusBadge isOpen={restaurant?.isOpen} />
-            <ProfileBadge name={user?.name || "S"} />
+            <ProfileBadge
+              name={user?.name || "S"}
+              email={user?.email}
+              dropdownOpen={dropdownOpen}
+              setDropdownOpen={setDropdownOpen}
+              dropdownRef={dropdownRef}
+              logout={logout}
+            />
           </div>
         </header>
 
@@ -104,10 +139,62 @@ function RestaurantStatusBadge({ isOpen }: { isOpen?: boolean }) {
   );
 }
 
-function ProfileBadge({ name }: { name: string }) {
+function ProfileBadge({
+  name,
+  email,
+  dropdownOpen,
+  setDropdownOpen,
+  dropdownRef,
+  logout,
+}: {
+  name: string;
+  email?: string;
+  dropdownOpen: boolean;
+  setDropdownOpen: (open: boolean) => void;
+  dropdownRef: React.RefObject<HTMLDivElement | null>;
+  logout: () => void;
+}) {
   return (
-    <button className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-      {name.charAt(0).toUpperCase()}
-    </button>
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setDropdownOpen(!dropdownOpen)}
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+        aria-label="Profile"
+        aria-expanded={dropdownOpen}
+      >
+        {name?.charAt(0)?.toUpperCase() || <User className="h-4 w-4" />}
+      </button>
+
+      {/* Dropdown menu */}
+      <div
+        className={`absolute right-0 top-full mt-2 w-48 origin-top-right transition-all duration-150 rounded-xl border border-border/50 bg-background shadow-xl shadow-black/5 z-50 ${
+          dropdownOpen
+            ? "scale-100 opacity-100 visible"
+            : "scale-95 opacity-0 invisible pointer-events-none"
+        }`}
+      >
+        <div className="p-2">
+          <p className="px-3 py-1.5 text-xs font-medium text-muted-foreground truncate">
+            {name}
+          </p>
+          {email && (
+            <p className="px-3 pb-1.5 text-xs text-muted-foreground truncate">
+              {email}
+            </p>
+          )}
+          <hr className="border-border/50 my-1" />
+          <button
+            onClick={() => {
+              setDropdownOpen(false);
+              logout();
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

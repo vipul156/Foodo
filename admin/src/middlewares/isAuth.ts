@@ -12,13 +12,29 @@ export interface AuthRequest extends Request {
 export const isAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
   const jwtToken = req.session?.jwt;
   if (!jwtToken) {
-    return res.status(401).json({ message: "Unauthorized" });
+    res.status(401).json({ message: "Unauthorized" });
+    return;
   }
   try {
-    const decode = jwt.verify(jwtToken, process.env.JWT_SECRET!);
-    req.user = decode as any;
+    let payload = jwt.verify(jwtToken, process.env.JWT_SECRET!) as any;
+
+    // Handle nested user object format: { user: { id, email, role } }
+    if (payload.user) {
+      payload = payload.user;
+    }
+
+    // Normalize user ID: auth service JWT uses 'id' (not '_id')
+    if (payload.id && !payload._id) {
+      payload._id = payload.id;
+    }
+    if (payload._id && !payload.id) {
+      payload.id = payload._id;
+    }
+
+    req.user = payload;
   } catch (err) {
-    return res.status(401).json({ message: "Unauthorized" });
+    res.status(401).json({ message: "Unauthorized" });
+    return;
   }
   next();
 };
@@ -30,7 +46,7 @@ export const isAdmin = (
 ) => {
   const user = req.user;
   if (user && user.role !== "admin") {
-    return res.status(401).json({
+    res.status(401).json({
       message: "You are not authorized",
     });
     return;
