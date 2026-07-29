@@ -35,9 +35,12 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
+  // Upload image if provided (accepts base64 data URI string from JSON body)
+  let imageUrl: string | undefined;
   if (file) {
-    const fileBuffer = dataUri(file);
-    if (!fileBuffer) {
+    // file can be a base64 data URI string (from JSON body) or a multer File object
+    const buffer = typeof file === "string" ? file : dataUri(file)?.content;
+    if (!buffer) {
       return res.status(500).json({
         message: "Internal Server Error",
       });
@@ -45,27 +48,26 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
 
     const { data } = await axios.post(
       `${process.env.UTILS_SERVICE_URL}/api/upload`,
-      {
-        buffer: fileBuffer.content,
-      },
+      { buffer },
     );
-
-    const restaurant = await Restaurant.create({
-      name,
-      description,
-      phone,
-      image: data.url,
-      ownerId: user._id,
-      autoLocation: {
-        type: "Point",
-        coordinates: [Number(longitude), Number(latitude)],
-        formattedAddress,
-      },
-    });
-    res
-      .status(200)
-      .json({ message: "Restaurant added successfully", restaurant });
+    imageUrl = data.url;
   }
+
+  const restaurant = await Restaurant.create({
+    name,
+    description,
+    phone,
+    ...(imageUrl && { image: imageUrl }),
+    ownerId: user._id,
+    autoLocation: {
+      type: "Point",
+      coordinates: [Number(longitude), Number(latitude)],
+      formattedAddress,
+    },
+  });
+  res
+    .status(200)
+    .json({ message: "Restaurant added successfully", restaurant });
 });
 
 export const getMyRestaurant = tryCatch(async (req: AuthRequest, res) => {
@@ -103,7 +105,7 @@ export const updateRestaurantStatus = tryCatch(
     }
 
     const { status } = req.body;
-    if (!status) {
+    if (status === undefined || status === null) {
       return res.status(400).json({
         message: "Please provide status",
       });
@@ -131,11 +133,28 @@ export const updateRestaurantDetails = tryCatch(
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { name, description, phone } = req.body;
+    const { name, description, phone, file } = req.body;
+
+    const updateFields: Record<string, any> = {};
+    if (name !== undefined) updateFields.name = name;
+    if (description !== undefined) updateFields.description = description;
+    if (phone !== undefined) updateFields.phone = phone;
+
+    // Handle image upload if provided
+    if (file) {
+      const buffer = typeof file === "string" ? file : dataUri(file)?.content;
+      if (buffer) {
+        const { data } = await axios.post(
+          `${process.env.UTILS_SERVICE_URL}/api/upload`,
+          { buffer },
+        );
+        updateFields.image = data.url;
+      }
+    }
 
     const restaurant = await Restaurant.findOneAndUpdate(
       { ownerId: user._id },
-      { name, description, phone },
+      updateFields,
       { new: true },
     );
     if (!restaurant) {

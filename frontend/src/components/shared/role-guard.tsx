@@ -6,7 +6,7 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/auth-store";
+import { useAuthStore, useAuthHydrated } from "@/store/auth-store";
 import type { UserRole } from "@/types";
 import { Loader2 } from "lucide-react";
 
@@ -18,15 +18,16 @@ interface RoleGuardProps {
 
 export function RoleGuard({ children, allowedRoles, fallback }: RoleGuardProps) {
   const { user, isAuthenticated, isLoading } = useAuthStore();
+  const hydrated = useAuthHydrated();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (hydrated && !isAuthenticated) {
       router.push("/login");
     }
-  }, [isLoading, isAuthenticated, router]);
+  }, [hydrated, isAuthenticated, router]);
 
-  if (isLoading) {
+  if (!hydrated || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3">

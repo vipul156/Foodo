@@ -2,13 +2,25 @@
 // Foodo — Seller Route Group Layout (Dashboard)
 // ============================================================
 
+"use client";
+
 import type { ReactNode } from "react";
+import { useAuthStore } from "@/store/auth-store";
+import { useGetMyRestaurant } from "@/features/restaurants/api";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export default function SellerLayout({
   children,
 }: {
   children: ReactNode;
 }) {
+  const { user } = useAuthStore();
+  const { data: restaurant } = useGetMyRestaurant();
+  const pathname = usePathname();
+
+  const isActive = (href: string) => pathname === href;
+
   return (
     <div className="flex min-h-screen bg-muted/30">
       {/* Sidebar */}
@@ -24,11 +36,11 @@ export default function SellerLayout({
           </span>
         </div>
         <nav className="flex-1 space-y-1 p-4">
-          <SidebarLink href="/seller" label="Dashboard" active />
-          <SidebarLink href="/seller/menu" label="Menu" />
-          <SidebarLink href="/seller/orders" label="Orders" />
-          <SidebarLink href="/seller/analytics" label="Analytics" />
-          <SidebarLink href="/seller/settings" label="Settings" />
+          <SidebarLink href="/seller" label="Dashboard" active={isActive("/seller")} />
+          <SidebarLink href="/seller/menu" label="Menu" active={isActive("/seller/menu")} />
+          <SidebarLink href="/seller/orders" label="Orders" active={isActive("/seller/orders")} />
+          <SidebarLink href="/seller/analytics" label="Analytics" active={isActive("/seller/analytics")} />
+          <SidebarLink href="/seller/settings" label="Settings" active={isActive("/seller/settings")} />
         </nav>
       </aside>
 
@@ -38,8 +50,8 @@ export default function SellerLayout({
         <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border/50 bg-background px-6">
           <h1 className="text-lg font-semibold">Seller Dashboard</h1>
           <div className="ml-auto flex items-center gap-3">
-            <RestaurantStatusBadge />
-            <ProfileBadge />
+            <RestaurantStatusBadge isOpen={restaurant?.isOpen} />
+            <ProfileBadge name={user?.name || "S"} />
           </div>
         </header>
 
@@ -59,7 +71,7 @@ function SidebarLink({
   active?: boolean;
 }) {
   return (
-    <a
+    <Link
       href={href}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
         active
@@ -68,23 +80,34 @@ function SidebarLink({
       }`}
     >
       {label}
-    </a>
+    </Link>
   );
 }
 
-function RestaurantStatusBadge() {
+function RestaurantStatusBadge({ isOpen }: { isOpen?: boolean }) {
+  if (isOpen === undefined) return null;
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      Open
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+        isOpen
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+          : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          isOpen ? "bg-emerald-500" : "bg-red-500"
+        }`}
+      />
+      {isOpen ? "Open" : "Closed"}
     </span>
   );
 }
 
-function ProfileBadge() {
+function ProfileBadge({ name }: { name: string }) {
   return (
     <button className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-      S
+      {name.charAt(0).toUpperCase()}
     </button>
   );
 }

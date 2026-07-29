@@ -19,7 +19,7 @@ const menuItemSchema = new Schema<IMenuItem>(
     description: { type: String, required: true, trim: true },
     price: { type: Number, required: true },
     image: { type: String, required: true },
-    isAvailable: { type: Boolean, required: true },
+    isAvailable: { type: Boolean, required: true, default: true },
   },
   {
     timestamps: true,

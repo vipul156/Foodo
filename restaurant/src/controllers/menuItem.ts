@@ -38,6 +38,7 @@ export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
     price,
     image: data.url,
     restaurantId: restaurant._id,
+    isAvailable: true,
   });
   return res.status(201).json({
     message: "Menu item created successfully",

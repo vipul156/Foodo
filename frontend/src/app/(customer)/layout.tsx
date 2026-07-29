@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
@@ -19,7 +19,20 @@ export default function CustomerLayout({
   const { user, isAuthenticated } = useAuthStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const logout = useLogout();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
 
   // Determine dashboard link based on role
   const dashboardLink =
@@ -67,11 +80,10 @@ export default function CustomerLayout({
                   </Link>
                 )}
 
-                {/* Profile dropdown — hover + click toggle for mobile */}
-                <div className="relative">
+                {/* Profile dropdown */}
+                <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                    onBlur={() => setTimeout(() => setDropdownOpen(false), 200)}
                     className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
                     aria-label="Profile"
                     aria-expanded={dropdownOpen}
