@@ -12,7 +12,62 @@ import type {
   ICartResponse,
   IAddress,
   ICreateAddressPayload,
+  IPaginatedResponse,
 } from "@/types";
+
+// ─── Get All Restaurants (public) ────────────────────────────
+
+export function useGetAllRestaurants() {
+  return useQuery({
+    queryKey: ["restaurants", "all"],
+    queryFn: async () => {
+      const res = await restaurantApi.get<IPaginatedResponse<IRestaurant>>(
+        "/restaurant/all",
+      );
+      return res.data;
+    },
+    staleTime: 1000 * 60 * 2, // 2 min cache
+  });
+}
+
+// ─── Get Restaurant By ID (public) ───────────────────────────
+
+export function useGetRestaurantById(id: string) {
+  return useQuery({
+    queryKey: ["restaurant", id],
+    queryFn: async () => {
+      const res = await restaurantApi.get<{
+        success: boolean;
+        data: IRestaurant;
+      }>(`/restaurant/${id}`);
+      return res.data;
+    },
+    enabled: !!id,
+  });
+}
+
+// ─── Get Nearby Restaurants (public, location-based) ─────────
+
+export function useGetNearbyRestaurants(
+  longitude?: number,
+  latitude?: number,
+) {
+  return useQuery({
+    queryKey: ["restaurants", "nearby", longitude, latitude],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (longitude !== undefined) params.longitude = String(longitude);
+      if (latitude !== undefined) params.latitude = String(latitude);
+      const res = await restaurantApi.get<IPaginatedResponse<IRestaurant>>(
+        "/restaurant/nearby",
+        { params },
+      );
+      return res.data;
+    },
+    enabled: true,
+    staleTime: 1000 * 60 * 2,
+  });
+}
 
 // ─── Get My Restaurant ───────────────────────────────────────
 

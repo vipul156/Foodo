@@ -1,28 +1,39 @@
 // ============================================================
-// Foodo — Customer Home Page (Auth-Aware Landing Page)
+// Foodo — Customer Home Page (Real Restaurant Data)
 // ============================================================
 
 "use client";
 
 import Link from "next/link";
 import { GlassCard } from "@/components/shared/glass-card";
-import { PremiumButton } from "@/components/shared/premium-button";
 import { useAuthStore } from "@/store/auth-store";
+import { useUIStore } from "@/store/ui-store";
+import { useGetNearbyRestaurants } from "@/features/restaurants/api";
+import type { IRestaurant } from "@/types";
 import {
   Search,
   MapPin,
-  Star,
   UtensilsCrossed,
   ShoppingBag,
-  Truck,
   LogIn,
   UserPlus,
   LayoutDashboard,
   ArrowRight,
+  Loader2,
+  Store,
+  AlertCircle,
 } from "lucide-react";
 
 export default function CustomerHomePage() {
   const { user, isAuthenticated } = useAuthStore();
+  const { userLocation } = useUIStore();
+
+  // Single query — uses nearby endpoint with user location if available.
+  // Backend handles undefined coords by returning all restaurants.
+  const { data: restaurants, isLoading, error } = useGetNearbyRestaurants(
+    userLocation?.longitude,
+    userLocation?.latitude,
+  );
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -45,16 +56,21 @@ export default function CustomerHomePage() {
                 delivery or pick up your go-to meals.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                <PremiumButton size="lg">
+                <Link
+                  href="/restaurants"
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:brightness-110 transition-all duration-200 active:scale-[0.97] gap-2"
+                >
                   <Search className="h-4 w-4" />
                   Browse Restaurants
-                </PremiumButton>
-                <PremiumButton variant="outline" size="lg">
+                </Link>
+                <Link
+                  href="/locations"
+                  className="inline-flex h-12 items-center justify-center rounded-xl border border-border bg-transparent px-6 text-sm font-medium text-foreground hover:bg-accent transition-all duration-200 active:scale-[0.97] gap-2"
+                >
                   <MapPin className="h-4 w-4" />
                   Set Location
-                </PremiumButton>
+                </Link>
               </div>
-              {/* TODO: Build /orders route */}
               <div className="mt-6 flex items-center gap-4 text-sm">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   Browse restaurants below to place your first order
@@ -79,14 +95,14 @@ export default function CustomerHomePage() {
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
                 <Link
                   href="/register"
-                  className="inline-flex h-13 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:brightness-110 transition-all duration-200 active:scale-[0.97] gap-2"
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:brightness-110 transition-all duration-200 active:scale-[0.97] gap-2"
                 >
                   <UserPlus className="h-4 w-4" />
                   Get Started — It&apos;s Free
                 </Link>
                 <Link
                   href="/login"
-                  className="inline-flex h-13 items-center justify-center rounded-xl border border-border bg-transparent px-6 text-sm font-medium text-foreground hover:bg-accent transition-all duration-200 active:scale-[0.97] gap-2"
+                  className="inline-flex h-12 items-center justify-center rounded-xl border border-border bg-transparent px-6 text-sm font-medium text-foreground hover:bg-accent transition-all duration-200 active:scale-[0.97] gap-2"
                 >
                   <LogIn className="h-4 w-4" />
                   Log In
@@ -120,7 +136,7 @@ export default function CustomerHomePage() {
         <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl" />
       </section>
 
-      {/* Role-based Dashboard Prompt (for authenticated sellers/riders/admin) */}
+      {/* Role-based Dashboard Prompt (for sellers/riders/admin) */}
       {isAuthenticated && user?.role && user.role !== "customer" && (
         <section className="mb-16">
           <GlassCard className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -164,7 +180,7 @@ export default function CustomerHomePage() {
         </section>
       )}
 
-      {/* How It Works (for guests) or Browse section (for authenticated) */}
+      {/* How It Works (for guests) */}
       {!isAuthenticated ? (
         <section className="mb-16">
           <h2 className="text-2xl font-bold text-center mb-10">
@@ -193,22 +209,60 @@ export default function CustomerHomePage() {
         </section>
       ) : null}
 
-      {/* Featured Restaurants (shown to everyone) */}
+      {/* Restaurants Section — Real Data */}
       <section className="mb-16">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Nearby Restaurants</h2>
-          <Link
-            href="/restaurants"
-            className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
-          >
-            View all <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          <h2 className="text-2xl font-bold">
+            {userLocation ? "Nearby Restaurants" : "All Restaurants"}
+          </h2>
+          {userLocation && (
+            <span className="text-xs text-muted-foreground">
+              {userLocation.address?.slice(0, 30)}
+            </span>
+          )}
+          {restaurants && restaurants.length > 3 && (
+            <Link
+              href="/restaurants"
+              className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
+            >
+              View all <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
         </div>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <RestaurantCard key={i} index={i} />
-          ))}
-        </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive mb-4" />
+            <p className="text-muted-foreground">
+              Couldn&apos;t load restaurants. Please try again later.
+            </p>
+          </div>
+        ) : restaurants && restaurants.length > 0 ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {restaurants.slice(0, 6).map((restaurant) => (
+              <RestaurantCard key={restaurant._id} restaurant={restaurant} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Store className="h-12 w-12 text-muted-foreground/50 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No restaurants yet</h3>
+            <p className="text-muted-foreground max-w-sm">
+              There are no restaurants available in your area yet. Check back
+              later or browse all restaurants.
+            </p>
+            <Link
+              href="/restaurants"
+              className="mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground hover:brightness-110 transition-all"
+            >
+              Browse All
+            </Link>
+          </div>
+        )}
       </section>
 
       {/* Call to Action (for guests) */}
@@ -238,7 +292,7 @@ export default function CustomerHomePage() {
         </section>
       )}
 
-      {/* Role Switch Prompt (for guests who might be sellers/riders) */}
+      {/* Role Switch Prompt (for guests) */}
       {!isAuthenticated && (
         <section className="mb-8">
           <h2 className="text-xl font-bold text-center mb-6">
@@ -313,33 +367,48 @@ function HowItWorksCard({
   );
 }
 
-// ─── Restaurant Card ─────────────────────────────────────────
+// ─── Restaurant Card — Real Data ─────────────────────────────
 
-function RestaurantCard({ index }: { index: number }) {
+function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
   return (
-    <GlassCard hover className="overflow-hidden p-0">
-      <div className="aspect-[16/9] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-        <UtensilsCrossed className="h-12 w-12 text-primary/40" />
-      </div>
-      <div className="p-5">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="font-semibold">Restaurant {index}</h3>
-          <span className="flex items-center gap-1 text-sm">
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-            4.{index}
-          </span>
+    <Link href={`/restaurants/${restaurant._id}`}>
+      <GlassCard hover className="overflow-hidden p-0 cursor-pointer group">
+        <div className="aspect-[16/9] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative overflow-hidden">
+          {restaurant.image ? (
+            <img
+              src={restaurant.image}
+              alt={restaurant.name}
+              className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+          ) : (
+            <UtensilsCrossed className="h-12 w-12 text-primary/40" />
+          )}
+          {restaurant.isOpen && (
+            <span className="absolute top-3 right-3 rounded-full bg-green-500/90 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+              Open
+            </span>
+          )}
         </div>
-        <p className="text-sm text-muted-foreground line-clamp-2">
-          Delicious food from around the world. Fresh ingredients, great taste.
-        </p>
-        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5 inline-flex items-center gap-1">
-            <Truck className="h-3 w-3" />
-            30-45 min
-          </span>
-          <span className="rounded-full bg-muted px-2 py-0.5">₹200 for two</span>
+        <div className="p-5">
+          <div className="flex items-start justify-between mb-2">
+            <h3 className="font-semibold group-hover:text-primary transition-colors">
+              {restaurant.name}
+            </h3>
+            {/* Rating hidden — no rating field in Restaurant model yet */}
+          </div>
+          {restaurant.description && (
+            <p className="text-sm text-muted-foreground line-clamp-2">
+              {restaurant.description}
+            </p>
+          )}
+          <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full bg-muted px-2 py-0.5 inline-flex items-center gap-1">
+              <MapPin className="h-3 w-3" />
+              {restaurant.autoLocation?.formattedAddress?.slice(0, 20) || "Nearby"}
+            </span>
+          </div>
         </div>
-      </div>
-    </GlassCard>
+      </GlassCard>
+    </Link>
   );
 }

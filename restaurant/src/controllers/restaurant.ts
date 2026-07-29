@@ -147,3 +147,60 @@ export const updateRestaurantDetails = tryCatch(
       .json({ message: "Restaurant details updated successfully", restaurant });
   },
 );
+
+// ─── Public: Get All Restaurants ────────────────────────────
+
+export const getAllRestaurants = tryCatch(async (req, res) => {
+  const restaurants = await Restaurant.find({ isVerified: true });
+  res.status(200).json({
+    success: true,
+    count: restaurants.length,
+    data: restaurants,
+  });
+});
+
+// ─── Public: Get Restaurant By ID ────────────────────────────
+
+export const getRestaurantById = tryCatch(async (req, res) => {
+  const { id } = req.params;
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) {
+    return res.status(404).json({ message: "Restaurant not found" });
+  }
+  res.status(200).json({ success: true, data: restaurant });
+});
+
+// ─── Public: Get Nearby Restaurants ──────────────────────────
+
+export const getNearbyRestaurants = tryCatch(async (req, res) => {
+  const { longitude, latitude, maxDistance } = req.query;
+
+  if (!longitude || !latitude) {
+    // If no location provided, return all verified restaurants
+    const restaurants = await Restaurant.find({ isVerified: true });
+    return res.status(200).json({
+      success: true,
+      count: restaurants.length,
+      data: restaurants,
+    });
+  }
+
+  const restaurants = await Restaurant.find({
+    isVerified: true,
+    autoLocation: {
+      $near: {
+        $geometry: {
+          type: "Point",
+          coordinates: [Number(longitude), Number(latitude)],
+        },
+        $maxDistance: Number(maxDistance) || 50000, // default 50km
+      },
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    count: restaurants.length,
+    data: restaurants,
+  });
+});

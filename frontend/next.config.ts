@@ -1,62 +1,69 @@
 import type { NextConfig } from "next";
 
+// Define base URLs with fallbacks to localhost defaults
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || "http://localhost:3001";
+const REALTIME_SERVICE_URL = process.env.REALTIME_SERVICE_URL || "http://localhost:3002";
+const RESTAURANT_SERVICE_URL = process.env.RESTAURANT_SERVICE_URL || "http://localhost:3003";
+const RIDER_SERVICE_URL = process.env.RIDER_SERVICE_URL || "http://localhost:3004";
+const UTILS_SERVICE_URL = process.env.UTILS_SERVICE_URL || "http://localhost:3005";
+const ADMIN_SERVICE_URL = process.env.ADMIN_SERVICE_URL || "http://localhost:3006";
+
 const nextConfig: NextConfig = {
   output: "standalone",
 
   async rewrites() {
     return [
-      // ── Auth Service (port 3001) ──────────────────────────
+      // ── Auth Service ──────────────────────────
       {
         source: "/api/auth/:path*",
-        destination: "http://localhost:3001/api/auth/:path*",
+        destination: `${AUTH_SERVICE_URL}/api/auth/:path*`,
       },
 
-      // ── Restaurant Service (port 3003) ─────────────────────
+      // ── Restaurant Service ─────────────────────
       {
         source: "/api/restaurant/:path*",
-        destination: "http://localhost:3003/restaurant/:path*",
+        destination: `${RESTAURANT_SERVICE_URL}/restaurant/:path*`,
       },
       {
         source: "/api/menu-item/:path*",
-        destination: "http://localhost:3003/menu-item/:path*",
+        destination: `${RESTAURANT_SERVICE_URL}/menu-item/:path*`,
       },
       {
         source: "/api/cart/:path*",
-        destination: "http://localhost:3003/cart/:path*",
+        destination: `${RESTAURANT_SERVICE_URL}/cart/:path*`,
       },
       {
         source: "/api/order/:path*",
-        destination: "http://localhost:3003/order/:path*",
+        destination: `${RESTAURANT_SERVICE_URL}/order/:path*`,
       },
       {
         source: "/api/address/:path*",
-        destination: "http://localhost:3003/address/:path*",
+        destination: `${RESTAURANT_SERVICE_URL}/address/:path*`,
       },
 
-      // ── Rider Service (port 3004) ─────────────────────────
+      // ── Rider Service ─────────────────────────
       {
         source: "/api/rider/:path*",
-        destination: "http://localhost:3004/rider/:path*",
+        destination: `${RIDER_SERVICE_URL}/rider/:path*`,
       },
 
-      // ── Admin Service (port 3006) ──────────────────────────
+      // ── Admin Service ──────────────────────────
       {
         source: "/api/admin/:path*",
-        destination: "http://localhost:3006/api/:path*",
+        destination: `${ADMIN_SERVICE_URL}/api/:path*`,
       },
 
-      // ── Realtime Service (port 3002) — internal routes ─────
+      // ── Realtime Service ─────
       {
         source: "/api/internal/:path*",
-        destination: "http://localhost:3002/api/v1/internal/:path*",
+        destination: `${REALTIME_SERVICE_URL}/api/v1/internal/:path*`,
       },
 
-      // ── Utils Service (port 3005) — payment, cloudinary ────
+      // ── Utils Service ────
       {
         source: "/api/utils/:path*",
-        destination: "http://localhost:3005/:path*",
+        destination: `${UTILS_SERVICE_URL}/:path*`,
       },
-
     ];
   },
 };
