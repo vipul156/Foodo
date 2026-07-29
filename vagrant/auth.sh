@@ -25,14 +25,14 @@ git clone --depth 1 "$REPO" /tmp/Foodo
 cd "/tmp/Foodo/$SERVICE"
 
 echo "Installing dependencies..."
-npm ci
+npm ci --legacy-peer-deps
 
 echo "Building..."
 npm run build
 
 echo "Installing production dependencies..."
 rm -rf node_modules
-npm ci --omit=dev
+npm ci --omit=dev --legacy-peer-deps
 
 echo "Creating application directory..."
 mkdir -p "$APP_DIR"

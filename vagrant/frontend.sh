@@ -46,7 +46,6 @@ cp package.json package-lock.json "$APP_DIR/"
 [ -d public ] && cp -r public "$APP_DIR/"
 [ -f next.config.js ] && cp next.config.js "$APP_DIR/"
 [ -f next.config.mjs ] && cp next.config.mjs "$APP_DIR/"
-[ -f .env.production ] && cp .env.production "$APP_DIR/"
 
 echo "Cleaning source..."
 rm -rf /tmp/Foodo
