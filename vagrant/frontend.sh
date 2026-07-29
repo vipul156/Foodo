@@ -2,7 +2,7 @@
 set -e
 
 REPO="https://github.com/vipul156/Foodo.git"
-SERVICE="utils"
+SERVICE="frontend"
 APP_DIR="/opt/$SERVICE"
 
 echo "Updating packages..."
@@ -38,11 +38,15 @@ echo "Creating application directory..."
 mkdir -p "$APP_DIR"
 
 echo "Copying runtime files..."
-cp -r dist "$APP_DIR/"
+
+cp -r .next "$APP_DIR/"
 cp -r node_modules "$APP_DIR/"
-cp package.json "$APP_DIR/"
-cp package-lock.json "$APP_DIR/"
-cp .env "$APP_DIR/" 2>/dev/null || true
+cp package.json package-lock.json "$APP_DIR/"
+
+[ -d public ] && cp -r public "$APP_DIR/"
+[ -f next.config.js ] && cp next.config.js "$APP_DIR/"
+[ -f next.config.mjs ] && cp next.config.mjs "$APP_DIR/"
+[ -f .env.production ] && cp .env.production "$APP_DIR/"
 
 echo "Cleaning source..."
 rm -rf /tmp/Foodo
@@ -51,17 +55,18 @@ echo "Creating systemd service..."
 
 cat >/etc/systemd/system/$SERVICE.service <<EOF
 [Unit]
-Description=$SERVICE Service
+Description=Foodo Frontend
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/npm run start
-EnvironmentFile=/etc/foodo/$SERVICE.env
-Environment=NODE_ENV=production
 Restart=always
 RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/etc/foodo/frontend.env
 
 [Install]
 WantedBy=multi-user.target

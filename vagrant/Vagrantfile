@@ -1,4 +1,9 @@
 Vagrant.configure("2") do |config|
+  config.hostmanager.enabled = true
+  config.hostmanager.manage_host = true
+  config.hostmanager.manage_guest = true
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  
    config.vm.define "rmq01" do |rmq01|
     rmq01.vm.box = "generic/debian12"
     rmq01.vm.hostname = "rmq01"
@@ -16,6 +21,9 @@ Vagrant.configure("2") do |config|
     auth.vm.provider "virtualbox" do |vb|
       vb.memory = "300"
     end
+    auth.vm.synced_folder "./env/auth",
+                            "/etc/foodo",
+                            type: "virtualbox"
     auth.vm.provision "shell", path: "auth.sh"
   end
 
@@ -37,6 +45,9 @@ Vagrant.configure("2") do |config|
     admin.vm.provider "virtualbox" do |vb|
       vb.memory = "300"
     end
+    admin.vm.synced_folder "./env/admin",
+                            "/etc/foodo",
+                            type: "virtualbox"
     admin.vm.provision "shell", path: "admin.sh"
   end
 
@@ -47,6 +58,9 @@ Vagrant.configure("2") do |config|
     realtime.vm.provider "virtualbox" do |vb|
       vb.memory = "300"
     end
+    realtime.vm.synced_folder "./env/realtime",
+                            "/etc/foodo",
+                            type: "virtualbox"
     realtime.vm.provision "shell", path: "realtime.sh"
   end
 
@@ -57,6 +71,9 @@ Vagrant.configure("2") do |config|
     restaurant.vm.provider "virtualbox" do |vb|
       vb.memory = "300"
     end
+    restaurant.vm.synced_folder "./env/restaurant/",
+                            "/etc/foodo",
+                            type: "virtualbox"
     restaurant.vm.provision "shell", path: "restaurant.sh"
   end
 
@@ -67,6 +84,9 @@ Vagrant.configure("2") do |config|
     rider.vm.provider "virtualbox" do |vb|
       vb.memory = "300"
     end
+    rider.vm.synced_folder "./env/rider",
+                            "/etc/foodo",
+                            type: "virtualbox"
     rider.vm.provision "shell", path: "rider.sh"
   end
 
@@ -77,6 +97,22 @@ Vagrant.configure("2") do |config|
     utils.vm.provider "virtualbox" do |vb|
       vb.memory = "300"
     end
+    utils.vm.synced_folder "./env/utils",
+                            "/etc/foodo",
+                            type: "virtualbox"
     utils.vm.provision "shell", path: "utils.sh"
+  end
+
+  config.vm.define "frontend" do |frontend|
+    frontend.vm.box = "generic/debian12"
+    frontend.vm.hostname = "frontend"
+    frontend.vm.network "private_network", ip: "192.168.56.24"
+    frontend.vm.provider "virtualbox" do |vb|
+      vb.memory = "300"
+    end
+    frontend.vm.synced_folder "./env/frontend",
+                            "/etc/foodo",
+                            type: "virtualbox"
+    frontend.vm.provision "shell", path: "frontend.sh"
   end
 end
