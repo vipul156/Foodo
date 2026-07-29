@@ -1,21 +1,20 @@
 import connectDB from "../config/db.js";
 
-export const getRestaurantCollection = async () => {
-    const db = await connectDB();
-    return db.collection("restaurants");
-}
+let dbInstance:any = null;
 
-export const getUserCollection = async () => {
-    const db = await connectDB();
-    return db.collection("users");
-}
+const getDB = async () => {
+    if (!dbInstance) {
+        dbInstance = await connectDB();
+    }
+    return dbInstance;
+};
 
-export const getOrderCollection = async () => {
-    const db = await connectDB();
-    return db.collection("orders");
-}
+export const getCollection = async (name:string) => {
+    const db = await getDB();
+    return db.collection(name);
+};
 
-export const getRidersCollection = async () => {
-    const db = await connectDB();
-    return db.collection("riders");
-}
+export const getRestaurantCollection = () => getCollection("restaurants");
+export const getUserCollection       = () => getCollection("users");
+export const getOrderCollection      = () => getCollection("orders");
+export const getRidersCollection     = () => getCollection("riders");

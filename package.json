@@ -1,0 +1,10 @@
+{
+  "name": "foodo-root",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently --names \"auth,admin,rest,rider,real,utils\" --prefix-colors \"blue,green,magenta,yellow,cyan,red\" \"npm --prefix auth run dev\" \"npm --prefix admin run dev\" \"npm --prefix restaurant run dev\" \"npm --prefix rider run dev\" \"npm --prefix realtime run dev\" \"npm --prefix utils run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0"
+  }
+}
