@@ -4,13 +4,16 @@ set -e
 REPO="https://github.com/vipul156/Foodo.git"
 SERVICE="auth"
 APP_DIR="/opt/$SERVICE"
+ENV_FILE="/etc/foodo/$SERVICE.env"
 
-echo "Updating packages..."
-apt-get update
-apt-get install -y git curl
+echo "Checking system dependencies..."
+if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+    apt-get update && apt-get install -y git curl
+fi
 
-# Install Node.js 22
+# Install Node.js 22 only if missing
 if ! command -v node >/dev/null 2>&1; then
+    echo "Installing Node.js 22..."
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
 fi
@@ -24,15 +27,14 @@ git clone --depth 1 "$REPO" /tmp/Foodo
 
 cd "/tmp/Foodo/$SERVICE"
 
-echo "Installing dependencies..."
-npm ci --legacy-peer-deps
+echo "Installing build dependencies..."
+npm ci --prefer-offline --no-audit --legacy-peer-deps
 
-echo "Building..."
+echo "Building TypeScript project..."
 npm run build
 
-echo "Installing production dependencies..."
-rm -rf node_modules
-npm ci --omit=dev --legacy-peer-deps
+echo "Pruning devDependencies for production..."
+npm prune --production
 
 echo "Creating application directory..."
 mkdir -p "$APP_DIR"
@@ -41,34 +43,32 @@ echo "Copying runtime files..."
 cp -r dist "$APP_DIR/"
 cp -r node_modules "$APP_DIR/"
 cp package.json "$APP_DIR/"
-cp package-lock.json "$APP_DIR/"
-cp .env "$APP_DIR/" 2>/dev/null || true
 
 echo "Cleaning source..."
 rm -rf /tmp/Foodo
 
 echo "Creating systemd service..."
 
-cat >/etc/systemd/system/$SERVICE.service <<EOF
+cat > "/etc/systemd/system/$SERVICE.service" <<EOF
 [Unit]
-Description=$SERVICE Service
+Description=Foodo $SERVICE Service
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-ExecStart=/usr/bin/npm run start
-EnvironmentFile=/etc/foodo/$SERVICE.env
+ExecStart=/usr/bin/node dist/index.js
 Environment=NODE_ENV=production
+$( [ -f "$ENV_FILE" ] && echo "EnvironmentFile=$ENV_FILE" )
 Restart=always
-RestartSec=5
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable $SERVICE
-systemctl restart $SERVICE
+systemctl enable "$SERVICE"
+systemctl restart "$SERVICE"
 
-echo "Deployment completed."
+echo "Deployment of $SERVICE completed successfully."
