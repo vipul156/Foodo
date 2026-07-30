@@ -7,8 +7,10 @@ echo "=============================="
 echo " Installing Nginx"
 echo "=============================="
 
+export DEBIAN_FRONTEND=noninteractive
+
 apt-get update
-apt-get install -y nginx
+apt-get install -y nginx gettext-base
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "ERROR: $ENV_FILE not found"
@@ -16,6 +18,8 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 echo "Loading environment..."
+
+sed -i 's/\r$//' "$ENV_FILE"
 
 set -a
 source "$ENV_FILE"
@@ -33,16 +37,15 @@ required_vars=(
 
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
-        echo "ERROR: $var is not defined in nginx.env"
+        echo "ERROR: $var is missing"
         exit 1
     fi
 done
 
-cat >/etc/nginx/sites-available/foodo.conf <<EOF
+cat >/tmp/foodo.conf.template <<'EOF'
 server {
 
     listen 80 default_server;
-
     server_name _;
 
     client_max_body_size 50M;
@@ -50,6 +53,7 @@ server {
     gzip on;
     gzip_comp_level 5;
     gzip_min_length 256;
+
     gzip_types
         text/plain
         text/css
@@ -63,12 +67,12 @@ server {
 
     proxy_http_version 1.1;
 
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 
-    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
 
     ###################################################
@@ -146,10 +150,24 @@ server {
 }
 EOF
 
-rm -f /etc/nginx/sites-enabled/default
-ln -sf /etc/nginx/sites-available/foodo.conf /etc/nginx/sites-enabled/foodo.conf
+envsubst \
+'${FRONTEND_URL} ${AUTH_SERVICE_URL} ${RESTAURANT_SERVICE_URL} ${RIDER_SERVICE_URL} ${ADMIN_SERVICE_URL} ${REALTIME_SERVICE_URL} ${UTILS_SERVICE_URL}' \
+< /tmp/foodo.conf.template \
+> /etc/nginx/sites-available/foodo.conf
 
-echo "Testing nginx configuration..."
+rm -f /etc/nginx/sites-enabled/default
+
+ln -sf \
+    /etc/nginx/sites-available/foodo.conf \
+    /etc/nginx/sites-enabled/foodo.conf
+
+echo
+echo "Generated nginx config:"
+echo "----------------------------------------"
+cat /etc/nginx/sites-available/foodo.conf
+echo "----------------------------------------"
+
+echo "Testing nginx..."
 
 nginx -t
 
@@ -157,8 +175,6 @@ systemctl enable nginx
 systemctl restart nginx
 
 echo
-echo "===================================="
-echo " Nginx successfully configured"
-echo "===================================="
-
-systemctl status nginx --no-pager
+echo "========================================"
+echo " Nginx configured successfully"
+echo "========================================"
