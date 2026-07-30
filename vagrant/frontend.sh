@@ -45,7 +45,7 @@ mkdir -p "$APP_DIR"
 
 echo "Deploying standalone output..."
 # Copy standalone server, node_modules, and configs
-cp -r .next/standalone/$SERVICE/* "$APP_DIR/"
+cp -r .next/standalone/* "$APP_DIR/"
 
 # Copy static assets (required by Next.js standalone)
 mkdir -p "$APP_DIR/.next/static"

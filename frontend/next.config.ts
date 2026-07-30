@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 // Define base URLs with fallbacks to localhost defaults
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || "http://localhost:3001";
@@ -10,7 +11,9 @@ const ADMIN_SERVICE_URL = process.env.ADMIN_SERVICE_URL || "http://localhost:300
 
 const nextConfig: NextConfig = {
   output: "standalone",
-
+ turbopack: {
+    root: path.join(__dirname),
+  },
   async rewrites() {
     return [
       // ── Auth Service ──────────────────────────
