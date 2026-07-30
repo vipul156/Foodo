@@ -45,16 +45,14 @@ mkdir -p "$APP_DIR"
 
 echo "Deploying standalone output..."
 # Copy standalone server, node_modules, and configs
-cp -r .next/standalone/* "$APP_DIR/"
+cp -r .next/standalone/$SERVICE/* "$APP_DIR/"
 
 # Copy static assets (required by Next.js standalone)
 mkdir -p "$APP_DIR/.next/static"
 cp -r .next/static/* "$APP_DIR/.next/static/"
 
 # Copy public folder if it exists
-if [ -d "public" ]; then
-    cp -r public "$APP_DIR/public"
-fi
+cp -r public "$APP_DIR/public"
 
 echo "Cleaning temporary build files..."
 rm -rf /tmp/Foodo
