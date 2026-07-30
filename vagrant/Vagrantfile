@@ -121,7 +121,7 @@ Vagrant.configure("2") do |config|
       vb.memory = "300"
     end
     nginx.vm.synced_folder "./env/nginx",
-                            "/etc/nginx",
+                            "/etc/foodo",
                             type: "virtualbox"
     nginx.vm.provision "shell", path: "nginx.sh"
   end
