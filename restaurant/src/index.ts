@@ -34,6 +34,15 @@ app.use("/cart", cartRouter)
 app.use("/order", orderRouter)
 
 const PORT = process.env.PORT || 3003
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
+
 app.listen(PORT, () => {
   console.log("Server is running on port ", PORT);
   connectDB();

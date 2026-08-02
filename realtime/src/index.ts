@@ -27,6 +27,14 @@ app.use("/api/v1/internal",interRoute)
 const server = http.createServer(app)
 initSocket(server)
 
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
+
 const PORT = process.env.PORT || 3002
 server.listen(PORT, () => {
     console.log("Server started on port ", PORT);

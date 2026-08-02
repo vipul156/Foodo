@@ -30,6 +30,14 @@ app.use("/api/payment", paymentRouter);
 
 connectRabbitMQ();
 
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
+
 const PORT = process.env.PORT || 3005
 app.listen(PORT, () => {
     console.log("Server running on port ", PORT);

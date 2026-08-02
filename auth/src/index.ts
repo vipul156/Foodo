@@ -22,6 +22,14 @@ app.use(express.json());
 
 app.use('/api/auth', authRoute)
 
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
+
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log("Server is running on port ", PORT);
