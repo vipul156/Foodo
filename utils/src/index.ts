@@ -25,8 +25,8 @@ cloudinary.v2.config({
   api_secret: CLOUD_API_SECRET,
 });
 
-app.use("/api", cloudinaryRouter);
-app.use("/api/payment", paymentRouter);
+app.use("/api/utils/", cloudinaryRouter);
+app.use("/api/utils/payment", paymentRouter);
 
 connectRabbitMQ();
 

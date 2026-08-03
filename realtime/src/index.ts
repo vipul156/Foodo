@@ -22,7 +22,7 @@ app.use(
 );
 app.use(express.json())
 
-app.use("/api/v1/internal",interRoute)
+app.use("/api/internal",interRoute)
 
 const server = http.createServer(app)
 initSocket(server)

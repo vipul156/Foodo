@@ -28,10 +28,10 @@ app.use(
 );
 
 app.use(express.json());
-app.use("/restaurant", restaurantRouter)
-app.use("/menu-item", menuItemRouter)
-app.use("/cart", cartRouter)
-app.use("/order", orderRouter)
+app.use("/api/restaurant", restaurantRouter)
+app.use("/api/menu-item", menuItemRouter)
+app.use("/api/cart", cartRouter)
+app.use("/api/order", orderRouter)
 
 const PORT = process.env.PORT || 3003
 

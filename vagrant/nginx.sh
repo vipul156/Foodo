@@ -96,23 +96,23 @@ server {
     ###################################################
 
     location /api/restaurant/ {
-        proxy_pass ${RESTAURANT_SERVICE_URL}/restaurant/;
+        proxy_pass ${RESTAURANT_SERVICE_URL}/api/restaurant/;
     }
 
     location /api/menu-item/ {
-        proxy_pass ${RESTAURANT_SERVICE_URL}/menu-item/;
+        proxy_pass ${RESTAURANT_SERVICE_URL}/api/menu-item/;
     }
 
     location /api/cart/ {
-        proxy_pass ${RESTAURANT_SERVICE_URL}/cart/;
+        proxy_pass ${RESTAURANT_SERVICE_URL}/api/cart/;
     }
 
     location /api/order/ {
-        proxy_pass ${RESTAURANT_SERVICE_URL}/order/;
+        proxy_pass ${RESTAURANT_SERVICE_URL}/api/order/;
     }
 
     location /api/address/ {
-        proxy_pass ${RESTAURANT_SERVICE_URL}/address/;
+        proxy_pass ${RESTAURANT_SERVICE_URL}/api/address/;
     }
 
     ###################################################
@@ -120,7 +120,7 @@ server {
     ###################################################
 
     location /api/rider/ {
-        proxy_pass ${RIDER_SERVICE_URL}/rider/;
+        proxy_pass ${RIDER_SERVICE_URL}/api/rider/;
     }
 
     ###################################################
@@ -128,7 +128,7 @@ server {
     ###################################################
 
     location /api/admin/ {
-        proxy_pass ${ADMIN_SERVICE_URL}/api/;
+        proxy_pass ${ADMIN_SERVICE_URL}/api/admin/;
     }
 
     ###################################################
@@ -136,7 +136,7 @@ server {
     ###################################################
 
     location /api/utils/ {
-        proxy_pass ${UTILS_SERVICE_URL}/;
+        proxy_pass ${UTILS_SERVICE_URL}/api/utils/;
     }
 
     ###################################################
@@ -144,7 +144,7 @@ server {
     ###################################################
 
     location /api/internal/ {
-        proxy_pass ${REALTIME_SERVICE_URL}/api/v1/internal/;
+        proxy_pass ${REALTIME_SERVICE_URL}/api/internal/;
     }
 
 }

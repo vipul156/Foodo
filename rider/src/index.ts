@@ -25,7 +25,7 @@ app.use(
   }),
 );
 app.use(express.json());
-app.use("/rider", riderRouter);
+app.use("/api/rider", riderRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({
