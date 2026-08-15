@@ -9,3 +9,5 @@ router.use(isAuth)
 router.post("/new",createAddress)
 router.delete("/:id", deleteAddress)
 router.get("/all",getMyAddresses)
+
+export {router as addressRoute}

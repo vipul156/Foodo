@@ -11,6 +11,7 @@ import { cartRouter } from "./routes/cart.js";
 import { orderRouter } from "./routes/order.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentConsumer } from "./config/payment.consumer.js";
+import { addressRoute } from "./routes/address.js";
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use("/api/restaurant", restaurantRouter)
 app.use("/api/menu-item", menuItemRouter)
 app.use("/api/cart", cartRouter)
 app.use("/api/order", orderRouter)
+app.use("api/address", addressRoute)
 
 const PORT = process.env.PORT || 3003
 

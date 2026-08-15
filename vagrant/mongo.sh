@@ -19,7 +19,7 @@ mkdir -p /usr/share/keyrings
 curl -fsSL "https://pgp.mongodb.com/server-${MONGO_VERSION}.asc" | gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server.gpg
 
 # Detect distribution code (e.g., bookworm, jammy, focal)
-DISTRO_CODENAME=$(lsb_release -cs 2>/dev/null || echo "bookworm")
+DISTRO_CODENAME="bookworm"
 
 echo "deb [ signed-by=/usr/share/keyrings/mongodb-server.gpg ] https://repo.mongodb.org/apt/debian ${DISTRO_CODENAME}/mongodb-org/${MONGO_VERSION} main" \
     > /etc/apt/sources.list.d/mongodb-org.list
