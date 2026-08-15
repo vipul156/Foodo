@@ -5,3 +5,55 @@
 /env
 *.env
 foodo.pem
+foodo
+*.pem
+*.key
+**/.terraform/
+*.tfstate*
+# ------------------------------------------------------------------------------
+# 1. Terraform Local Cache & Plugins
+# ------------------------------------------------------------------------------
+# Local hidden directory created by 'terraform init' (contains downloaded provider binaries)
+**/.terraform/
+
+# ------------------------------------------------------------------------------
+# 2. Terraform State Files (CRITICAL SECURITY RISK)
+# ------------------------------------------------------------------------------
+# Contains raw infrastructure state and PLAIN-TEXT secrets/passwords
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Crash logs
+crash.log
+crash.*.log
+
+# ------------------------------------------------------------------------------
+# 3. Variable Files with Real Credentials
+# ------------------------------------------------------------------------------
+# Ignore all custom variable values containing sensitive DB passwords, tokens, etc.
+*.tfvars
+*.tfvars.json
+
+# Local override files
+override.tf
+override.tf.json
+*_override.tf
+
+# ------------------------------------------------------------------------------
+# 4. SSH Keys & Certificates
+# ------------------------------------------------------------------------------
+# Your local private SSH key referenced in your terraform code (e.g., file("foodo"))
+foodo
+*.pem
+*.key
+*.pub
+id_rsa*
+
+# ------------------------------------------------------------------------------
+# 5. OS & Editor Artifacts
+# ------------------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
