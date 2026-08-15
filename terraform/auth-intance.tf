@@ -15,7 +15,7 @@ resource "aws_instance" "auth" {
   }
 
   provisioner "file" {
-    source      = "../vagrant/env/auth/auth.env"
+    source      = "./env/auth/auth.env"
     destination = "/tmp/foodo/auth.env"
   }
 

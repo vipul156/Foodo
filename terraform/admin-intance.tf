@@ -15,7 +15,7 @@ resource "aws_instance" "admin" {
   }
 
   provisioner "file" {
-    source      = "../vagrant/env/admin/admin.env"
+    source      = "./env/admin/admin.env"
     destination = "/tmp/foodo/admin.env"
   }
 

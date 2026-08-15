@@ -15,7 +15,7 @@ resource "aws_instance" "restaurant" {
   }
 
   provisioner "file" {
-    source      = "../vagrant/env/restaurant/restaurant.env"
+    source      = "./env/restaurant/restaurant.env"
     destination = "/tmp/foodo/restaurant.env"
   }
 

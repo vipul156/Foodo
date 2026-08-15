@@ -15,7 +15,7 @@ resource "aws_instance" "utils" {
   }
 
   provisioner "file" {
-    source      = "../vagrant/env/utils/utils.env"
+    source      = "./env/utils/utils.env"
     destination = "/tmp/foodo/utils.env"
   }
 

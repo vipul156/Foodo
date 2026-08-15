@@ -15,7 +15,7 @@ resource "aws_instance" "realtime" {
   }
 
   provisioner "file" {
-    source      = "../vagrant/env/realtime/realtime.env"
+    source      = "./env/realtime/realtime.env"
     destination = "/tmp/foodo/realtime.env"
   }
 

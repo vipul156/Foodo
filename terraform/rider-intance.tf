@@ -15,7 +15,7 @@ resource "aws_instance" "rider" {
   }
 
   provisioner "file" {
-    source      = "../vagrant/env/rider/rider.env"
+    source      = "./env/rider/rider.env"
     destination = "/tmp/foodo/rider.env"
   }
 
