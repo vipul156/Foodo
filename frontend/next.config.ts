@@ -12,9 +12,9 @@ const RIDER_SERVICE_URL =
 const ADMIN_SERVICE_URL =
   process.env.ADMIN_SERVICE_URL || "http://localhost:3006";
 const REALTIME_SERVICE_URL =
-  process.env.REALTIME_SERVICE_URL || "http://localhost:3005";
+  process.env.REALTIME_SERVICE_URL || "http://localhost:3002";
 const UTILS_SERVICE_URL =
-  process.env.UTILS_SERVICE_URL || "http://localhost:3007";
+  process.env.UTILS_SERVICE_URL || "http://localhost:3005";
 
 const nextConfig: NextConfig = {
   output: "standalone",

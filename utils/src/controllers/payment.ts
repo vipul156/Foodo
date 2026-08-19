@@ -11,7 +11,7 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
         const { orderId } = req.body;
         
         const {data} = await axios.get(
-            `${process.env.RESTAURANT_SERVICE}/api/order/payment/${orderId}`,
+            `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/${orderId}`,
             {
                 headers: {
                     "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
@@ -29,7 +29,8 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
             razorpayOrderId: razorpayOrder.id,
             key: process.env.RAZORPAY_KEY_ID,
         });
-    } catch (error) {
+    } catch (error: any) {
+        console.error("Razorpay create order error:", error?.message);
         res.status(500).json({ message: "Error creating order" });
     }
 }
@@ -51,7 +52,8 @@ export const verifyRazorpayPayment = async (req: Request, res: Response) => {
        })
 
         res.status(200).json({ message: "Payment verified successfully" });
-    } catch (error) {
+    } catch (error: any) {
+        console.error("Razorpay verify error:", error?.message);
         res.status(500).json({ message: "Error verifying payment" });
     }
 }
@@ -61,7 +63,7 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
         const { orderId } = req.body;
         
         const {data} = await axios.get(
-            `${process.env.RESTAURANT_SERVICE}/api/order/payment/${orderId}`,
+            `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/${orderId}`,
             {
                 headers: {
                     "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
@@ -97,7 +99,8 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
         res.status(200).json({ 
             url: stripePaymentIntent.url,
         });
-    } catch (error) {
+    } catch (error: any) {
+        console.error("Stripe create session error:", error?.message);
         res.status(500).json({ message: "Error creating payment intent" });
     }
 }
@@ -125,7 +128,8 @@ export const verifyStripePayment = async (req: Request, res: Response) => {
         })
 
         res.status(200).json({ message: "Payment verified successfully" });
-    } catch (error) {
+    } catch (error: any) {
+        console.error("Stripe verify error:", error?.message);
         res.status(500).json({ message: "Error verifying payment" });
     }
 }
