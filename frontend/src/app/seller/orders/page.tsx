@@ -245,8 +245,9 @@ export default function SellerOrdersPage() {
   const updateStatus = useUpdateOrderStatus();
 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [notification, setNotification] = useState<string | null>(null);
 
-  const handleStatusUpdate = async (orderId: string, status: string) => {
+  const handleStatusUpdate = useCallback(async (orderId: string, status: string) => {
     setUpdatingId(orderId);
     try {
       await updateStatus.mutateAsync({ orderId, status });
@@ -254,9 +255,23 @@ export default function SellerOrdersPage() {
     } finally {
       setUpdatingId(null);
     }
-  };
+  }, [updateStatus, refetch]);
 
-  // Split orders into active (not delivered/cancelled) and completed
+  // Listen for rider assignment events to auto-refresh (hooks BEFORE any early returns)
+  useSocketEvent(
+    SOCKET_EVENTS.RIDER_ASSIGNED,
+    useCallback(
+      (payload: unknown) => {
+        const data = payload as RiderAssignedPayload;
+        if (data?.order?.restaurantId === restaurant?._id) {
+          refetch();
+        }
+      },
+      [refetch, restaurant?._id],
+    ),
+  );
+
+  // Split orders into active and completed
   const activeOrders =
     orders?.filter(
       (o) => o.status !== "delivered" && o.status !== "cancelled" && o.status !== "rider_assigned" && o.status !== "picked_up",
@@ -265,6 +280,8 @@ export default function SellerOrdersPage() {
     orders?.filter(
       (o) => o.status === "delivered" || o.status === "cancelled" || o.status === "rider_assigned" || o.status === "picked_up",
     ) || [];
+
+  // ─── Early returns AFTER all hooks ─────────────────────────
 
   if (loadingRestaurant) {
     return (
@@ -289,22 +306,6 @@ export default function SellerOrdersPage() {
       </RoleGuard>
     );
   }
-
-  // Listen for rider assignment events to auto-refresh
-  useSocketEvent(
-    SOCKET_EVENTS.RIDER_ASSIGNED,
-    useCallback(
-      (payload: unknown) => {
-        const data = payload as RiderAssignedPayload;
-        if (data?.order?.restaurantId === restaurant?._id) {
-          refetch();
-        }
-      },
-      [refetch, restaurant?._id],
-    ),
-  );
-
-  const [notification, setNotification] = useState<string | null>(null);
 
   return (
     <RoleGuard allowedRoles={["seller"]}>

@@ -8,6 +8,17 @@ import { IMenuItem } from "../models/MenuItem.js";
 import axios from "axios";
 import { publishEvent } from "../config/order.publisher.js";
 
+// Fire-and-forget realtime notification (non-blocking)
+function notifyRealtime(event: string, room: string, payload: unknown) {
+  axios
+    .post(
+      `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
+      { event, room, payload },
+      { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+    )
+    .catch((err) => console.error(`Realtime notify failed (${event}):`, err?.message));
+}
+
 export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     throw new Error("User not found");
@@ -213,22 +224,10 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   order.status = status;
   await order.save();
 
-  await axios.post(
-    `${process.env.REALTIME_SERVICE_URL}/api/v1/internal/emit`,
-    {
-      event: "order:update",
-      room: `user:${order.userId}`,
-      payload: {
-        orderId: order._id,
-        status: order.status,
-      },
-    },
-    {
-      headers: {
-        "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-      },
-    },
-  );
+  notifyRealtime("order:update", `user:${order.userId}`, {
+    orderId: order._id,
+    status: order.status,
+  });
 
   if(status === "ready_for_rider") {
     console.log("Order is ready for rider",order._id)
@@ -302,7 +301,7 @@ export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Forbidden");
   }
 
-  const { orderId, riderId, riderName, riderPhone } = req.params;
+  const { orderId, riderId, riderName, riderPhone } = req.body;
 
   if (!orderId) {
     throw new Error("Order ID is required");
@@ -323,19 +322,9 @@ export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
     status: "rider_assigned",
   }, { new: true });
 
-   await axios.post(
-    `${process.env.REALTIME_SERVICE_URL}/api/v1/internal/emit`,
-    {
-      event: "order:rider_assigned",
-      room: `restaurant:${orderUpdate?.restaurantId}`,
-      payload: {order: orderUpdate},
-    },
-    {
-      headers: {
-        "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-      },
-    },
-  );
+  notifyRealtime("order:rider_assigned", `restaurant:${orderUpdate?.restaurantId}`, {
+    order: orderUpdate,
+  });
 
   return res.status(200).json({
     success: true,
@@ -387,19 +376,7 @@ export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => 
     order.status = "picked_up";
     await order.save();
 
-     await axios.post(
-    `${process.env.REALTIME_SERVICE_URL}/api/v1/internal/emit`,
-    {
-      event: "order:rider_assigned",
-      room: `user:${order.userId}`,
-      payload: order,
-    },
-    {
-      headers: {
-        "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-      },
-    },
-  );
+    notifyRealtime("order:rider_assigned", `user:${order.userId}`, order);
 
   return res.json({
     success: true,
@@ -411,19 +388,7 @@ export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => 
     order.status = "delivered";
     await order.save();
 
-     await axios.post(
-    `${process.env.REALTIME_SERVICE_URL}/api/v1/internal/emit`,
-    {
-      event: "order:delivered",
-      room: `user:${order.userId}`,
-      payload: order,
-    },
-    {
-      headers: {
-        "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-      },
-    },
-  );
+    notifyRealtime("order:delivered", `user:${order.userId}`, order);
 
   return res.json({
     success: true,

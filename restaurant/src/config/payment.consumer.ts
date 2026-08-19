@@ -4,6 +4,10 @@ import axios from "axios";
 
 export const startPaymentConsumer = async () => {
   const channel = getChannel();
+  if (!channel) {
+    console.error("RabbitMQ channel not available, payment consumer not started");
+    return;
+  }
 
   channel.consume(process.env.PAYMENT_QUEUE!, async (msg) => {
     if (!msg) {
@@ -39,7 +43,7 @@ export const startPaymentConsumer = async () => {
       console.log("Order updated:", order);
 
       await axios.post(
-        `${process.env.REALTIME_SERVICE_URL}/api/v1/internal/emit`,
+        `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
         {
           event: "order:new",
           room: `restaurant:${order.restaurantId}`,

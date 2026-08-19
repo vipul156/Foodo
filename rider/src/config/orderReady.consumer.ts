@@ -5,6 +5,11 @@ import { Rider } from "../model/Rider.js";
 export const startOrderReadyConsumer = async() => {
     const channel = getChannel()
 
+    if (!channel) {
+        console.error("RabbitMQ channel not available, order ready consumer not started");
+        return;
+    }
+
     console.log("Starting to consume from:", process.env.ORDER_QUEUE!)
 
     channel.consume(process.env.ORDER_QUEUE!, async(msg) =>{
@@ -20,19 +25,21 @@ export const startOrderReadyConsumer = async() => {
 
             const {orderId, restaurantId, location} = event.data
             
+            // Find available riders within 10km of the restaurant
             const riders = await Rider.find({
                 isAvailable: true,
                 isVerified: true,
                 location:{
                     $near: {
                         $geometry: location,
-                        $maxDistance: 500,
+                        $maxDistance: 10000, // 10km in meters
                     }
                 }
             })
 
+            console.log(`Found ${riders.length} available riders for order ${orderId}`)
+
             if(riders.length === 0){
-                // No riders available, send notification to restaurant
                 console.log("No riders available for order:", orderId)
                 channel.ack(msg)
                 return;
@@ -40,7 +47,7 @@ export const startOrderReadyConsumer = async() => {
 
             for(const rider of riders){
                 try{
-                  await axios.post(`${process.env.REALTIME_SERVICE}/api/v1/internal/emit`, {
+                  await axios.post(`${process.env.REALTIME_SERVICE_URL}/api/internal/emit`, {
                     event: "order:available",
                     room: `user:${rider.userId}`,
                     payload: {orderId, restaurantId}
@@ -53,12 +60,15 @@ export const startOrderReadyConsumer = async() => {
                 );
                     
                 } catch(error){
-                    console.error("Error assigning order to rider:", error)
+                    console.error("Error notifying rider:", rider.userId, error?.message)
                 }
             }
             channel.ack(msg)
         } catch(error){
             console.error("Error processing order ready event:", error)
+            channel.ack(msg)
         }
     })
+
+    console.log("Order ready consumer started")
 }

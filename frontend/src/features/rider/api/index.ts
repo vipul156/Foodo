@@ -62,12 +62,11 @@ export function useGetCurrentOrder() {
         }>("/order/current");
         return res.order;
       } catch {
-        // No current order — return null so polling continues to work
         return null;
       }
     },
     retry: false,
-    refetchInterval: 1000 * 30, // Poll every 30 seconds
+    refetchInterval: 1000 * 15,
   });
 }
 

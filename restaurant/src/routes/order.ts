@@ -21,6 +21,6 @@ router.get("/my", isAuth, getMyOrders);
 router.get("/:orderId", isAuth, fetchSingleOrder);
 router.put("/assign/rider", assignOrderToRider);
 router.get("/current/rider", getCurrentOrdersForRider);
-router.put("/update/status/rider", updateOrderStatus);
+router.put("/update/status/rider", updateOrderStatusRider);
 
 export { router as orderRouter };

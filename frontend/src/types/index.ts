@@ -141,7 +141,7 @@ export type OrderStatus =
   | "delivered"
   | "cancelled";
 
-export type PaymentMethod = "razorpay" | "stripe";
+export type PaymentMethod = "razorpay" | "stripe" | "cod";
 export type PaymentStatus = "pending" | "paid" | "failed";
 
 export interface IOrderItem {

@@ -33,14 +33,14 @@ export interface IOrder extends Document {
   status:
     | "placed"
     | "accepted"
-    | "preaparing"
+    | "preparing"
     | "ready_for_rider"
     | "rider_assigned"
     | "picked_up"
     | "delivered"
     | "cancelled";
 
-  paymentMethod: "razorpay" | "stripe";
+  paymentMethod: "razorpay" | "stripe" | "cod";
   paymentStatus: "pending" | "paid" | "failed";
 
   expiresAt: Date;
@@ -86,7 +86,7 @@ const orderSchema = new Schema<IOrder>({
     enum: [
       "placed",
       "accepted",
-      "preaparing",
+      "preparing",
       "ready_for_rider",
       "rider_assigned",
       "picked_up",
@@ -98,13 +98,13 @@ const orderSchema = new Schema<IOrder>({
 
   paymentMethod: {
     type: String,
-    enum: ["razorpay","stripe"],
+    enum: ["razorpay", "stripe", "cod"],
     required: true,
   },
 
   paymentStatus: {
     type: String,
-    enum: ["pending","paid", "failed"],
+    enum: ["pending", "paid", "failed"],
     default: "pending",
   },
 

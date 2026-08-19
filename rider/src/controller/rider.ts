@@ -178,7 +178,7 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
 
   if (!rider) {
     return res.status(404).json({
-      message: "Rider not found",
+      message: "Rider not found or not available",
     });
   }
 
@@ -257,7 +257,6 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Error fetching current order",
-      error,
     });
   }
 });
@@ -300,8 +299,7 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     });
   } catch (error) {
     return res.status(500).json({
-      message: "Error updating order status",
-      error,
+      message: "Error updating current order",
     });
   }
 });
