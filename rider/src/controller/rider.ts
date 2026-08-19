@@ -30,7 +30,7 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
   }
 
   const { data } = await axios.post(
-    `${process.env.UTILS_SERVICE_URL}/api/upload`,
+    `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
     {
       buffer: fileBuffer.content,
     },
@@ -184,7 +184,7 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
 
   try {
     const { data } = await axios.put(
-      `${process.env.RESTAURANT_SERVICE}/api/order/assign/rider`,
+      `${process.env.RESTAURANT_SERVICE_URL}/api/order/assign/rider`,
       {
         riderId: rider._id,
         orderId,
@@ -242,7 +242,7 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
 
   try {
     const { data } = await axios.get(
-      `${process.env.RESTAURANT_SERVICE}/api/order/current/rider?riderId=${rider._id}`,
+      `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
       {
         headers: {
           "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
@@ -283,7 +283,7 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
 
   try {
     const { data } = await axios.put(
-      `${process.env.RESTAURANT_SERVICE}/api/order/update/status/rider`,
+      `${process.env.RESTAURANT_SERVICE_URL}/api/order/update/status/rider`,
       {
        orderId
       },

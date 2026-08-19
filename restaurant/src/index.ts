@@ -33,7 +33,7 @@ app.use("/api/restaurant", restaurantRouter)
 app.use("/api/menu-item", menuItemRouter)
 app.use("/api/cart", cartRouter)
 app.use("/api/order", orderRouter)
-app.use("api/address", addressRoute)
+app.use("/api/address", addressRoute)
 
 const PORT = process.env.PORT || 3003
 

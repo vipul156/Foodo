@@ -37,39 +37,39 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/restaurant/:path*",
-        destination: `${RESTAURANT_SERVICE_URL}/restaurant/:path*`,
+        destination: `${RESTAURANT_SERVICE_URL}/api/restaurant/:path*`,
       },
       {
         source: "/api/menu-item/:path*",
-        destination: `${RESTAURANT_SERVICE_URL}/menu-item/:path*`,
+        destination: `${RESTAURANT_SERVICE_URL}/api/menu-item/:path*`,
       },
       {
         source: "/api/cart/:path*",
-        destination: `${RESTAURANT_SERVICE_URL}/cart/:path*`,
+        destination: `${RESTAURANT_SERVICE_URL}/api/cart/:path*`,
       },
       {
         source: "/api/order/:path*",
-        destination: `${RESTAURANT_SERVICE_URL}/order/:path*`,
+        destination: `${RESTAURANT_SERVICE_URL}/api/order/:path*`,
       },
       {
         source: "/api/address/:path*",
-        destination: `${RESTAURANT_SERVICE_URL}/address/:path*`,
+        destination: `${RESTAURANT_SERVICE_URL}/api/address/:path*`,
       },
       {
         source: "/api/rider/:path*",
-        destination: `${RIDER_SERVICE_URL}/rider/:path*`,
+        destination: `${RIDER_SERVICE_URL}/api/rider/:path*`,
       },
       {
         source: "/api/admin/:path*",
-        destination: `${ADMIN_SERVICE_URL}/api/:path*`,
+        destination: `${ADMIN_SERVICE_URL}/api/admin/:path*`,
       },
       {
         source: "/api/internal/:path*",
-        destination: `${REALTIME_SERVICE_URL}/api/v1/internal/:path*`,
+        destination: `${REALTIME_SERVICE_URL}/api/internal/:path*`,
       },
       {
         source: "/api/utils/:path*",
-        destination: `${UTILS_SERVICE_URL}/:path*`,
+        destination: `${UTILS_SERVICE_URL}/api/utils/:path*`,
       },
     ];
   },

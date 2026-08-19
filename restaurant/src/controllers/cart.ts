@@ -20,8 +20,8 @@ export const addToCart = tryCatch(async (req: AuthRequest, res) => {
   }
 
   const cartFromDifferentRestaurant = await Cart.findOne({
-    user: userId,
-    restaurant: { $ne: restaurantId },
+    userId,
+    restaurantId: { $ne: restaurantId },
   });
 
   if (cartFromDifferentRestaurant) {
@@ -32,8 +32,8 @@ export const addToCart = tryCatch(async (req: AuthRequest, res) => {
   }
 
   const cart = await Cart.findOneAndUpdate(
-    { user: userId, restaurant: restaurantId },
-    { $inc: { quantity: 1 }, $setOnInsert: { userId, restaurantId, itemId } },
+    { userId, restaurantId, itemId },
+    { $inc: { quantity: 1 } },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 
@@ -47,7 +47,7 @@ export const getCart = tryCatch(async (req: AuthRequest, res) => {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
   const userId = req.user._id;
-  const cart = await Cart.find({ user: userId })
+  const cart = await Cart.find({ userId })
     .populate("itemId")
     .populate("restaurantId");
 
@@ -56,6 +56,9 @@ export const getCart = tryCatch(async (req: AuthRequest, res) => {
 
   for (const cartItem of cart) {
     const item: any = cartItem.itemId;
+
+    // Skip items whose MenuItem no longer exists (populate returns null)
+    if (!item) continue;
 
     subtotal += item.price * cartItem.quantity;
     cartLength += cartItem.quantity;
@@ -118,6 +121,28 @@ export const decrementQuantity = tryCatch(async (req: AuthRequest, res) => {
   }
 
   return res.status(200).json({ success: true, message: "Quantity decreased" });
+});
+
+export const removeItem = tryCatch(async (req: AuthRequest, res) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  const userId = req.user._id;
+  const { itemId } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(itemId)) {
+    return res.status(400).json({ success: false, message: "Invalid item id" });
+  }
+
+  const result = await Cart.deleteOne({ userId, itemId });
+
+  if (result.deletedCount === 0) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Item not found in cart" });
+  }
+
+  return res.status(200).json({ success: true, message: "Item removed from cart" });
 });
 
 export const clearCart = tryCatch(async (req: AuthRequest, res) => {

@@ -80,12 +80,12 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   const deliveryFee = subtotal < 250 ? 49 : 0;
   const platformFee = 7;
   const totalAmount = subtotal + deliveryFee + platformFee;
+  const orderDistance = Number(distance) || 5;
+  const riderAmount = Math.ceil(orderDistance) * 17;
 
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
   const [longitude, latitude] = address.location.coordinates;
-
-  const riderAmount = Math.ceil(distance) * 17;
 
   const order = await Order.create({
     userId: req.user._id.toString(),
@@ -99,6 +99,8 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     deliveryFee,
     platformFee,
     totalAmount,
+    distance: orderDistance,
+    riderAmount,
     expiresAt,
     deliveryAddress: {
       formattedAddress: address.formatterAddress,

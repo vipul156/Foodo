@@ -76,13 +76,32 @@ export default function RiderDashboardPage() {
   const isVerified = rider?.isVerified ?? false;
 
   const handleToggleAvailability = () => {
-    // TODO: Use browser Geolocation API to get real coordinates
-    // navigator.geolocation.getCurrentPosition((pos) => { ... })
-    toggleAvailability.mutate({
-      isAvailable: !isAvailable,
-      latitude: 0,
-      longitude: 0,
-    });
+    if (!navigator.geolocation) {
+      toggleAvailability.mutate({
+        isAvailable: !isAvailable,
+        latitude: 0,
+        longitude: 0,
+      });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        toggleAvailability.mutate({
+          isAvailable: !isAvailable,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      },
+      () => {
+        // Geolocation denied or unavailable — fall back to 0,0
+        toggleAvailability.mutate({
+          isAvailable: !isAvailable,
+          latitude: 0,
+          longitude: 0,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
   };
 
   return (

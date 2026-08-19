@@ -26,7 +26,7 @@ export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   }
 
   const { data } = await axios.post(
-    `${process.env.UTILS_SERVICE_URL}/api/upload`,
+    `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
     {
       buffer: fileBuffer.content,
     },

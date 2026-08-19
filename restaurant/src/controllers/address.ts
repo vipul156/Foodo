@@ -4,15 +4,19 @@ import { tryCatch } from "../middlewares/trycatch.js";
 import { Address } from "../models/Address.js";
 
 export const createAddress = tryCatch(async (req: AuthRequest, res) => {
-  const { user } = req.user!;
+  const user = req.user;
   if (!user) {
     throw new Error("User not found");
   }
 
   const { mobile, formatterAddress, latitude, longitude } = req.body;
 
-  if (!mobile || !formatterAddress || !latitude || !longitude) {
-    throw new Error("All fields are required");
+  if (!mobile || !formatterAddress) {
+    throw new Error("Mobile and address are required");
+  }
+
+  if (latitude == null || longitude == null) {
+    throw new Error("Location coordinates are required");
   }
 
   const newAddress = await Address.create({
@@ -33,7 +37,7 @@ export const createAddress = tryCatch(async (req: AuthRequest, res) => {
 });
 
 export const deleteAddress = tryCatch(async (req: AuthRequest, res) => {
-  const { user } = req.user!;
+  const user = req.user;
   if (!user) {
     throw new Error("User not found");
   }
@@ -62,7 +66,7 @@ export const deleteAddress = tryCatch(async (req: AuthRequest, res) => {
 });
 
 export const getMyAddresses = tryCatch(async (req: AuthRequest, res) => {
-  const { user } = req.user!;
+  const user = req.user;
   if (!user) {
     throw new Error("User not found");
   }

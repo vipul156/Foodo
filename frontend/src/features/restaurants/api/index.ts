@@ -248,6 +248,58 @@ export function useAddToCart() {
   });
 }
 
+export function useIncrementQuantity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.put<{
+        success: boolean;
+        message: string;
+        cartItem: ICartItem;
+      }>("/cart/increase", { itemId });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useDecrementQuantity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.put<{
+        success: boolean;
+        message: string;
+      }>("/cart/decrease", { itemId });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useRemoveItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.delete<{
+        success: boolean;
+        message: string;
+      }>("/cart/remove", { data: { itemId } });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
 export function useClearCart() {
   const queryClient = useQueryClient();
 

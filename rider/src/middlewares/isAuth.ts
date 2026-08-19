@@ -59,11 +59,10 @@ export const isRider = (
   next: NextFunction,
 ) => {
   const user = req.user;
-  if (user && user.role != "rider") {
+  if (!user || user.role != "rider") {
     return res.status(401).json({
       message: "You are not authorized rider",
     });
-    return;
   }
   next();
 };

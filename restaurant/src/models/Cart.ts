@@ -31,7 +31,8 @@ const cartSchema = new mongoose.Schema<ICart>({
     quantity: {
         type: Number,
         required: true,
-        min: 1
+        min: 1,
+        default: 1
     },
 }, {
     timestamps: true

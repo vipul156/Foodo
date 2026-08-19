@@ -47,7 +47,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
     }
 
     const { data } = await axios.post(
-      `${process.env.UTILS_SERVICE_URL}/api/upload`,
+      `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
       { buffer },
     );
     imageUrl = data.url;
@@ -145,7 +145,7 @@ export const updateRestaurantDetails = tryCatch(
       const buffer = typeof file === "string" ? file : dataUri(file)?.content;
       if (buffer) {
         const { data } = await axios.post(
-          `${process.env.UTILS_SERVICE_URL}/api/upload`,
+          `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
           { buffer },
         );
         updateFields.image = data.url;
