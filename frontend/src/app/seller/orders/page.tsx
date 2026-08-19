@@ -16,6 +16,7 @@ import { useSocketEvent } from "@/hooks/use-socket-event";
 import {
   SOCKET_EVENTS,
   type RiderAssignedPayload,
+  type OrderNewPayload,
 } from "@/lib/socket-events";
 import type { IOrder, OrderStatus } from "@/types";
 import {
@@ -257,7 +258,23 @@ export default function SellerOrdersPage() {
     }
   }, [updateStatus, refetch]);
 
-  // Listen for rider assignment events to auto-refresh (hooks BEFORE any early returns)
+  // Listen for new orders (payment completed) — auto-refresh + show notification
+  useSocketEvent(
+    SOCKET_EVENTS.ORDER_NEW,
+    useCallback(
+      (payload: unknown) => {
+        const data = payload as OrderNewPayload;
+        if (data?.orderId) {
+          setNotification("📦 New order received!");
+          refetch();
+          setTimeout(() => setNotification(null), 5000);
+        }
+      },
+      [refetch],
+    ),
+  );
+
+  // Listen for rider assignment events to auto-refresh
   useSocketEvent(
     SOCKET_EVENTS.RIDER_ASSIGNED,
     useCallback(

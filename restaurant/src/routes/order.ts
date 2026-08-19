@@ -8,6 +8,7 @@ import {
   fetchSingleOrder,
   assignOrderToRider,
   getCurrentOrdersForRider,
+  updateOrderStatusRider,
 } from "../controllers/order.js";
 import { isAuth, isSeller } from "../middlewares/isAuth.js";
 
