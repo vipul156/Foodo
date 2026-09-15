@@ -235,7 +235,12 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     await publishEvent("order:ready_for_rider", {
       orderId: order._id,
       restaurantId: restaurant._id,
-      location: restaurant.autoLocation,
+      // Plain GeoJSON object — Mongoose subdocs carry $-prefixed keys that
+      // break $near on the rider service's geo query.
+      location: {
+        type: "Point",
+        coordinates: restaurant.autoLocation.coordinates,
+      },
     });
     
     console.log("Event published")

@@ -10,7 +10,7 @@ import { MenuItem } from "../models/MenuItem.js";
 
 const DEMO_SELLER_EMAIL = "restaurant@demo.com";
 
-const RESTAURANT_SEED = {
+const RESTAURANT_SEED_BASE = {
   name: "Spice Villa",
   description:
     "North Indian kitchen serving buttery curries, smoky tandoori and fresh-baked naan since 1998.",
@@ -19,12 +19,24 @@ const RESTAURANT_SEED = {
   phone: 9876543210,
   isVerified: true,
   isOpen: true,
-  autoLocation: {
-    type: "Point" as const,
-    coordinates: [77.5946, 12.9716] as [number, number], // Bangalore
-    formattedAddress: "12, Church Street, Bengaluru, Karnataka 560001",
-  },
 };
+
+// Default: Delhi city centre. Overridden at seed time by the demo
+// rider's live location so the ~10km rider-matching radius always holds.
+const DEFAULT_LOCATION = {
+  type: "Point" as const,
+  coordinates: [77.2167, 28.6328] as [number, number], // Connaught Place, Delhi
+  formattedAddress: "1, Foodo Demo Kitchen, Connaught Place, New Delhi",
+};
+
+// ~500m east of the rider so the pairing looks natural on a map
+const snapNearRider = (
+  coords: [number, number],
+): { type: "Point"; coordinates: [number, number]; formattedAddress: string } => ({
+  type: "Point",
+  coordinates: [coords[0] + 0.005, coords[1]],
+  formattedAddress: "Foodo Demo Kitchen (near demo rider)",
+});
 
 // Prices in rupees, matching the ₹ formatting used across the frontend
 const MENU_SEED = [
@@ -91,10 +103,25 @@ export const seedDemoRestaurant = async (): Promise<void> => {
       return;
     }
 
+    // Prefer the demo rider's live location so "$near" matching in the
+    // order-ready consumer (10km radius) succeeds in the tester's city.
+    const RiderModel: mongoose.Model<any> =
+      (mongoose.models.Rider as mongoose.Model<any>) ??
+      mongoose.model("Rider", new mongoose.Schema({}, { strict: false }));
+    const demoRider = await RiderModel.findOne({ isVerified: true });
+
+    const riderCoords = demoRider?.location?.coordinates as
+      | [number, number]
+      | undefined;
+    const autoLocation =
+      riderCoords && riderCoords.length === 2
+        ? snapNearRider(riderCoords)
+        : DEFAULT_LOCATION;
+
     const restaurant = await upsert(
       Restaurant,
       { ownerId: seller._id.toString() },
-      RESTAURANT_SEED,
+      { ...RESTAURANT_SEED_BASE, autoLocation },
     );
 
     for (const item of MENU_SEED) {
@@ -105,7 +132,10 @@ export const seedDemoRestaurant = async (): Promise<void> => {
       restaurantId: restaurant._id,
     });
     console.log(
-      `[seed] Demo restaurant "${RESTAURANT_SEED.name}" ready with ${menuCount} menu items`,
+      `[seed] Demo restaurant "${RESTAURANT_SEED_BASE.name}" ready with ${menuCount} menu items` +
+        (riderCoords
+          ? " (located near demo rider)"
+          : " (default location — demo rider profile not found)"),
     );
   } catch (error) {
     console.error("[seed] Demo restaurant seeding failed:", error);
