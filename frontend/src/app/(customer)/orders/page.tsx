@@ -64,7 +64,7 @@ function useOrderSocket(refetch: () => void) {
     useCallback(
       (payload: unknown) => {
         refetch();
-        setNotification("Your rider is on the way! 🛵");
+        setNotification("Your rider is on the way!");
       },
       [refetch],
     ),
@@ -76,7 +76,7 @@ function useOrderSocket(refetch: () => void) {
     useCallback(
       (payload: unknown) => {
         refetch();
-        setNotification("Your order has been delivered! Enjoy your meal 🎉");
+        setNotification("Your order has been delivered! Enjoy your meal");
       },
       [refetch],
     ),

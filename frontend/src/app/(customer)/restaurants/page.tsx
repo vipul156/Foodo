@@ -107,7 +107,7 @@ function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
   return (
     <Link href={`/restaurants/${restaurant._id}`}>
       <GlassCard hover className="overflow-hidden p-0 cursor-pointer group h-full">
-        <div className="aspect-[16/9] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative overflow-hidden">
+        <div className="aspect-[16/9] bg-primary/10 flex items-center justify-center relative overflow-hidden">
           {restaurant.image ? (
             <img
               src={restaurant.image}
@@ -118,7 +118,7 @@ function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
             <UtensilsCrossed className="h-12 w-12 text-primary/40" />
           )}
           {restaurant.isOpen && (
-            <span className="absolute top-3 right-3 rounded-full bg-green-500/90 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+            <span className="absolute top-3 right-3 rounded-full bg-emerald-700 px-2.5 py-0.5 text-[10px] font-semibold text-white">
               Open
             </span>
           )}

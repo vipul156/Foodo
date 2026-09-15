@@ -110,9 +110,7 @@ export default function RiderDashboardPage() {
         {/* Status Banner */}
         <div
           className={`rounded-2xl p-6 text-white transition-colors ${
-            isAvailable
-              ? "bg-gradient-to-br from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-800"
-              : "bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-800"
+            isAvailable ? "bg-emerald-600" : "bg-amber-600"
           }`}
         >
           <div className="flex items-center justify-between mb-4">
@@ -151,10 +149,14 @@ export default function RiderDashboardPage() {
 
         {/* Available Order Notification (from socket) */}
         {availableOrder && !currentOrder && (
-          <GlassCard className="border-2 border-primary/40 bg-gradient-to-br from-primary/5 to-transparent animate-in slide-in-from-top-2">
+          <GlassCard className="border-2 border-primary/40 animate-in slide-in-from-top-2">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-primary">New Order Available! 🎯</h3>
-              <span className="animate-pulse flex h-2 w-2 rounded-full bg-primary" />
+              <h3 className="font-semibold text-primary">New order available</h3>
+              <span
+                className="flex h-2 w-2 rounded-full bg-primary"
+                role="status"
+                aria-label="Live update"
+              />
             </div>
             <p className="text-sm text-muted-foreground mb-4">
               A new delivery order is available near you. Tap to accept!
@@ -229,7 +231,6 @@ export default function RiderDashboardPage() {
             </div>
           ) : (
             <div className="rounded-xl bg-muted/50 p-4 text-center">
-              <p className="text-3xl mb-2">🛵</p>
               <p className="text-sm font-medium">No active deliveries</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Waiting for new orders...

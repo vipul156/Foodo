@@ -21,6 +21,8 @@ import {
   ArrowRight,
   Loader2,
   Store,
+  Bike,
+  Settings,
   AlertCircle,
 } from "lucide-react";
 
@@ -38,7 +40,7 @@ export default function CustomerHomePage() {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       {/* Hero Section — Auth-Aware */}
-      <section className="relative mb-16 overflow-hidden rounded-3xl bg-gradient-to-br from-primary/10 via-primary/5 to-blue-500/5 p-8 sm:p-12 lg:p-16">
+      <section className="relative mb-16 overflow-hidden rounded-3xl bg-primary/5 p-8 sm:p-12 lg:p-16">
         <div className="relative z-10 max-w-2xl">
           {isAuthenticated ? (
             <>
@@ -46,10 +48,7 @@ export default function CustomerHomePage() {
                 Welcome back, {user?.name?.split(" ")[0] || "there"}!
               </span>
               <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-                Hungry again?{" "}
-                <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                  Order now
-                </span>
+                Hungry again? Order now
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
                 Your favorite restaurants are just a tap away. Order
@@ -83,10 +82,7 @@ export default function CustomerHomePage() {
                 India&apos;s favorite food delivery
               </span>
               <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-                Delicious food,{" "}
-                <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                  delivered
-                </span>
+                Delicious food, delivered
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
                 Browse restaurants near you and order your favorites.
@@ -133,17 +129,23 @@ export default function CustomerHomePage() {
 
         {/* Decorative background elements */}
         <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-primary/5 blur-3xl" />
       </section>
 
       {/* Role-based Dashboard Prompt (for sellers/riders/admin) */}
       {isAuthenticated && user?.role && user.role !== "customer" && (
         <section className="mb-16">
-          <GlassCard className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+          <GlassCard className="overflow-hidden border-primary/20">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6">
               <div className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-2xl">
-                  {user.role === "seller" ? "🍽️" : user.role === "rider" ? "🛵" : "⚙️"}
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  {user.role === "seller" ? (
+                    <Store className="h-6 w-6 text-primary" />
+                  ) : user.role === "rider" ? (
+                    <Bike className="h-6 w-6 text-primary" />
+                  ) : (
+                    <Settings className="h-6 w-6 text-primary" />
+                  )}
                 </span>
                 <div>
                   <h3 className="text-lg font-semibold">
@@ -267,7 +269,7 @@ export default function CustomerHomePage() {
 
       {/* Call to Action (for guests) */}
       {!isAuthenticated && (
-        <section className="mb-16 rounded-3xl bg-gradient-to-br from-primary to-primary/80 p-8 sm:p-12 text-center text-primary-foreground">
+        <section className="mb-16 rounded-3xl bg-primary p-8 sm:p-12 text-center text-primary-foreground">
           <h2 className="text-3xl font-bold">Ready to order?</h2>
           <p className="mt-3 text-lg text-primary-foreground/80 max-w-md mx-auto">
             Join thousands of happy customers. Sign up today and get your first
@@ -301,8 +303,8 @@ export default function CustomerHomePage() {
           <div className="grid gap-6 sm:grid-cols-2">
             <GlassCard hover className="cursor-pointer p-6">
               <Link href="/register?role=seller" className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-2xl">
-                  🏪
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  <Store className="h-6 w-6 text-primary" />
                 </span>
                 <div>
                   <h3 className="font-semibold">Restaurant Owner</h3>
@@ -318,8 +320,8 @@ export default function CustomerHomePage() {
             </GlassCard>
             <GlassCard hover className="cursor-pointer p-6">
               <Link href="/register?role=rider" className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-2xl">
-                  🛵
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  <Bike className="h-6 w-6 text-primary" />
                 </span>
                 <div>
                   <h3 className="font-semibold">Delivery Rider</h3>
@@ -358,9 +360,6 @@ function HowItWorksCard({
       <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-4">
         <Icon className="h-7 w-7 text-primary" />
       </span>
-      <span className="block text-xs font-bold text-primary/60 mb-1 tracking-widest uppercase">
-        Step {step}
-      </span>
       <h3 className="text-lg font-semibold mb-2">{title}</h3>
       <p className="text-sm text-muted-foreground">{desc}</p>
     </div>
@@ -373,7 +372,7 @@ function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
   return (
     <Link href={`/restaurants/${restaurant._id}`}>
       <GlassCard hover className="overflow-hidden p-0 cursor-pointer group">
-        <div className="aspect-[16/9] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative overflow-hidden">
+        <div className="aspect-[16/9] bg-primary/10 flex items-center justify-center relative overflow-hidden">
           {restaurant.image ? (
             <img
               src={restaurant.image}
@@ -384,7 +383,7 @@ function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
             <UtensilsCrossed className="h-12 w-12 text-primary/40" />
           )}
           {restaurant.isOpen && (
-            <span className="absolute top-3 right-3 rounded-full bg-green-500/90 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+            <span className="absolute top-3 right-3 rounded-full bg-emerald-700 px-2.5 py-0.5 text-[10px] font-semibold text-white">
               Open
             </span>
           )}

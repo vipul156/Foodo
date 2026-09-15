@@ -52,7 +52,7 @@ const PremiumButton = forwardRef<HTMLButtonElement, PremiumButtonProps>(
 
           // Variants
           variant === "primary" &&
-            "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:brightness-110",
+            "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
           variant === "secondary" &&
             "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
           variant === "ghost" &&
@@ -60,7 +60,7 @@ const PremiumButton = forwardRef<HTMLButtonElement, PremiumButtonProps>(
           variant === "outline" &&
             "border border-border bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground",
           variant === "danger" &&
-            "bg-gradient-to-br from-destructive to-destructive/80 text-destructive-foreground shadow-lg shadow-destructive/25 hover:shadow-xl hover:shadow-destructive/30",
+            "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
 
           className,
         )}

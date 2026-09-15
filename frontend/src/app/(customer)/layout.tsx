@@ -51,9 +51,7 @@ export default function CustomerLayout({
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Logo */}
           <Link href="/" className="text-xl font-bold tracking-tight">
-            <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              Foodo
-            </span>
+          <span className="text-primary">Foodo</span>
           </Link>
 
           {/* Right side nav */}
@@ -169,9 +167,7 @@ export default function CustomerLayout({
       <footer className="border-t border-border/50 py-8 text-center text-sm text-muted-foreground">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <Link href="/" className="text-lg font-bold tracking-tight">
-            <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              Foodo
-            </span>
+          <span className="text-primary">Foodo</span>
           </Link>
           <p className="mt-2">
             &copy; {new Date().getFullYear()} Foodo. All rights reserved.

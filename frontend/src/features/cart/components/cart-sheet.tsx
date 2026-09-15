@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight } from "lucide-react";
+import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight, UtensilsCrossed } from "lucide-react";
 import { useGetCart, useClearCart, useIncrementQuantity, useDecrementQuantity, useRemoveItem } from "@/features/restaurants/api";
 import { useAuthStore } from "@/store/auth-store";
 import type { ICartItem } from "@/types";
@@ -171,8 +171,8 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
                     className="flex items-center gap-3 rounded-xl border border-border/50 bg-card p-3"
                   >
                     {/* Item image placeholder */}
-                    <div className="h-14 w-14 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center text-lg">
-                      🍽️
+                    <div className="h-14 w-14 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <UtensilsCrossed className="h-5 w-5 text-primary" aria-hidden="true" />
                     </div>
 
                     {/* Item details */}

@@ -10,19 +10,72 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn, User, Store, Bike, Zap } from "lucide-react";
 import { loginSchema, type LoginFormValues } from "@/features/auth/schemas";
 import { useLogin } from "@/features/auth/api";
-import type { IAuthResponse } from "@/types";
+import { useAuthStore } from "@/store/auth-store";
+import type { IAuthResponse, IUser, UserRole } from "@/types";
+
+// ─── Mock demo accounts (one per role) ───────────────────────
+
+interface MockAccount {
+  role: UserRole;
+  label: string;
+  subtitle: string;
+  name: string;
+  email: string;
+  password: string;
+  redirectTo: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge: string;
+}
+
+const MOCK_ACCOUNTS: MockAccount[] = [
+  {
+    role: "customer",
+    label: "Customer",
+    subtitle: "Browse & order food",
+    name: "Demo Customer",
+    email: "customer@demo.com",
+    password: "customer123",
+    redirectTo: "/",
+    icon: User,
+    badge: "bg-primary/10 text-primary",
+  },
+  {
+    role: "seller",
+    label: "Restaurant",
+    subtitle: "Manage menu & orders",
+    name: "Demo Restaurant",
+    email: "restaurant@demo.com",
+    password: "restaurant123",
+    redirectTo: "/seller",
+    icon: Store,
+    badge: "bg-secondary text-secondary-foreground",
+  },
+  {
+    role: "rider",
+    label: "Rider",
+    subtitle: "Deliver orders & earn",
+    name: "Demo Rider",
+    email: "rider@demo.com",
+    password: "rider123",
+    redirectTo: "/rider",
+    icon: Bike,
+    badge: "bg-primary/10 text-primary",
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const login = useLogin();
+  const { setUser } = useAuthStore();
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -39,6 +92,24 @@ export default function LoginPage() {
     } catch (err: unknown) {
       console.error("Login failed:", err);
     }
+  };
+
+  // ─── Mock login: set demo user directly and go to its dashboard ──
+  const handleMockLogin = (account: MockAccount) => {
+    const mockUser: IUser = {
+      _id: `mock-${account.role}-${account.label.toLowerCase()}`,
+      name: account.name,
+      email: account.email,
+      role: account.role,
+    };
+    setUser(mockUser);
+    router.push(account.redirectTo);
+  };
+
+  // Fill the form with a demo account's credentials
+  const handleFillCredentials = (account: MockAccount) => {
+    setValue("email", account.email, { shouldValidate: true });
+    setValue("password", account.password, { shouldValidate: true });
   };
 
   return (
@@ -131,6 +202,65 @@ export default function LoginPage() {
           {(login.error as Error).message}
         </p>
       )}
+
+      {/* ─── Mock Roles — Quick Demo Access ─────────────────── */}
+      <div className="my-6 flex items-center gap-3">
+        <span className="h-px flex-1 bg-border" />
+        <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <Zap className="h-3.5 w-3.5" />
+          Demo Login
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      <div className="space-y-2.5">
+        {MOCK_ACCOUNTS.map((account) => {
+          const Icon = account.icon;
+          return (
+            <div
+              key={account.role}
+              className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 transition-colors hover:bg-accent/50"
+            >
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${account.badge}`}
+              >
+                <Icon className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold">{account.label}</p>
+                  <span className="hidden truncate text-xs text-muted-foreground sm:block">
+                    {account.email}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {account.subtitle}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleFillCredentials(account)}
+                className="hidden shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground sm:block"
+                title="Fill credentials into the form"
+              >
+                Fill
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                className="shrink-0 h-8"
+                onClick={() => handleMockLogin(account)}
+              >
+                Get Logged In
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        Mock accounts skip the server and log you straight into each
+        role&apos;s dashboard.
+      </p>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}

@@ -39,9 +39,7 @@ export default function RiderLayout({
       {/* Top Bar */}
       <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-xl px-4">
         <span className="text-lg font-bold tracking-tight">
-          <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-            Foodo
-          </span>
+          <span className="text-primary">Foodo</span>
           <span className="ml-1 text-xs font-normal text-muted-foreground">
             Rider
           </span>
@@ -52,9 +50,11 @@ export default function RiderLayout({
           {/* Profile dropdown */}
           <div className="relative" ref={dropdownRef}>
             <button
+              type="button"
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-              aria-label="Profile"
+              aria-label="Profile menu"
+              aria-haspopup="menu"
               aria-expanded={dropdownOpen}
             >
               {user?.name?.charAt(0)?.toUpperCase() || <User className="h-4 w-4" />}

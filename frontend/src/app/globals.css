@@ -127,4 +127,59 @@
   html {
     @apply font-sans;
   }
+
+  /* Headings wrap gracefully instead of leaving orphan words */
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+  }
+
+  /* Body copy breathes: no last line hanging alone */
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Keyboard focus is always visible, in both themes */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Real text selection, caret, and scrollbars — themed, not browser-default */
+  ::selection {
+    background-color: color-mix(in oklch, var(--primary) 20%, transparent);
+  }
+
+  ::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 20%, transparent) transparent;
+  }
+}
+
+/* Motion sensitivity: disable decorative entrances/transitions. state changes stay
+   instant and complete — opacity is preserved so feedback and hierarchy survive. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Consistent elevation tokens: soft, offset shadows (never flat halos) */
+:root {
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.04), 0 8px 24px -12px oklch(0 0 0 / 0.12);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.05), 0 16px 32px -12px oklch(0 0 0 / 0.16);
+}
+
+.dark {
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px -12px oklch(0 0 0 / 0.6);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.45), 0 16px 32px -12px oklch(0 0 0 / 0.7);
 }

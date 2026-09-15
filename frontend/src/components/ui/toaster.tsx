@@ -52,7 +52,11 @@ export function Toaster({ children }: { children?: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm">
+      <div
+        aria-live="polite"
+        aria-atomic="false"
+        className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm"
+      >
         {toasts.map((toast) => (
           <ToastItem key={toast.id} toast={toast} onDismiss={removeToast} />
         ))}
@@ -81,19 +85,22 @@ function ToastItem({
 
   return (
     <div
+      role={variant === "error" ? "alert" : "status"}
       className={cn(
         "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-xl animate-in slide-in-from-right",
-        "bg-white dark:bg-black",
-        variant === "success" && "border-emerald-200 dark:border-emerald-800",
-        variant === "error" && "border-red-200 dark:border-red-800",
-        variant === "warning" && "border-amber-200 dark:border-amber-800",
+        "bg-background",
+        variant === "success" && "border-emerald-600/40",
+        variant === "error" && "border-destructive/40",
+        variant === "warning" && "border-amber-600/40",
         variant === "default" && "border-border",
       )}
     >
       <p className="flex-1 text-sm">{message}</p>
       <button
+        type="button"
         onClick={() => onDismiss(id)}
-        className="shrink-0 text-muted-foreground hover:text-foreground"
+        aria-label="Dismiss notification"
+        className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <X className="h-4 w-4" />
       </button>

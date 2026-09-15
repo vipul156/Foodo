@@ -42,9 +42,7 @@ export default function AdminLayout({
       <aside className="hidden lg:flex w-64 flex-col border-r border-border bg-background">
         <div className="flex h-16 items-center gap-2 border-b border-border/50 px-6">
           <span className="text-lg font-bold tracking-tight">
-            <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              Foodo
-            </span>
+            <span className="text-primary">Foodo</span>
             <span className="ml-1.5 text-xs font-normal text-muted-foreground">
               Admin
             </span>

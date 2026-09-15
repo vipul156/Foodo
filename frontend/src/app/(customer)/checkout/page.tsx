@@ -548,7 +548,7 @@ export default function CheckoutPage() {
                   UPI / Cards / Wallets
                 </span>
               </div>
-              <ShieldCheck className="h-4 w-4 text-green-500" />
+              <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
             </label>
 
             {/* Stripe */}
@@ -574,7 +574,7 @@ export default function CheckoutPage() {
                   International Cards
                 </span>
               </div>
-              <ShieldCheck className="h-4 w-4 text-blue-500" />
+              <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
             </label>
 
             {/* Cash on Delivery */}

@@ -113,7 +113,7 @@ export default function RestaurantDetailPage() {
       </div>
 
       {/* Restaurant Hero */}
-      <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 aspect-[21/9]">
+      <div className="relative mb-8 overflow-hidden rounded-2xl bg-primary/10 aspect-[21/9]">
         {restaurant.image ? (
           <img
             src={restaurant.image}
@@ -129,9 +129,7 @@ export default function RestaurantDetailPage() {
           <div className="flex items-center gap-3">
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                restaurant.isOpen
-                  ? "bg-green-500 text-white"
-                  : "bg-gray-500 text-white"
+                restaurant.isOpen ? "bg-emerald-700 text-white" : "bg-foreground/80 text-background"
               }`}
             >
               {restaurant.isOpen ? "Open" : "Closed"}
@@ -236,7 +234,7 @@ function MenuItemCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               {item.isAvailable ? (
-                <span className="inline-flex items-center gap-1 text-[10px] text-green-600 font-medium">
+                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
                   <Check className="h-3 w-3" /> Available
                 </span>
               ) : (
