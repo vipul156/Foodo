@@ -4,6 +4,7 @@ import connectDB from "./config/db.js";
 import cookieSession from "cookie-session";
 import cors from 'cors'
 import { authRoute } from "./routes/auth.js";
+import { seedDemoUsers } from "./seed/demo-users.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
@@ -33,5 +34,5 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log("Server is running on port ", PORT);
-  connectDB();
+  connectDB().then(() => seedDemoUsers());
 });

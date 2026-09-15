@@ -16,9 +16,11 @@ import { useLogin } from "@/features/auth/api";
 import { useAuthStore } from "@/store/auth-store";
 import type { IAuthResponse, IUser, UserRole } from "@/types";
 
-// ─── Mock demo accounts (one per role) ───────────────────────
+// ─── Demo accounts (one per role) ────────────────────────────
+// These users are seeded automatically by the auth service at startup
+// (auth/src/seed/demo-users.ts), so real login always works.
 
-interface MockAccount {
+interface DemoAccount {
   role: UserRole;
   label: string;
   subtitle: string;
@@ -30,7 +32,7 @@ interface MockAccount {
   badge: string;
 }
 
-const MOCK_ACCOUNTS: MockAccount[] = [
+const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     role: "customer",
     label: "Customer",
@@ -81,33 +83,52 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const routeForRole = (role?: string) =>
+    role === "seller"
+      ? "/seller"
+      : role === "rider"
+        ? "/rider"
+        : role === "admin"
+          ? "/admin"
+          : "/";
+
   const onSubmit = async (data: LoginFormValues) => {
     try {
       const result = await login.mutateAsync(data) as IAuthResponse;
-      // Route based on role
-      if (result?.user?.role === "seller") router.push("/seller");
-      else if (result?.user?.role === "rider") router.push("/rider");
-      else if (result?.user?.role === "admin") router.push("/admin");
-      else router.push("/");
+      router.push(routeForRole(result?.user?.role));
     } catch (err: unknown) {
       console.error("Login failed:", err);
     }
   };
 
-  // ─── Mock login: set demo user directly and go to its dashboard ──
-  const handleMockLogin = (account: MockAccount) => {
-    const mockUser: IUser = {
-      _id: `mock-${account.role}-${account.label.toLowerCase()}`,
-      name: account.name,
-      email: account.email,
-      role: account.role,
-    };
-    setUser(mockUser);
-    router.push(account.redirectTo);
+  // ─── Demo login: real auth against the seeded demo account ──
+  // Falls back to a local mock user if the auth server isn't running,
+  // so the UI stays explorable offline.
+  const handleDemoLogin = async (account: DemoAccount) => {
+    try {
+      const result = await login.mutateAsync({
+        email: account.email,
+        password: account.password,
+      }) as IAuthResponse;
+      router.push(routeForRole(result?.user?.role));
+    } catch (err: unknown) {
+      console.warn(
+        `[Demo Login] Server login failed for ${account.email}, using local mock user:`,
+        err,
+      );
+      const mockUser: IUser = {
+        _id: `demo-${account.role}`,
+        name: account.name,
+        email: account.email,
+        role: account.role,
+      };
+      setUser(mockUser);
+      router.push(account.redirectTo);
+    }
   };
 
   // Fill the form with a demo account's credentials
-  const handleFillCredentials = (account: MockAccount) => {
+  const handleFillCredentials = (account: DemoAccount) => {
     setValue("email", account.email, { shouldValidate: true });
     setValue("password", account.password, { shouldValidate: true });
   };
@@ -203,7 +224,7 @@ export default function LoginPage() {
         </p>
       )}
 
-      {/* ─── Mock Roles — Quick Demo Access ─────────────────── */}
+      {/* ─── Demo Roles — Quick Demo Access ────────────────── */}
       <div className="my-6 flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
         <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -214,7 +235,7 @@ export default function LoginPage() {
       </div>
 
       <div className="space-y-2.5">
-        {MOCK_ACCOUNTS.map((account) => {
+        {DEMO_ACCOUNTS.map((account) => {
           const Icon = account.icon;
           return (
             <div
@@ -249,18 +270,20 @@ export default function LoginPage() {
                 type="button"
                 size="sm"
                 className="shrink-0 h-8"
-                onClick={() => handleMockLogin(account)}
+                disabled={login.isPending}
+                onClick={() => handleDemoLogin(account)}
               >
-                Get Logged In
+                {login.isPending ? (
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                ) : (
+                  "Get Logged In"
+                )}
               </Button>
             </div>
           );
         })}
       </div>
-      <p className="mt-2 text-center text-xs text-muted-foreground">
-        Mock accounts skip the server and log you straight into each
-        role&apos;s dashboard.
-      </p>
+      
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}

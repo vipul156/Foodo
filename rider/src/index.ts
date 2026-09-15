@@ -6,6 +6,7 @@ import cookieSession from "cookie-session";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { riderRouter } from "./routes/rider.js";
 import { startOrderReadyConsumer } from "./config/orderReady.consumer.js";
+import { seedDemoRider } from "./seed/demo-rider.js";
 
 dotenv.config();
 
@@ -24,7 +25,8 @@ app.use(
     maxAge: 24 * 60 * 60 * 1000,
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api/rider", riderRouter);
 
 app.get('/health', (req, res) => {
@@ -38,5 +40,5 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 3004
 app.listen(PORT, () => {
     console.log("Server running on port ", PORT);
-    connectDB()
+    connectDB().then(() => seedDemoRider());
 });
