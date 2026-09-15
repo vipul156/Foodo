@@ -245,6 +245,12 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     orderId: order._id,
     status: order.status,
   });
+  // Seller sockets join user:{id} rooms, not restaurant:{id} — emit to the
+  // owner too so their own board updates without a refresh.
+  notifyRealtime("order:update", `user:${restaurant.ownerId}`, {
+    orderId: order._id,
+    status: order.status,
+  });
 
   if(status === "ready_for_rider") {
     console.log("Order is ready for rider",order._id)
@@ -336,6 +342,13 @@ export const cancelOrder = tryCatch(async (req: AuthRequest, res) => {
     orderId: order._id,
     status: "cancelled",
   });
+  const cancelRestaurant = await Restaurant.findById(order.restaurantId);
+  if (cancelRestaurant) {
+    notifyRealtime("order:update", `user:${cancelRestaurant.ownerId}`, {
+      orderId: order._id,
+      status: "cancelled",
+    });
+  }
 
   return res.status(200).json({
     success: true,
@@ -419,13 +432,70 @@ export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
     status: "rider_assigned",
   }, { new: true });
 
-  notifyRealtime("order:rider_assigned", `restaurant:${orderUpdate?.restaurantId}`, {
+  if (!orderUpdate) {
+    return res.status(409).json({
+      success: false,
+      message: "Order not found or already assigned",
+    });
+  }
+
+  // Restaurant board (restaurantId room) — restaurantId is an ObjectId,
+  // the restaurant room expects the same id the socket joined with.
+  notifyRealtime("order:rider_assigned", `restaurant:${orderUpdate.restaurantId}`, {
     order: orderUpdate,
   });
+  // Seller's own socket (user room) + customer's "rider is on the way"
+  notifyRealtime("order:rider_assigned", `user:${orderUpdate.userId}`, {
+    order: orderUpdate,
+  });
+
+  const assignedRestaurant = await Restaurant.findById(orderUpdate.restaurantId);
+  if (assignedRestaurant) {
+    notifyRealtime("order:rider_assigned", `user:${assignedRestaurant.ownerId}`, {
+      order: orderUpdate,
+    });
+  }
 
   return res.status(200).json({
     success: true,
     order: orderUpdate,
+  });
+});
+
+// ─── Ready Orders Near a Rider (internal) ───────────────────
+// Used by the rider service's "available orders" list. Returns paid
+// orders waiting for a rider at restaurants within 10km of the rider.
+export const getReadyOrdersNearRider = tryCatch(async (req, res) => {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+    throw new Error("Forbidden");
+  }
+
+  const latitude = Number(req.query.latitude);
+  const longitude = Number(req.query.longitude);
+
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+    throw new Error("latitude and longitude are required");
+  }
+
+  const nearbyRestaurants = await Restaurant.find({
+    autoLocation: {
+      $near: {
+        $geometry: { type: "Point", coordinates: [longitude, latitude] },
+        $maxDistance: 10000, // 10km in meters — same radius as the matcher
+      },
+    },
+  });
+
+  const orders = await Order.find({
+    status: "ready_for_rider",
+    paymentStatus: "paid",
+    restaurantId: { $in: nearbyRestaurants.map((r) => r._id) },
+  }).sort({ createdAt: 1 });
+
+  return res.status(200).json({
+    success: true,
+    count: orders.length,
+    orders,
   });
 });
 
@@ -481,6 +551,13 @@ export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => 
       orderId: order._id,
       status: order.status,
     });
+    const pickedUpRestaurant = await Restaurant.findById(order.restaurantId);
+    if (pickedUpRestaurant) {
+      notifyRealtime("order:update", `user:${pickedUpRestaurant.ownerId}`, {
+        orderId: order._id,
+        status: order.status,
+      });
+    }
 
     return res.json({
       success: true,
@@ -503,6 +580,13 @@ export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => 
       orderId: order._id,
       status: order.status,
     });
+    const deliveredRestaurant = await Restaurant.findById(order.restaurantId);
+    if (deliveredRestaurant) {
+      notifyRealtime("order:update", `user:${deliveredRestaurant.ownerId}`, {
+        orderId: order._id,
+        status: order.status,
+      });
+    }
 
     return res.json({
       success: true,

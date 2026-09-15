@@ -34,9 +34,12 @@ export function connectSocket(): Socket | null {
   socket = io(REALTIME_URL, {
     auth: { token }, // passes JWT via handshake.auth.token
     transports: ["websocket", "polling"],
+    // Never give up: retries forever with capped backoff. If the realtime
+    // service restarts, the browser rejoins its rooms and keeps receiving
+    // events — no silent dead socket, no manual refresh.
     reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
     reconnectionDelayMax: 5000,
   });
 

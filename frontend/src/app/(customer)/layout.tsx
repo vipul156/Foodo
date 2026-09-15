@@ -8,6 +8,7 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
+import { useRealtimeOrderSync } from "@/hooks/use-realtime-order-sync";
 import { CartSheet } from "@/features/cart/components";
 import { ShoppingCart, User, LogOut, LayoutDashboard } from "lucide-react";
 
@@ -17,6 +18,8 @@ export default function CustomerLayout({
   children: ReactNode;
 }) {
   const { user, isAuthenticated } = useAuthStore();
+  // Customer pages refetch automatically on order lifecycle events
+  useRealtimeOrderSync();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);

@@ -7,6 +7,7 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
+import { useRealtimeOrderSync } from "@/hooks/use-realtime-order-sync";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut, User } from "lucide-react";
@@ -17,6 +18,8 @@ export default function RiderLayout({
   children: ReactNode;
 }) {
   const { user } = useAuthStore();
+  // Rider pages refetch automatically on order lifecycle events
+  useRealtimeOrderSync();
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);

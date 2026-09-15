@@ -221,24 +221,41 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
           "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
         },
       },
-    );
+    );      if (data.success) {
+          const riderDetails = await Rider.findOneAndUpdate(
+            {
+              userId: riderUserId,
+              isAvailable: true,
+            },
+            {
+              isAvailable: false,
+            },
+            {
+              new: true,
+            },
+          );
 
-    if (data.success) {
-      const riderDetails = await Rider.findOneAndUpdate(
-        {
-          userId: riderUserId,
-          isAvailable: true,
-        },
-        {
-          isAvailable: false,
-        },
-        {
-          new: true,
-        },
-      );
+          // Rider dashboard flips to Active Delivery instantly — no refresh
+          axios
+            .post(
+              `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
+              {
+                event: "order:update",
+                room: `user:${riderUserId}`,
+                payload: { orderId, status: "rider_assigned" },
+              },
+              {
+                headers: {
+                  "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
+                },
+              },
+            )
+            .catch((err) =>
+              console.error("Realtime notify failed (order accepted):", err?.message),
+            );
 
-      res.json({ message: "Order accepted" });
-    }
+          res.json({ message: "Order accepted" });
+        }
   } catch (error) {
     return res.status(500).json({
       message: "Error accepting order",
