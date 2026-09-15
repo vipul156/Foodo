@@ -5,6 +5,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { GlassCard } from "@/components/shared/glass-card";
 import { RoleGuard } from "@/components/shared/role-guard";
 import {
@@ -12,6 +13,7 @@ import {
   useToggleRiderAvailability,
   useGetCurrentOrder,
   useAcceptOrder,
+  useUpdateOrderStatus,
 } from "@/features/rider/api";
 import { useSocketEvent } from "@/hooks/use-socket-event";
 import { useAuthStore } from "@/store/auth-store";
@@ -27,6 +29,8 @@ import {
   Bike,
   MapPin,
   Loader2,
+  CheckCircle2,
+  ChevronRight,
 } from "lucide-react";
 
 export default function RiderDashboardPage() {
@@ -39,6 +43,8 @@ export default function RiderDashboardPage() {
   } = useGetCurrentOrder();
   const toggleAvailability = useToggleRiderAvailability();
   const acceptOrder = useAcceptOrder();
+  const updateOrderStatus = useUpdateOrderStatus();
+  const queryClient = useQueryClient();
 
   // Available order notification from socket
   const [availableOrder, setAvailableOrder] = useState<OrderAvailablePayload | null>(null);
@@ -69,6 +75,21 @@ export default function RiderDashboardPage() {
     } catch {
       // Order may have been taken by another rider
       setAvailableOrder(null);
+    }
+  };
+
+  // "Mark Picked Up" when rider_assigned, "Mark Delivered" when picked_up
+  const isPickedUp = currentOrder?.status === "picked_up";
+
+  const handleUpdateOrderStatus = async () => {
+    if (!currentOrder?._id) return;
+    try {
+      await updateOrderStatus.mutateAsync({ orderId: currentOrder._id });
+      // Order flips to picked_up / delivered — refresh card + availability
+      queryClient.invalidateQueries({ queryKey: ["rider", "order", "current"] });
+      queryClient.invalidateQueries({ queryKey: ["rider", "profile"] });
+    } catch {
+      // Error is surfaced by the mutation hook
     }
   };
 
@@ -227,6 +248,38 @@ export default function RiderDashboardPage() {
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Bike className="h-3.5 w-3.5" />
                 <span>{currentOrder.distance?.toFixed(1) || "-"} km away</span>
+              </div>
+
+              {/* Delivery progress + rider actions */}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-border/50 p-3">
+                <div className="flex items-center gap-2 text-xs font-medium">
+                  <span
+                    className={`inline-flex items-center gap-1 ${
+                      isPickedUp
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Picked up
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">Delivered</span>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleUpdateOrderStatus}
+                  disabled={updateOrderStatus.isPending}
+                >
+                  {updateOrderStatus.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {isPickedUp ? "Mark Delivered" : "Mark Picked Up"}
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           ) : (

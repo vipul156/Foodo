@@ -11,6 +11,7 @@ import { useGetMyRestaurant } from "@/features/restaurants/api";
 import {
   useGetRestaurantOrders,
   useUpdateOrderStatus,
+  useCancelOrder,
 } from "@/features/orders/api";
 import { useSocketEvent } from "@/hooks/use-socket-event";
 import {
@@ -33,6 +34,7 @@ import {
   AlertCircle,
   PackageOpen,
   Bell,
+  XCircle,
 } from "lucide-react";
 
 const statusConfig: Record<OrderStatus, { label: string; color: string; icon: React.ReactNode }> = {
@@ -100,11 +102,15 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 function OrderCard({
   order,
   onStatusUpdate,
+  onCancel,
   isUpdating,
+  isCancelling,
 }: {
   order: IOrder;
   onStatusUpdate: (orderId: string, status: string) => void;
+  onCancel: (orderId: string) => void;
   isUpdating: boolean;
+  isCancelling: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const nextStatus = nextSellerStatus[order.status];
@@ -196,12 +202,12 @@ function OrderCard({
           )}
         </div>
 
-        {/* Right: Action Button */}
-        <div className="shrink-0">
+        {/* Right: Action Buttons */}
+        <div className="shrink-0 flex flex-col items-end gap-2">
           {nextStatus && (
             <button
               onClick={() => onStatusUpdate(order._id, nextStatus)}
-              disabled={isUpdating}
+              disabled={isUpdating || isCancelling}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:brightness-110 transition-all disabled:opacity-50"
             >
               {isUpdating ? (
@@ -218,6 +224,25 @@ function OrderCard({
                 : nextStatus === "preparing"
                 ? "Start Preparing"
                 : "Mark Ready"}
+            </button>
+          )}
+          {/* Cancellable until picked up — rider is released automatically */}
+          {(order.status === "placed" ||
+            order.status === "accepted" ||
+            order.status === "preparing" ||
+            order.status === "ready_for_rider" ||
+            order.status === "rider_assigned") && (
+            <button
+              onClick={() => onCancel(order._id)}
+              disabled={isUpdating || isCancelling}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-all disabled:opacity-50"
+            >
+              {isCancelling ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5" />
+              )}
+              Cancel
             </button>
           )}
         </div>
@@ -244,9 +269,35 @@ export default function SellerOrdersPage() {
     refetch,
   } = useGetRestaurantOrders(restaurant?._id || "");
   const updateStatus = useUpdateOrderStatus();
+  const cancelOrder = useCancelOrder();
 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+
+  const handleCancelOrder = useCallback(
+    async (orderId: string) => {
+      if (
+        !window.confirm(
+          "Cancel this order? The customer will be notified and any assigned rider will be released.",
+        )
+      )
+        return;
+      setCancellingId(orderId);
+      try {
+        await cancelOrder.mutateAsync(orderId);
+        setNotification("Order cancelled");
+        setTimeout(() => setNotification(null), 4000);
+        refetch();
+      } catch {
+        setNotification("Could not cancel the order");
+        setTimeout(() => setNotification(null), 4000);
+      } finally {
+        setCancellingId(null);
+      }
+    },
+    [cancelOrder, refetch],
+  );
 
   const handleStatusUpdate = useCallback(async (orderId: string, status: string) => {
     setUpdatingId(orderId);
@@ -374,7 +425,9 @@ export default function SellerOrdersPage() {
                     key={order._id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
+                    onCancel={handleCancelOrder}
                     isUpdating={updatingId === order._id}
+                    isCancelling={cancellingId === order._id}
                   />
                 ))}
               </div>
@@ -391,7 +444,9 @@ export default function SellerOrdersPage() {
                     key={order._id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
+                    onCancel={handleCancelOrder}
                     isUpdating={updatingId === order._id}
+                    isCancelling={cancellingId === order._id}
                   />
                 ))}
               </div>

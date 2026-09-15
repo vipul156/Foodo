@@ -19,6 +19,19 @@ function notifyRealtime(event: string, room: string, payload: unknown) {
     .catch((err) => console.error(`Realtime notify failed (${event}):`, err?.message));
 }
 
+// Fire-and-forget rider release — frees the rider when their assigned
+// order is cancelled so they can go online and take new orders again.
+function releaseRider(riderId: unknown) {
+  if (!riderId) return;
+  axios
+    .put(
+      `${process.env.RIDER_SERVICE_URL}/api/rider/release/internal`,
+      { riderId },
+      { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+    )
+    .catch((err) => console.error("Rider release failed:", err?.message));
+}
+
 export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     throw new Error("User not found");
@@ -228,6 +241,10 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     orderId: order._id,
     status: order.status,
   });
+  notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
+    orderId: order._id,
+    status: order.status,
+  });
 
   if(status === "ready_for_rider") {
     console.log("Order is ready for rider",order._id)
@@ -246,8 +263,83 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     console.log("Event published")
   }
 
+  // Seller cancelled an order that already has a rider assigned → free them
+  if (status === "cancelled" && order.riderId) {
+    releaseRider(order.riderId);
+  }
+
   return res.status(200).json({
     message: "Order updated successfully",
+    order,
+  });
+});
+
+// ─── Cancel Order (customer or seller) ──────────────────────
+// Allowed while the order has no rider on the road yet: before assignment,
+// or while assigned but not picked up. Releases the rider automatically.
+export const cancelOrder = tryCatch(async (req: AuthRequest, res) => {
+  const user = req.user;
+
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  const { orderId } = req.params;
+
+  if (!orderId) {
+    throw new Error("Order ID is required");
+  }
+
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    throw new Error("No order found");
+  }
+
+  const isOwner = order.userId.toString() === user._id.toString();
+  const isSeller = order.restaurantName && user.role === "seller";
+
+  // Sellers may cancel through their restaurant; customers only their own order
+  if (isSeller) {
+    const restaurant = await Restaurant.findById(order.restaurantId);
+    if (!restaurant || restaurant.ownerId.toString() !== user._id.toString()) {
+      throw new Error("Unauthorized");
+    }
+  } else if (!isOwner) {
+    throw new Error("Unauthorized");
+  }
+
+  if (order.status === "delivered") {
+    throw new Error("Delivered orders cannot be cancelled");
+  }
+
+  if (order.status === "picked_up") {
+    throw new Error("Order is already picked up — cancellation not possible");
+  }
+
+  const hadRiderAssigned = order.status === "rider_assigned";
+
+  order.status = "cancelled";
+  await order.save();
+
+  // Free the rider if one was on the way
+  if (hadRiderAssigned && order.riderId) {
+    releaseRider(order.riderId);
+  }
+
+  // Customer + seller dashboards refresh instantly
+  notifyRealtime("order:update", `user:${order.userId}`, {
+    orderId: order._id,
+    status: "cancelled",
+  });
+  notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
+    orderId: order._id,
+    status: "cancelled",
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Order cancelled successfully",
     order,
   });
 });
@@ -361,43 +453,67 @@ export const getCurrentOrdersForRider = tryCatch(async (req: AuthRequest, res) =
 
 export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => {
   if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
+    return res.status(403).json({ message: "Forbidden" });
   }
 
   const { orderId } = req.body;
 
   if (!orderId) {
-    throw new Error("Order ID is required");
+    return res.status(400).json({ message: "Order ID is required" });
   }
-
 
   const order = await Order.findById(orderId);
 
-  if(!order) {
-    throw new Error("No order found");
+  if (!order) {
+    return res.status(404).json({ message: "No order found" });
   }
 
-  if(order.status === "rider_assigned") {
+  if (order.status === "rider_assigned") {
     order.status = "picked_up";
     await order.save();
 
-    notifyRealtime("order:rider_assigned", `user:${order.userId}`, order);
+    // Customer sees "picked up"; seller sees the board move to In Delivery
+    notifyRealtime("order:update", `user:${order.userId}`, {
+      orderId: order._id,
+      status: order.status,
+    });
+    notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
+      orderId: order._id,
+      status: order.status,
+    });
 
-  return res.json({
-    success: true,
-    message: "Order status updated successfully",
-  });
+    return res.json({
+      success: true,
+      message: "Order status updated successfully",
+      order,
+    });
   }
 
-  if(order.status === "picked_up") {
+  if (order.status === "picked_up") {
     order.status = "delivered";
     await order.save();
 
+    // Customer + seller both learn the delivery is complete
     notifyRealtime("order:delivered", `user:${order.userId}`, order);
+    notifyRealtime("order:update", `user:${order.userId}`, {
+      orderId: order._id,
+      status: order.status,
+    });
+    notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
+      orderId: order._id,
+      status: order.status,
+    });
+
+    return res.json({
+      success: true,
+      message: "Order status updated successfully",
+      order,
+    });
+  }
 
   return res.json({
     success: true,
-    message: "Order status updated successfully",
+    message: "Order status unchanged",
+    order,
   });
-  }
 });

@@ -9,6 +9,7 @@ import {
   assignOrderToRider,
   getCurrentOrdersForRider,
   updateOrderStatusRider,
+  cancelOrder,
 } from "../controllers/order.js";
 import { isAuth, isSeller } from "../middlewares/isAuth.js";
 
@@ -23,5 +24,6 @@ router.get("/:orderId", isAuth, fetchSingleOrder);
 router.put("/assign/rider", assignOrderToRider);
 router.get("/current/rider", getCurrentOrdersForRider);
 router.put("/update/status/rider", updateOrderStatusRider);
+router.patch("/:orderId/cancel", isAuth, cancelOrder);
 
 export { router as orderRouter };

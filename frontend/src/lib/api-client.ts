@@ -104,6 +104,8 @@ export const restaurantApi = {
     request<T>(`/api${endpoint}`, { method: "POST", data, ...config }),
   put: <T>(endpoint: string, data?: unknown, config?: AxiosRequestConfig) =>
     request<T>(`/api${endpoint}`, { method: "PUT", data, ...config }),
+  patch: <T>(endpoint: string, data?: unknown, config?: AxiosRequestConfig) =>
+    request<T>(`/api${endpoint}`, { method: "PATCH", data, ...config }),
   delete: <T>(endpoint: string, config?: AxiosRequestConfig) =>
     request<T>(`/api${endpoint}`, { method: "DELETE", ...config }),
 };

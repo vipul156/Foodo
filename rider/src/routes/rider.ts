@@ -5,12 +5,17 @@ import {
   createRider,
   fetchMyCurrentOrder,
   fetchMyProfile,
+  releaseRiderInternal,
   toogleRiderAvailablity,
   updateOrderStatus,
 } from "../controller/rider.js";
 import uploadFile from "../middlewares/multer.js";
 
 const router = Router();
+
+// Internal: called by restaurant service when an assigned order is cancelled.
+// Must be registered before isAuth — it authenticates via x-internal-key.
+router.put("/release/internal", releaseRiderInternal)
 
 router.use(isAuth, isRider);
 

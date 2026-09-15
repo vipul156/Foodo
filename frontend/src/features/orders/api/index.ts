@@ -155,6 +155,24 @@ export function useGetRestaurantOrders(restaurantId: string, limit?: number) {
   });
 }
 
+// ─── Cancel Order ───────────────────────────────────────────
+
+export function useCancelOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: string) => {
+      const res = await restaurantApi.patch<{ message: string }>(
+        `/order/${orderId}/cancel`,
+      );
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+}
+
 // ─── Update Order Status ─────────────────────────────────────
 
 export function useUpdateOrderStatus() {

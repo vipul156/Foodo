@@ -143,6 +143,30 @@ export const toogleRiderAvailablity = tryCatch(
       });
     }
 
+    // A rider carrying an active delivery cannot go back online —
+    // finish the delivery (or have the seller cancel the order) first.
+    if (isAvailable) {
+      try {
+        const { data } = await axios.get(
+          `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
+          {
+            headers: {
+              "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
+            },
+          },
+        );
+        if (data?.order) {
+          return res.status(400).json({
+            message: "Finish your active delivery before going online",
+          });
+        }
+      } catch (error) {
+        return res.status(503).json({
+          message: "Could not verify your delivery status. Try again.",
+        });
+      }
+    }
+
     rider.isAvailable = isAvailable;
     rider.location = {
       type: "Point",
@@ -278,13 +302,19 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const { orderId } = req.params;
+  const orderId = req.body?.orderId || req.params?.orderId;
+
+  if (!orderId) {
+    return res.status(400).json({
+      message: "Order ID is required",
+    });
+  }
 
   try {
     const { data } = await axios.put(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/update/status/rider`,
       {
-       orderId
+        orderId,
       },
       {
         headers: {
@@ -293,13 +323,70 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
       },
     );
 
+    // Delivered → the rider is automatically available again and shows
+    // Online. Until then they stay Offline with the delivery in progress.
+    let updatedRider = null;
+    if (data.order?.status === "delivered") {
+      updatedRider = await Rider.findOneAndUpdate(
+        { userId: riderUserId },
+        { isAvailable: true, lastActive: new Date() },
+        { new: true },
+      );
+    }
+
     return res.status(200).json({
       message: "Order status updated",
       order: data.order,
+      rider: updatedRider || rider,
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Error updating order status:", error?.response?.data || error?.message);
     return res.status(500).json({
       message: "Error updating current order",
     });
   }
+});
+
+// Called by the restaurant service when an assigned order is cancelled —
+// frees the rider so they can go online again.
+export const releaseRiderInternal = tryCatch(async (req, res) => {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  const { riderId } = req.body;
+
+  if (!riderId) {
+    return res.status(400).json({ message: "riderId is required" });
+  }
+
+  const rider = await Rider.findById(riderId);
+
+  if (!rider) {
+    return res.status(404).json({ message: "Rider not found" });
+  }
+
+  rider.isAvailable = true;
+  rider.lastActive = new Date();
+  await rider.save();
+
+  // Nudge the rider dashboard so availability + card refresh instantly
+  axios
+    .post(
+      `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
+      {
+        event: "order:update",
+        room: `user:${rider.userId}`,
+        payload: { orderId: null, status: "cancelled" },
+      },
+      { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+    )
+    .catch((err) =>
+      console.error("Realtime notify failed (rider release):", err?.message),
+    );
+
+  return res.status(200).json({
+    success: true,
+    message: "Rider released",
+  });
 });
