@@ -7,6 +7,7 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth-store";
+import { useGetCart } from "@/features/restaurants/api";
 import { useLogout } from "@/features/auth/api";
 import { useRealtimeOrderSync } from "@/hooks/use-realtime-order-sync";
 import { CartSheet } from "@/features/cart/components";
@@ -24,6 +25,9 @@ export default function CustomerLayout({
   const [cartOpen, setCartOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const logout = useLogout();
+  // Cart badge count — only fetched when logged in
+  const { data: cartData } = useGetCart();
+  const cartCount = isAuthenticated ? (cartData?.cartLength ?? 0) : 0;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -65,9 +69,14 @@ export default function CustomerLayout({
                 <button
                   onClick={() => setCartOpen(true)}
                   className="relative rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-                  aria-label="Open cart"
+                  aria-label={`Open cart, ${cartCount} item${cartCount === 1 ? "" : "s"}`}
                 >
                   <ShoppingCart className="h-5 w-5" />
+                  {cartCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                      {cartCount > 9 ? "9+" : cartCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Dashboard link (sellers, riders, admins) */}

@@ -4,9 +4,11 @@
 
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/shared/glass-card";
-import { useAuthStore } from "@/store/auth-store";
+import { useAuthStore, useAuthHydrated } from "@/store/auth-store";
 import { useUIStore } from "@/store/ui-store";
 import { useGetNearbyRestaurants } from "@/features/restaurants/api";
 import type { IRestaurant } from "@/types";
@@ -26,8 +28,19 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+// ─── Role → Dashboard Route ─────────────────────────────────
+
+function dashboardRouteFor(role?: string): string | null {
+  if (role === "seller") return "/seller";
+  if (role === "rider") return "/rider";
+  if (role === "admin") return "/admin";
+  return null;
+}
+
 export default function CustomerHomePage() {
   const { user, isAuthenticated } = useAuthStore();
+  const hydrated = useAuthHydrated();
+  const router = useRouter();
   const { userLocation } = useUIStore();
 
   // Single query — uses nearby endpoint with user location if available.
@@ -37,11 +50,40 @@ export default function CustomerHomePage() {
     userLocation?.latitude,
   );
 
+  // Redirect staff roles (seller/rider/admin) straight to their dashboards.
+  // Waits for persisted auth to hydrate so guests are never mis-redirected.
+  const dashboardRoute = dashboardRouteFor(user?.role);
+  useEffect(() => {
+    if (hydrated && dashboardRoute) {
+      router.replace(dashboardRoute);
+    }
+  }, [hydrated, dashboardRoute, router]);
+
+  // Show a loader instead of the customer page while staff users redirect.
+  if (hydrated && dashboardRoute) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       {/* Hero Section — Auth-Aware */}
-      <section className="relative mb-16 overflow-hidden rounded-3xl bg-primary/5 p-8 sm:p-12 lg:p-16">
-        <div className="relative z-10 max-w-2xl">
+      <section className="relative mb-16 overflow-hidden rounded-3xl">
+        {/* Full-bleed background image */}
+        <img
+          src="/hero-food.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        {/* Overlay — keeps text readable over the photo */}
+        <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/85 to-background/20" />
+
+        <div className="relative z-10 p-8 sm:p-12 lg:p-16">
+          <div className="max-w-2xl">
           {isAuthenticated ? (
             <>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary mb-4">
@@ -125,11 +167,14 @@ export default function CustomerHomePage() {
               </div>
             </>
           )}
+          </div>
         </div>
 
-        {/* Decorative background elements */}
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-primary/5 blur-3xl" />
+        {/* Floating delivery chip over the photo */}
+        <span className="absolute bottom-6 right-6 z-10 hidden lg:inline-flex items-center gap-1.5 rounded-2xl bg-background/90 px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur">
+          <Bike className="h-3.5 w-3.5 text-primary" />
+          Fast delivery
+        </span>
       </section>
 
       {/* Role-based Dashboard Prompt (for sellers/riders/admin) */}
