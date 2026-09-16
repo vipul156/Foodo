@@ -10,6 +10,10 @@ import Link from "next/link";
 import { GlassCard } from "@/components/shared/glass-card";
 import { useUIStore } from "@/store/ui-store";
 import {
+  getCurrentPosition,
+  reverseGeocode,
+} from "@/lib/geolocation";
+import {
   MapPin,
   ArrowLeft,
   Navigation,
@@ -25,43 +29,26 @@ export default function LocationsPage() {
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  const handleGetCurrentLocation = () => {
+  // One tap: detect coordinates → reverse-geocode the street address →
+  // save it. The user never has to type anything when permission is granted.
+  const handleGetCurrentLocation = async () => {
     setIsLocating(true);
     setLocationError(null);
 
-    if (!navigator.geolocation) {
-      setLocationError("Geolocation is not supported by your browser.");
-      setIsLocating(false);
-      return;
-    }
+    try {
+      const { latitude, longitude } = await getCurrentPosition();
+      const detectedAddress = await reverseGeocode(latitude, longitude);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          address: address || `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`,
-        });
-        setIsLocating(false);
-      },
-      (error) => {
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            setLocationError("Location permission denied. Please enable it in your browser settings.");
-            break;
-          case error.POSITION_UNAVAILABLE:
-            setLocationError("Location information is unavailable.");
-            break;
-          case error.TIMEOUT:
-            setLocationError("Location request timed out.");
-            break;
-          default:
-            setLocationError("An unknown error occurred.");
-        }
-        setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    );
+      setUserLocation({ latitude, longitude, address: detectedAddress });
+      setAddress(detectedAddress);
+      setIsLocating(false);
+      router.push("/");
+    } catch (err) {
+      setLocationError(
+        err instanceof Error ? err.message : "Could not detect your location.",
+      );
+      setIsLocating(false);
+    }
   };
 
   return (
@@ -91,7 +78,8 @@ export default function LocationsPage() {
             </span>
             <h3 className="text-lg font-semibold mb-2">Use Current Location</h3>
             <p className="text-sm text-muted-foreground mb-6 max-w-sm">
-              Allow Foodo to access your location to show restaurants near you.
+              Allow location access and we&apos;ll fill in your address
+              automatically — no typing needed.
             </p>
             <button
               onClick={handleGetCurrentLocation}
@@ -101,7 +89,7 @@ export default function LocationsPage() {
               {isLocating ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Getting location...
+                  Detecting your address...
                 </>
               ) : (
                 <>
