@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Foodo — Current Architecture (as deployed)",
+    "output": "docs/architecture-current.html",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "order-path",
+        "label": "Customer order path",
+        "focus": ["users", "alb", "frontend", "restaurant", "mongo", "rabbitmq", "utils", "razorpay"],
+        "note": "Follow an order from the browser through the restaurant service to payment and the queues."
+      },
+      {
+        "id": "matching",
+        "label": "Rider matching",
+        "focus": ["restaurant", "rabbitmq", "rider", "realtime", "mongo"],
+        "note": "Ready orders fan out to nearby riders over RabbitMQ and Socket.IO."
+      },
+      {
+        "id": "admin",
+        "label": "Admin platform control",
+        "focus": ["admin", "mongo", "frontend"],
+        "note": "Admin reads platform collections directly from the shared database today."
+      }
+    ]
+  },
+  "components": [
+    { "id": "users", "type": "external", "label": "Users", "sublabel": "customers · sellers · riders", "pos": [40, 400], "size": [150, 60] },
+    { "id": "alb", "type": "cloud", "label": "AWS ALB", "sublabel": ":443 · path routing", "pos": [280, 400], "size": [120, 60], "tag": "terraform" },
+    { "id": "frontend", "type": "frontend", "label": "Next.js 16 Frontend", "sublabel": ":3000 · Socket.IO client", "pos": [490, 400], "size": [150, 66] },
+    { "id": "auth", "type": "security", "label": "Auth Service", "sublabel": ":3001 · JWT cookie", "pos": [740, 90], "size": [140, 62] },
+    { "id": "admin", "type": "backend", "label": "Admin Service", "sublabel": ":3006 · verification", "pos": [740, 230], "size": [140, 62], "tag": "raw DB reads" },
+    { "id": "restaurant", "type": "backend", "label": "Restaurant Service", "sublabel": ":3003 · orders / cart / menu", "pos": [740, 410], "size": [150, 66], "tag": "hot path" },
+    { "id": "rider", "type": "backend", "label": "Rider Service", "sublabel": ":3004 · geo matching", "pos": [740, 560], "size": [140, 62] },
+    { "id": "utils", "type": "backend", "label": "Utils Service", "sublabel": ":3005 · payments / upload", "pos": [740, 700], "size": [140, 62] },
+    { "id": "realtime", "type": "backend", "label": "Realtime Service", "sublabel": ":3002 · Socket.IO rooms", "pos": [1010, 90], "size": [140, 62], "tag": "single node" },
+    { "id": "rabbitmq", "type": "messagebus", "label": "RabbitMQ", "sublabel": "payment + order queues", "pos": [1010, 420], "size": [140, 62], "tag": "SPOF" },
+    { "id": "mongo", "type": "database", "label": "MongoDB", "sublabel": "shared cluster · all 5 services", "pos": [1270, 250], "size": [140, 110], "tag": "single node" },
+    { "id": "cloudinary", "type": "external", "label": "Cloudinary", "sublabel": "images + signed upload", "pos": [1270, 560], "size": [140, 62] },
+    { "id": "razorpay", "type": "external", "label": "Razorpay / Stripe", "sublabel": "payment gateways", "pos": [1010, 700], "size": [140, 62] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "AWS · EC2 + ALB (terraform)", "wraps": ["alb", "auth", "admin", "restaurant", "rider", "utils", "realtime", "rabbitmq", "mongo"], "pad": 24 },
+    { "kind": "security-group", "label": "internal network · x-internal-key", "wraps": ["auth", "admin", "restaurant", "rider", "utils", "realtime", "rabbitmq", "mongo"], "pad": 16 }
+  ],
+  "connections": [
+    { "id": "users-alb", "from": "users", "to": "alb", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "alb-frontend", "from": "alb", "to": "frontend", "label": "path routing", "variant": "emphasis" },
+    { "id": "frontend-auth", "from": "frontend", "to": "auth", "label": "/api/auth" },
+    { "id": "frontend-admin", "from": "frontend", "to": "admin", "label": "/api/admin" },
+    { "id": "frontend-restaurant", "from": "frontend", "to": "restaurant", "label": "orders · cart", "variant": "emphasis" },
+    { "id": "frontend-rider", "from": "frontend", "to": "rider", "label": "/api/rider" },
+    { "id": "frontend-utils", "from": "frontend", "to": "utils", "label": "checkout" },
+    { "id": "frontend-realtime", "from": "frontend", "to": "realtime", "label": "WebSocket", "variant": "dashed", "fromSide": "top", "toSide": "top", "via": [[565, 50], [1080, 50]] },
+    { "id": "auth-mongo", "from": "auth", "to": "mongo", "label": "Mongoose" },
+    { "id": "admin-mongo", "from": "admin", "to": "mongo", "label": "direct reads", "variant": "security" },
+    { "id": "restaurant-mongo", "from": "restaurant", "to": "mongo", "label": "orders · cart", "variant": "emphasis", "fromSide": "right", "toSide": "bottom", "via": [[960, 443], [960, 390], [1340, 390]] },
+    { "id": "rider-mongo", "from": "rider", "to": "mongo", "label": "riders", "fromSide": "right", "toSide": "left", "via": [[1200, 591], [1200, 305]] },
+    { "id": "restaurant-rabbit", "from": "restaurant", "to": "rabbitmq", "label": "order.ready ⇄ payment", "variant": "emphasis" },
+    { "id": "rider-rabbit", "from": "rider", "to": "rabbitmq", "label": "consume order.ready", "fromSide": "right", "toSide": "bottom", "via": [[1080, 591], [1080, 500]] },
+    { "id": "utils-rabbit", "from": "utils", "to": "rabbitmq", "label": "publish payment.success", "variant": "dashed", "fromSide": "right", "toSide": "left", "via": [[940, 731], [940, 451]] },
+    { "id": "restaurant-realtime", "from": "restaurant", "to": "realtime", "label": "HTTP /emit", "variant": "security", "fromSide": "right", "toSide": "left", "via": [[960, 443], [960, 121]] },
+    { "id": "rider-realtime", "from": "rider", "to": "realtime", "label": "HTTP /emit", "variant": "security", "fromSide": "right", "toSide": "left", "via": [[930, 591], [930, 121]] },
+    { "id": "utils-razorpay", "from": "utils", "to": "razorpay", "label": "SDK · verify", "variant": "security" },
+    { "id": "utils-cloudinary", "from": "utils", "to": "cloudinary", "label": "upload", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[810, 800], [1340, 800]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Request Path", "items": ["Browser → ALB → Next.js / Express by path", "Auth via JWT session cookie on every service", "Frontend rewrites proxy in dev; Nginx in prod"] },
+    { "dot": "rose", "title": "Known Risk Markers", "items": ["Admin queries shared MongoDB directly", "Realtime emits over synchronous HTTP from order paths", "RabbitMQ single node — publishers have no confirms"] },
+    { "dot": "emerald", "title": "Async Today", "items": ["payment.success → mark paid + clear cart", "order.ready_for_rider → geo-match riders within 10km"] }
+  ]
+}

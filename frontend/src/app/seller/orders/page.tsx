@@ -316,7 +316,7 @@ export default function SellerOrdersPage() {
       (payload: unknown) => {
         const data = payload as OrderNewPayload;
         if (data?.orderId) {
-          setNotification("📦 New order received!");
+          setNotification("New order received!");
           refetch();
           setTimeout(() => setNotification(null), 5000);
         }

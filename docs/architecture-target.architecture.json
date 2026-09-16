@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Foodo — Target Architecture (PRD P0–P2 roadmap)",
+    "output": "docs/architecture-target.html",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "edge",
+        "label": "Resilient edge",
+        "focus": ["users", "route53", "alb", "frontend", "realtime", "redis"],
+        "note": "DNS failover, WAF, sticky sessions, and a horizontally scaled socket tier."
+      },
+      {
+        "id": "event-core",
+        "label": "Event-driven core",
+        "focus": ["restaurant", "rabbitmq", "outbox", "realtime", "rider", "mongo"],
+        "note": "All emission flows through quorum queues; the outbox guarantees publishes."
+      },
+      {
+        "id": "payments",
+        "label": "Payment integrity",
+        "focus": ["razorpay", "utils", "rabbitmq", "restaurant", "observability"],
+        "note": "Provider webhooks are the source of truth; DLQ depth is alarmed."
+      }
+    ]
+  },
+  "components": [
+    { "id": "users", "type": "external", "label": "Users", "sublabel": "customers · sellers · riders", "pos": [40, 400], "size": [150, 60] },
+    { "id": "route53", "type": "cloud", "label": "Route53 + WAF", "sublabel": "DNS failover · rate rules", "pos": [280, 400], "size": [140, 60], "tag": "P2" },
+    { "id": "alb", "type": "cloud", "label": "AWS ALB", "sublabel": "sticky sessions", "pos": [490, 400], "size": [110, 66], "tag": "P1" },
+    { "id": "frontend", "type": "frontend", "label": "Next.js 16 Frontend", "sublabel": ":3000 · Socket.IO client", "pos": [670, 400], "size": [150, 66] },
+    { "id": "auth", "type": "security", "label": "Auth Service", "sublabel": ":3001 · httpOnly session", "pos": [920, 90], "size": [140, 62], "tag": "ASG min 2" },
+    { "id": "admin", "type": "backend", "label": "Admin Service", "sublabel": ":3006 · internal read APIs", "pos": [920, 230], "size": [140, 62], "tag": "no direct DB" },
+    { "id": "restaurant", "type": "backend", "label": "Restaurant Service", "sublabel": ":3003 · breakered clients", "pos": [920, 400], "size": [150, 66], "tag": "ASG min 2" },
+    { "id": "rider", "type": "backend", "label": "Rider Service", "sublabel": ":3004 · atomic claim", "pos": [920, 550], "size": [140, 62], "tag": "ASG min 2" },
+    { "id": "utils", "type": "backend", "label": "Utils Service", "sublabel": ":3005 · webhooks + SDK", "pos": [920, 690], "size": [140, 62] },
+    { "id": "realtime", "type": "backend", "label": "Realtime Service", "sublabel": "Socket.IO · Redis adapter", "pos": [1170, 90], "size": [150, 62], "tag": "scaled out" },
+    { "id": "rabbitmq", "type": "messagebus", "label": "RabbitMQ Cluster", "sublabel": "quorum queues + DLQs", "pos": [1170, 300], "size": [150, 80], "tag": "P0" },
+    { "id": "outbox", "type": "backend", "label": "Outbox Relay", "sublabel": "mongo → bus guaranteed", "pos": [1170, 480], "size": [150, 62], "tag": "P1" },
+    { "id": "mongo", "type": "database", "label": "MongoDB Replica Set", "sublabel": "3 nodes · multi-AZ · PITR", "pos": [1430, 150], "size": [150, 90], "tag": "P2" },
+    { "id": "redis", "type": "database", "label": "ElastiCache Redis", "sublabel": "cache · socket adapter · limits", "pos": [1430, 320], "size": [150, 70], "tag": "P1" },
+    { "id": "observability", "type": "external", "label": "OTel Tracing", "sublabel": "SLO dashboards · alerts", "pos": [1430, 480], "size": [150, 62], "tag": "P1" },
+    { "id": "razorpay", "type": "external", "label": "Razorpay / Stripe", "sublabel": "webhooks in · SDK out", "pos": [1170, 690], "size": [150, 62] },
+    { "id": "cloudinary", "type": "external", "label": "Cloudinary", "sublabel": "images + signed upload", "pos": [1430, 830], "size": [140, 62] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "AWS multi-AZ (terraform)", "wraps": ["alb", "auth", "admin", "restaurant", "rider", "utils", "realtime", "rabbitmq", "outbox", "mongo", "redis"], "pad": 24 },
+    { "kind": "security-group", "label": "private network · mTLS + allowlists", "wraps": ["auth", "admin", "restaurant", "rider", "utils", "realtime", "rabbitmq", "outbox", "mongo", "redis"], "pad": 16 }
+  ],
+  "connections": [
+    { "id": "users-route53", "from": "users", "to": "route53", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "route53-alb", "from": "route53", "to": "alb", "variant": "emphasis" },
+    { "id": "alb-frontend", "from": "alb", "to": "frontend", "label": "path routing", "variant": "emphasis" },
+    { "id": "frontend-auth", "from": "frontend", "to": "auth", "label": "/api/auth" },
+    { "id": "frontend-admin", "from": "frontend", "to": "admin", "label": "/api/admin" },
+    { "id": "frontend-restaurant", "from": "frontend", "to": "restaurant", "label": "orders · cart", "variant": "emphasis" },
+    { "id": "frontend-rider", "from": "frontend", "to": "rider", "label": "/api/rider" },
+    { "id": "frontend-utils", "from": "frontend", "to": "utils", "label": "checkout" },
+    { "id": "frontend-realtime", "from": "frontend", "to": "realtime", "label": "WebSocket", "variant": "dashed", "fromSide": "top", "toSide": "top", "via": [[745, 40], [1245, 40]] },
+    { "id": "admin-restaurant", "from": "admin", "to": "restaurant", "label": "internal reads", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "auth-mongo", "from": "auth", "to": "mongo", "label": "Mongoose", "labelSegment": 3, "fromSide": "right", "toSide": "top", "via": [[1090, 121], [1090, 70], [1505, 70]] },
+    { "id": "restaurant-mongo", "from": "restaurant", "to": "mongo", "label": "orders · cart", "variant": "emphasis", "fromSide": "right", "toSide": "left", "via": [[1120, 433], [1390, 433], [1390, 195]] },
+    { "id": "rider-mongo", "from": "rider", "to": "mongo", "label": "riders", "fromSide": "right", "toSide": "left", "via": [[1350, 581], [1350, 195]] },
+    { "id": "utils-mongo", "from": "utils", "to": "mongo", "label": "payments", "labelSegment": 2, "fromSide": "right", "toSide": "left", "via": [[1100, 721], [1100, 660], [1400, 660], [1400, 195]] },
+    { "id": "restaurant-rabbit", "from": "restaurant", "to": "rabbitmq", "label": "publish order.*", "variant": "emphasis" },
+    { "id": "rider-rabbit", "from": "rider", "to": "rabbitmq", "label": "consume order.ready", "labelAt": [1145, 568], "fromSide": "right", "toSide": "left", "via": [[1150, 581], [1150, 340]] },
+    { "id": "utils-rabbit", "from": "utils", "to": "rabbitmq", "label": "publish payment.success", "labelAt": [1080, 626], "fromSide": "right", "toSide": "left", "via": [[1130, 721], [1130, 340]] },
+    { "id": "rabbit-realtime", "from": "rabbitmq", "to": "realtime", "label": "consume order.* → emit", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "mongo-outbox", "from": "mongo", "to": "outbox", "label": "outbox collection", "variant": "dashed", "fromSide": "bottom", "toSide": "right" },
+    { "id": "outbox-rabbit", "from": "outbox", "to": "rabbitmq", "label": "confirmed publish", "fromSide": "top", "toSide": "bottom" },
+    { "id": "razorpay-utils", "from": "razorpay", "to": "utils", "label": "payment webhooks", "variant": "security", "fromSide": "left", "toSide": "right" },
+    { "id": "utils-cloudinary", "from": "utils", "to": "cloudinary", "label": "upload", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "via": [[990, 790], [1500, 790]] },
+    { "id": "restaurant-redis", "from": "restaurant", "to": "redis", "label": "cache-aside", "labelDy": 20, "fromSide": "right", "toSide": "left" },
+    { "id": "realtime-redis", "from": "realtime", "to": "redis", "label": "socket adapter", "variant": "dashed", "fromSide": "right", "toSide": "top" },
+    { "id": "restaurant-observability", "from": "restaurant", "to": "observability", "label": "OTel traces", "variant": "dashed" },
+    { "id": "rabbit-observability", "from": "rabbitmq", "to": "observability", "label": "DLQ depth alarms", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "What Changed", "items": ["The HTTP /emit hop is gone — realtime consumes the bus", "Payments are webhook-driven; client verify is UX-only", "Admin reads owning services — no direct DB access"] },
+    { "dot": "rose", "title": "Reliability Guarantees", "items": ["Quorum queues + DLQs; nack after 3 attempts, then alarm", "Transactional outbox + confirm channels — no silent loss", "Circuit breakers + 3s timeouts on every internal call"] },
+    { "dot": "emerald", "title": "Scale Path", "items": ["Redis: cache-aside, socket adapter, rate-limit store", "Replica set with secondary reads; shard orders later", "ASGs min 2 per tier behind sticky-session ALB"] }
+  ]
+}

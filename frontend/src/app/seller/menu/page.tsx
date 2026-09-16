@@ -147,7 +147,7 @@ export default function SellerMenuPage() {
                 {imagePreview ? (
                   <div className="relative w-16 h-16 rounded-lg overflow-hidden">
                     <img src={imagePreview} alt="" className="h-full w-full object-cover" />
-                    <button onClick={() => { setImageFile(null); setImagePreview(null); }} className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/50 text-white text-[10px]">✕</button>
+                    <button aria-label="Remove selected image" onClick={() => { setImageFile(null); setImagePreview(null); }} className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 ) : (
                   <div className="flex w-16 h-16 items-center justify-center rounded-lg border-2 border-dashed border-border">

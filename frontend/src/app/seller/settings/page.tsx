@@ -173,7 +173,7 @@ export default function SellerSettingsPage() {
                     )}
                   </span>
                   {restaurant.autoLocation?.formattedAddress && (
-                    <span>📍 {restaurant.autoLocation.formattedAddress}</span>
+                    <span>· {restaurant.autoLocation.formattedAddress}</span>
                   )}
                 </div>
               )}
