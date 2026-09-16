@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { AuthRequest } from "../middlewares/isAuth.js";
 import { tryCatch } from "../middlewares/trycatch.js";
 import { Address } from "../models/Address.js";
@@ -107,6 +108,9 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   const orderDistance = Number(distance) || 5;
   const riderAmount = Math.ceil(orderDistance) * 17;
 
+  // Online payments get 15 minutes to complete before the order expires.
+  // COD has no payment window, so it never carries the expiry TTL.
+  const isCod = paymentMethod === "cod";
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
   const [longitude, latitude] = address.location.coordinates;
@@ -132,11 +136,27 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
       latitude,
       longitude,
     },
-    paymentStatus: "pending",
+    paymentStatus: isCod ? "paid" : "pending",
     status: "placed",
   });
 
-  await Cart.deleteMany({ userId: req.user._id });
+  if (isCod) {
+    // Cash on delivery is a final, confirmed order — clear the cart now
+    // and tell everyone. Online payments clear the cart in the payment
+    // consumer only after the gateway confirms the money.
+    await Cart.deleteMany({ userId: req.user._id });
+
+    notifyRealtime("order:new", `restaurant:${restaurantId}`, {
+      orderId: order._id,
+    });
+    notifyRealtime("order:new", `user:${restaurant.ownerId}`, {
+      orderId: order._id,
+    });
+    notifyRealtime("order:update", `user:${req.user._id}`, {
+      orderId: order._id,
+      status: "placed",
+    });
+  }
 
   return res.status(201).json({
     message: "Order created successfully",
@@ -489,8 +509,37 @@ export const getReadyOrdersNearRider = tryCatch(async (req, res) => {
   const orders = await Order.find({
     status: "ready_for_rider",
     paymentStatus: "paid",
-    restaurantId: { $in: nearbyRestaurants.map((r) => r._id) },
+    restaurantId: {
+      $in: nearbyRestaurants.map((r) => (r._id as mongoose.Types.ObjectId).toString()),
+    },
   }).sort({ createdAt: 1 });
+
+  return res.status(200).json({
+    success: true,
+    count: orders.length,
+    orders,
+  });
+});
+
+// ─── Rider Delivery History (internal) ──────────────────────
+// Used by the rider service to power the rider's Earnings + History pages.
+// Returns delivered orders for a rider, newest first.
+export const getRiderDeliveryHistory = tryCatch(async (req, res) => {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+    throw new Error("Forbidden");
+  }
+
+  const riderId = req.query.riderId as string;
+
+  if (!riderId) {
+    throw new Error("Rider ID is required");
+  }
+
+  const orders = await Order.find({
+    riderId,
+    status: "delivered",
+    paymentStatus: "paid",
+  }).sort({ createdAt: -1 });
 
   return res.status(200).json({
     success: true,

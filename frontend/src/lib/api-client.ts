@@ -122,8 +122,8 @@ export const riderApi = {
 };
 
 export const adminApi = {
-  get: <T>(endpoint: string) =>
-    request<T>(`/api/admin${endpoint}`, { method: "GET" }),
+  get: <T>(endpoint: string, config?: AxiosRequestConfig) =>
+    request<T>(`/api/admin${endpoint}`, { method: "GET", ...config }),
   patch: <T>(endpoint: string, data?: unknown) =>
     request<T>(`/api/admin${endpoint}`, { method: "PATCH", data }),
 };

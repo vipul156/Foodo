@@ -9,9 +9,27 @@ import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
 import { useRealtimeOrderSync } from "@/hooks/use-realtime-order-sync";
 import { useGetMyRestaurant } from "@/features/restaurants/api";
+import { MobileSidebar, type SidebarItem } from "@/components/shared/mobile-sidebar";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, User } from "lucide-react";
+import {
+  LogOut,
+  User,
+  LayoutDashboard,
+  BookOpen,
+  ShoppingBag,
+  BarChart3,
+  Settings,
+  Menu,
+} from "lucide-react";
+
+const NAV_ITEMS: SidebarItem[] = [
+  { href: "/seller", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/seller/menu", label: "Menu", icon: BookOpen },
+  { href: "/seller/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/seller/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/seller/settings", label: "Settings", icon: Settings },
+];
 
 export default function SellerLayout({
   children,
@@ -24,6 +42,7 @@ export default function SellerLayout({
   const { data: restaurant } = useGetMyRestaurant();
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const logout = useLogout();
 
@@ -43,7 +62,25 @@ export default function SellerLayout({
 
   return (
     <div className="flex min-h-screen bg-muted/30">
-      {/* Sidebar */}
+      {/* Mobile slide-over sidebar */}
+      <MobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        title="Seller"
+        items={NAV_ITEMS}
+        currentPath={pathname}
+        footer={
+          <button
+            onClick={() => logout()}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
+          </button>
+        }
+      />
+
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 flex-col border-r border-border bg-background">
         <div className="flex h-16 items-center gap-2 border-b border-border/50 px-6">
           <span className="text-lg font-bold tracking-tight">
@@ -54,11 +91,15 @@ export default function SellerLayout({
           </span>
         </div>
         <nav className="flex-1 space-y-1 p-4">
-          <SidebarLink href="/seller" label="Dashboard" active={isActive("/seller")} />
-          <SidebarLink href="/seller/menu" label="Menu" active={isActive("/seller/menu")} />
-          <SidebarLink href="/seller/orders" label="Orders" active={isActive("/seller/orders")} />
-          <SidebarLink href="/seller/analytics" label="Analytics" active={isActive("/seller/analytics")} />
-          <SidebarLink href="/seller/settings" label="Settings" active={isActive("/seller/settings")} />
+          {NAV_ITEMS.map((item) => (
+            <SidebarLink
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={isActive(item.href)}
+            />
+          ))}
         </nav>
 
         {/* Sidebar Logout */}
@@ -76,7 +117,18 @@ export default function SellerLayout({
       {/* Main Content */}
       <div className="flex flex-1 flex-col">
         {/* Top Bar */}
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border/50 bg-background px-6">
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border/50 bg-background px-4 sm:px-6">
+          {/* Mobile menu toggle */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors lg:hidden"
+            aria-label="Open menu"
+            aria-expanded={sidebarOpen}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
           <h1 className="text-lg font-semibold">Seller Dashboard</h1>
           <div className="ml-auto flex items-center gap-3">
             <RestaurantStatusBadge isOpen={restaurant?.isOpen} />
@@ -91,7 +143,7 @@ export default function SellerLayout({
           </div>
         </header>
 
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );
@@ -100,10 +152,12 @@ export default function SellerLayout({
 function SidebarLink({
   href,
   label,
+  icon: Icon,
   active,
 }: {
   href: string;
   label: string;
+  icon?: React.ComponentType<{ className?: string }>;
   active?: boolean;
 }) {
   return (
@@ -115,6 +169,7 @@ function SidebarLink({
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       }`}
     >
+      {Icon && <Icon className="h-4 w-4" />}
       {label}
     </Link>
   );

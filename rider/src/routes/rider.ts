@@ -4,6 +4,7 @@ import {
     acceptOrder,
   createRider,
   fetchMyCurrentOrder,
+  fetchMyDeliveryHistory,
   fetchMyProfile,
   releaseRiderInternal,
   toogleRiderAvailablity,
@@ -26,6 +27,7 @@ router.patch("/toggle", toogleRiderAvailablity);
 
 router.post("/accept/:orderId", acceptOrder);
 router.get("/order/current", fetchMyCurrentOrder)
+router.get("/order/history", fetchMyDeliveryHistory)
 router.put("/order/update", updateOrderStatus)
 
 export { router as riderRouter };

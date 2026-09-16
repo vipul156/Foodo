@@ -8,6 +8,7 @@ import {
   fetchSingleOrder,
   assignOrderToRider,
   getCurrentOrdersForRider,
+  getRiderDeliveryHistory,
   updateOrderStatusRider,
   cancelOrder,
 } from "../controllers/order.js";
@@ -23,6 +24,7 @@ router.get("/my", isAuth, getMyOrders);
 router.get("/:orderId", isAuth, fetchSingleOrder);
 router.put("/assign/rider", assignOrderToRider);
 router.get("/current/rider", getCurrentOrdersForRider);
+router.get("/history/rider", getRiderDeliveryHistory);
 router.put("/update/status/rider", updateOrderStatusRider);
 router.patch("/:orderId/cancel", isAuth, cancelOrder);
 

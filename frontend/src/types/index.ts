@@ -230,6 +230,17 @@ export interface IPendingRestaurant {
   isOpen: boolean;
 }
 
+export interface IAllRestaurant {
+  _id: string;
+  name: string;
+  description?: string;
+  image?: string;
+  ownerId: string;
+  phone: number;
+  isVerified: boolean;
+  isOpen: boolean;
+}
+
 export interface IPendingRider {
   _id: string;
   userId: string;
@@ -237,6 +248,59 @@ export interface IPendingRider {
   phoneNumber: string;
   isVerified: boolean;
   isAvailable: boolean;
+}
+
+export interface IAllRider extends IPendingRider {
+  lastActive?: string;
+}
+
+export interface IPlatformUser {
+  _id: string;
+  name: string;
+  email: string;
+  role: "customer" | "seller" | "rider" | "admin";
+  createdAt?: string;
+}
+
+export interface IDailyRevenuePoint {
+  date: string;
+  revenue: number;
+  orders: number;
+}
+
+export interface ITopRestaurant {
+  name: string;
+  revenue: number;
+  orders: number;
+}
+
+export interface IPlatformStats {
+  users: { total: number; newThisMonth: number };
+  restaurants: {
+    total: number;
+    verified: number;
+    open: number;
+    pending: number;
+  };
+  riders: {
+    total: number;
+    verified: number;
+    online: number;
+    pending: number;
+  };
+  orders: {
+    total: number;
+    delivered: number;
+    cancelled: number;
+    active: number;
+  };
+  revenue: {
+    total: number;
+    thisMonth: number;
+    monthChange: number | null;
+  };
+  daily: IDailyRevenuePoint[];
+  topRestaurants: ITopRestaurant[];
 }
 
 // ─── API Response Wrappers ───────────────────────────────────

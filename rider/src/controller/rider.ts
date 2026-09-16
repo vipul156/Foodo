@@ -302,6 +302,46 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
   }
 });
 
+export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => {
+  const riderUserId = req.user?._id;
+
+  if (!riderUserId) {
+    return res.status(401).json({
+      message: "You are not authorized",
+    });
+  }
+
+  const rider = await Rider.findOne({ userId: riderUserId });
+
+  if (!rider) {
+    return res.status(404).json({
+      message: "Rider not found",
+    });
+  }
+
+  try {
+    const { data } = await axios.get(
+      `${process.env.RESTAURANT_SERVICE_URL}/api/order/history/rider?riderId=${rider._id}`,
+      {
+        headers: {
+          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
+        },
+      },
+    );
+
+    return res.status(200).json({
+      message: "Delivery history fetched",
+      count: data.count ?? 0,
+      orders: data.orders ?? [],
+    });
+  } catch (error: any) {
+    console.error("Error fetching delivery history:", error?.response?.data || error?.message);
+    return res.status(500).json({
+      message: "Error fetching delivery history",
+    });
+  }
+});
+
 export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   const riderUserId = req.user?._id;
 

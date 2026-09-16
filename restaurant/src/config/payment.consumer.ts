@@ -1,6 +1,7 @@
 import { getChannel } from "./rabbitmq.js";
 import { Order } from "../models/Order.js";
 import { Restaurant } from "../models/Restaurant.js";
+import { Cart } from "../models/Cart.js";
 import axios from "axios";
 
 export const startPaymentConsumer = async () => {
@@ -73,6 +74,10 @@ export const startPaymentConsumer = async () => {
         orderId: order._id,
         status: "placed",
       });
+
+      // Payment is confirmed by the gateway — only NOW is the cart cleared.
+      // Abandoned checkouts keep their cart for the next attempt.
+      await Cart.deleteMany({ userId: order.userId });
 
       channel.ack(msg);
     } catch (error) {

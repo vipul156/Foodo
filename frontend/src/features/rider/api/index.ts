@@ -109,6 +109,25 @@ export function useUpdateOrderStatus() {
   });
 }
 
+// ─── Get Delivery History ────────────────────────────────────
+// GET /order/history — delivered orders for the authenticated rider,
+// newest first. Powers the Earnings and History pages.
+
+export function useGetRiderDeliveryHistory() {
+  return useQuery({
+    queryKey: ["rider", "history"],
+    queryFn: async () => {
+      const res = await riderApi.get<{
+        message: string;
+        count: number;
+        orders: IOrder[];
+      }>("/order/history");
+      return res.orders;
+    },
+    staleTime: 1000 * 60 * 1,
+  });
+}
+
 // ─── Create Rider Profile ────────────────────────────────────
 // POST /new (multipart) — first-time rider registration
 

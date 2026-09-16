@@ -8,9 +8,10 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
 import { useRealtimeOrderSync } from "@/hooks/use-realtime-order-sync";
+import { useGetRiderProfile } from "@/features/rider/api";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Home, Wallet, Clock, UserRound } from "lucide-react";
 
 export default function RiderLayout({
   children,
@@ -20,6 +21,7 @@ export default function RiderLayout({
   const { user } = useAuthStore();
   // Rider pages refetch automatically on order lifecycle events
   useRealtimeOrderSync();
+  const { data: rider } = useGetRiderProfile();
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -48,7 +50,7 @@ export default function RiderLayout({
           </span>
         </span>
         <div className="flex items-center gap-2">
-          <RiderAvailabilityBadge />
+          <RiderAvailabilityBadge isAvailable={rider?.isAvailable} />
 
           {/* Profile dropdown */}
           <div className="relative" ref={dropdownRef}>
@@ -101,10 +103,10 @@ export default function RiderLayout({
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/50 bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-lg items-center justify-around py-2">
-          <NavItem href="/rider" label="Home" icon="home" active={pathname === "/rider"} />
-          <NavItem href="/rider/earnings" label="Earnings" icon="wallet" active={pathname === "/rider/earnings"} />
-          <NavItem href="/rider/history" label="History" icon="clock" active={pathname === "/rider/history"} />
-          <NavItem href="/rider/profile" label="Profile" icon="user" active={pathname === "/rider/profile"} />
+          <NavItem href="/rider" label="Home" icon={Home} active={pathname === "/rider"} />
+          <NavItem href="/rider/earnings" label="Earnings" icon={Wallet} active={pathname === "/rider/earnings"} />
+          <NavItem href="/rider/history" label="History" icon={Clock} active={pathname === "/rider/history"} />
+          <NavItem href="/rider/profile" label="Profile" icon={UserRound} active={pathname === "/rider/profile"} />
         </div>
       </nav>
     </div>
@@ -114,39 +116,44 @@ export default function RiderLayout({
 function NavItem({
   href,
   label,
-  icon,
+  icon: Icon,
   active,
 }: {
   href: string;
   label: string;
-  icon: string;
+  icon: React.ComponentType<{ className?: string }>;
   active?: boolean;
 }) {
-  const icons: Record<string, string> = {
-    home: "🏠",
-    wallet: "💰",
-    clock: "🕐",
-    user: "👤",
-  };
-
   return (
     <Link
       href={href}
       className={`flex flex-col items-center gap-0.5 px-3 py-1 text-xs font-medium transition-colors ${
-        active ? "text-primary" : "text-muted-foreground"
+        active ? "text-primary" : "text-muted-foreground hover:text-foreground"
       }`}
     >
-      <div className="rounded-full p-1.5">{icons[icon] || "•"}</div>
+      <Icon className="h-5 w-5" />
       <span>{label}</span>
     </Link>
   );
 }
 
-function RiderAvailabilityBadge() {
+function RiderAvailabilityBadge({ isAvailable }: { isAvailable?: boolean }) {
+  // Unknown while the profile loads — render nothing rather than a wrong state
+  if (isAvailable === undefined) return null;
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      Available
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        isAvailable
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+          : "bg-muted text-muted-foreground"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          isAvailable ? "bg-emerald-500" : "bg-muted-foreground/50"
+        }`}
+      />
+      {isAvailable ? "Available" : "Offline"}
     </span>
   );
 }

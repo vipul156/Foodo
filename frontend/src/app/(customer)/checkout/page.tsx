@@ -229,7 +229,8 @@ export default function CheckoutPage() {
     try {
       const orderResult = await createOrder.mutateAsync({
         addressId: selectedAddressId,
-        paymentMethod: paymentMethod === "cod" ? "razorpay" : paymentMethod,
+        // Send the real method — COD must not be billed a payment TTL
+        paymentMethod,
         distance: 5,
       });
 

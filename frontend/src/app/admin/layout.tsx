@@ -7,9 +7,29 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { useLogout } from "@/features/auth/api";
+import { MobileSidebar, type SidebarItem } from "@/components/shared/mobile-sidebar";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, User, LayoutDashboard, Store, Bike, Users, BarChart3, Settings } from "lucide-react";
+import {
+  LogOut,
+  User,
+  LayoutDashboard,
+  Store,
+  Bike,
+  Users,
+  BarChart3,
+  Settings,
+  Menu,
+} from "lucide-react";
+
+const NAV_ITEMS: SidebarItem[] = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/restaurants", label: "Restaurants", icon: Store },
+  { href: "/admin/riders", label: "Riders", icon: Bike },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
+];
 
 export default function AdminLayout({
   children,
@@ -19,6 +39,7 @@ export default function AdminLayout({
   const { user } = useAuthStore();
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const logout = useLogout();
 
@@ -38,7 +59,25 @@ export default function AdminLayout({
 
   return (
     <div className="flex min-h-screen bg-muted/20">
-      {/* Sidebar */}
+      {/* Mobile slide-over sidebar */}
+      <MobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        title="Admin"
+        items={NAV_ITEMS}
+        currentPath={pathname}
+        footer={
+          <button
+            onClick={() => logout()}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
+          </button>
+        }
+      />
+
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 flex-col border-r border-border bg-background">
         <div className="flex h-16 items-center gap-2 border-b border-border/50 px-6">
           <span className="text-lg font-bold tracking-tight">
@@ -49,12 +88,15 @@ export default function AdminLayout({
           </span>
         </div>
         <nav className="flex-1 space-y-1 p-4">
-          <AdminNavItem href="/admin" label="Dashboard" icon={LayoutDashboard} active={isActive("/admin")} />
-          <AdminNavItem href="/admin/restaurants" label="Restaurants" icon={Store} active={isActive("/admin/restaurants")} />
-          <AdminNavItem href="/admin/riders" label="Riders" icon={Bike} active={isActive("/admin/riders")} />
-          <AdminNavItem href="/admin/users" label="Users" icon={Users} active={isActive("/admin/users")} />
-          <AdminNavItem href="/admin/analytics" label="Analytics" icon={BarChart3} active={isActive("/admin/analytics")} />
-          <AdminNavItem href="/admin/settings" label="Settings" icon={Settings} active={isActive("/admin/settings")} />
+          {NAV_ITEMS.map((item) => (
+            <AdminNavItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={isActive(item.href)}
+            />
+          ))}
         </nav>
 
         {/* Sidebar Logout */}
@@ -71,12 +113,21 @@ export default function AdminLayout({
 
       {/* Main Content */}
       <div className="flex flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border/50 bg-background px-6">
-          <h1 className="text-lg font-semibold">
-            Admin Control Panel
-          </h1>
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border/50 bg-background px-4 sm:px-6">
+          {/* Mobile menu toggle */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors lg:hidden"
+            aria-label="Open menu"
+            aria-expanded={sidebarOpen}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <h1 className="text-lg font-semibold">Admin Control Panel</h1>
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">
+            <span className="hidden text-sm text-muted-foreground md:block">
               {new Date().toLocaleDateString("en-US", {
                 weekday: "long",
                 month: "long",
@@ -126,7 +177,7 @@ export default function AdminLayout({
           </div>
         </header>
 
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );
@@ -140,7 +191,7 @@ function AdminNavItem({
 }: {
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon?: React.ComponentType<{ className?: string }>;
   active?: boolean;
 }) {
   return (
@@ -152,7 +203,7 @@ function AdminNavItem({
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       }`}
     >
-      <Icon className="h-4 w-4" />
+      {Icon && <Icon className="h-4 w-4" />}
       {label}
     </Link>
   );
