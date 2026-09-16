@@ -19,6 +19,10 @@ import {
 } from "@/features/orders/api";
 import { useAuthStore } from "@/store/auth-store";
 import {
+  getCurrentPosition,
+  reverseGeocode,
+} from "@/lib/geolocation";
+import {
   ArrowLeft,
   MapPin,
   CreditCard,
@@ -195,28 +199,28 @@ export default function CheckoutPage() {
 
   // ─── Geolocation ───────────────────────────────────────────
 
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      setAddressError("Geolocation is not supported by your browser");
-      return;
-    }
+  const handleDetectLocation = async () => {
     setGeoLoading(true);
     setAddressError("");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setNewAddress((prev) => ({
-          ...prev,
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }));
-        setGeoLoading(false);
-      },
-      () => {
-        setAddressError("Could not get your location. Please enter it manually.");
-        setGeoLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+
+    try {
+      const { latitude, longitude } = await getCurrentPosition();
+      const detectedAddress = await reverseGeocode(latitude, longitude);
+      setNewAddress((prev) => ({
+        ...prev,
+        latitude,
+        longitude,
+        formatterAddress: detectedAddress,
+      }));
+      setGeoLoading(false);
+    } catch (err) {
+      setAddressError(
+        err instanceof Error
+          ? err.message
+          : "Could not get your location. Please enter it manually.",
+      );
+      setGeoLoading(false);
+    }
   };
 
   // ─── Place Order ───────────────────────────────────────────
@@ -482,9 +486,9 @@ export default function CheckoutPage() {
                     <Navigation className="h-3 w-3" />
                   )}
                   {geoLoading
-                    ? "Detecting..."
+                    ? "Detecting address..."
                     : newAddress.latitude !== 0
-                      ? "Location detected ✓"
+                      ? "Address detected ✓"
                       : "Detect my location"}
                 </button>
                 {newAddress.latitude !== 0 && (
