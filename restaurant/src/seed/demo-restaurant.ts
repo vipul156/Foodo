@@ -105,10 +105,19 @@ export const seedDemoRestaurant = async (): Promise<void> => {
 
     // Prefer the demo rider's live location so "$near" matching in the
     // order-ready consumer (10km radius) succeeds in the tester's city.
+    // Look the rider up via the demo rider USER (same identity the rider
+    // service seeds) — picking an arbitrary verified rider could snap the
+    // restaurant to a stray test rider in another city.
+    const UserModel2: mongoose.Model<any> =
+      (mongoose.models.User as mongoose.Model<any>) ??
+      mongoose.model("User", new mongoose.Schema({}, { strict: false }));
+    const demoRiderUser = await UserModel2.findOne({ email: "rider@demo.com" });
     const RiderModel: mongoose.Model<any> =
       (mongoose.models.Rider as mongoose.Model<any>) ??
       mongoose.model("Rider", new mongoose.Schema({}, { strict: false }));
-    const demoRider = await RiderModel.findOne({ isVerified: true });
+    const demoRider = demoRiderUser
+      ? await RiderModel.findOne({ userId: demoRiderUser._id.toString(), isVerified: true })
+      : null;
 
     const riderCoords = demoRider?.location?.coordinates as
       | [number, number]

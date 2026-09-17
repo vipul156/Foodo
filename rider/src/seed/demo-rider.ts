@@ -43,9 +43,17 @@ export const seedDemoRider = async (): Promise<void> => {
     const existing = await Rider.findOne({ userId });
 
     if (existing) {
-      // Keep the demo profile in sync (photo, verification, location)
-      await Rider.updateOne({ userId }, { $set: RIDER_SEED });
-      console.log("[seed] Demo rider profile refreshed (verified & available)");
+      // Keep the demo profile in sync (photo, verification, availability)
+      // but NEVER reset `location`: it holds the rider's real position from
+      // their last "Go online" toggle, and geo-matching (order-ready
+      // consumer + available offers) depends on it. Overwriting it here
+      // teleported the rider back to the seed coords on every restart,
+      // silently breaking rider↔restaurant matching until the next toggle.
+      await Rider.updateOne(
+        { userId },
+        { $set: { picture: RIDER_SEED.picture, isVerified: true, isAvailable: true } },
+      );
+      console.log("[seed] Demo rider profile refreshed (verified & available, location preserved)");
       return;
     }
 
