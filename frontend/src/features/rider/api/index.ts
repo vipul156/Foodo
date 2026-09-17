@@ -48,6 +48,27 @@ export function useToggleRiderAvailability() {
   });
 }
 
+// ─── Get Available Orders ────────────────────────────────────
+// GET /order/available — ready_for_rider orders near the rider.
+// Fetched on login/refresh so offers broadcast *before* the rider was
+// online are still visible; polls as a safety net alongside the socket.
+
+export function useGetAvailableOrders(enabled: boolean) {
+  return useQuery({
+    queryKey: ["rider", "orders", "available"],
+    queryFn: async () => {
+      const res = await riderApi.get<{
+        message: string;
+        count: number;
+        orders: IOrder[];
+      }>("/order/available");
+      return res.orders;
+    },
+    enabled,
+    refetchInterval: 1000 * 15,
+  });
+}
+
 // ─── Get Current Order ───────────────────────────────────────
 // GET /order/current — returns the rider's current active order
 

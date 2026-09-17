@@ -59,7 +59,7 @@ export const startOrderReadyConsumer = async() => {
                   },
                 );
                     
-                } catch(error){
+                } catch(error: any){
                     console.error("Error notifying rider:", rider.userId, error?.message)
                 }
             }

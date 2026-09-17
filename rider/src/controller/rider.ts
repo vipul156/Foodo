@@ -342,6 +342,56 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
   }
 });
 
+// Available orders for the rider dashboard — paid orders marked
+// ready_for_rider at restaurants within 10km of the rider's last known
+// location. Lets a rider who logs in / refreshes *after* the socket
+// "order:available" broadcast still see (and accept) the offer.
+export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
+  const riderUserId = req.user?._id;
+
+  if (!riderUserId) {
+    return res.status(401).json({
+      message: "You are not authorized",
+    });
+  }
+
+  const rider = await Rider.findOne({ userId: riderUserId });
+
+  if (!rider) {
+    return res.status(404).json({
+      message: "Rider not found",
+    });
+  }
+
+  const [longitude, latitude] = rider.location.coordinates;
+
+  try {
+    const { data } = await axios.get(
+      `${process.env.RESTAURANT_SERVICE_URL}/api/order/ready/rider`,
+      {
+        params: { latitude, longitude },
+        headers: {
+          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
+        },
+      },
+    );
+
+    return res.status(200).json({
+      message: "Available orders fetched",
+      count: data.count ?? 0,
+      orders: data.orders ?? [],
+    });
+  } catch (error: any) {
+    console.error(
+      "Error fetching available orders:",
+      error?.response?.data || error?.message,
+    );
+    return res.status(500).json({
+      message: "Error fetching available orders",
+    });
+  }
+});
+
 export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   const riderUserId = req.user?._id;
 

@@ -14,6 +14,7 @@ import {
   useGetRiderDeliveryHistory,
   useToggleRiderAvailability,
   useGetCurrentOrder,
+  useGetAvailableOrders,
   useAcceptOrder,
   useUpdateOrderStatus,
 } from "@/features/rider/api";
@@ -56,8 +57,20 @@ export default function RiderDashboardPage() {
   const updateOrderStatus = useUpdateOrderStatus();
   const queryClient = useQueryClient();
 
-  // Available order notification from socket
-  const [availableOrder, setAvailableOrder] = useState<OrderAvailablePayload | null>(null);
+  const isAvailable = rider?.isAvailable ?? false;
+  const isVerified = rider?.isVerified ?? false;
+
+  // Offers from the server — ready orders near the rider's last known
+  // location. Covers riders who logged in / refreshed after the socket
+  // broadcast fired, so offers never silently disappear on login.
+  const { data: availableOrders } = useGetAvailableOrders(
+    Boolean(rider) && isAvailable && !currentOrder,
+  );
+
+  // Instant pop for offers broadcast while the rider is watching
+  const [socketOffer, setSocketOffer] = useState<OrderAvailablePayload | null>(null);
+  // Which offer's Accept button is mid-flight (per-card spinner)
+  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
 
   // Listen for new available orders
   useSocketEvent(
@@ -66,24 +79,29 @@ export default function RiderDashboardPage() {
       (payload: unknown) => {
         const data = payload as OrderAvailablePayload;
         if (data?.orderId && !currentOrder) {
-          setAvailableOrder(data);
+          setSocketOffer(data);
           // Auto-dismiss after 30 seconds
-          setTimeout(() => setAvailableOrder(null), 30000);
+          setTimeout(() => setSocketOffer(null), 30000);
         }
       },
       [currentOrder],
     ),
   );
 
-  const handleAcceptOrder = async () => {
-    if (!availableOrder?.orderId) return;
+  const handleAcceptOrder = async (orderId: string) => {
+    setPendingOrderId(orderId);
     try {
-      await acceptOrder.mutateAsync(availableOrder.orderId);
-      setAvailableOrder(null);
+      await acceptOrder.mutateAsync(orderId);
+      setSocketOffer(null);
       refetchOrder();
+      // The accepted order leaves the available list
+      queryClient.invalidateQueries({ queryKey: ["rider", "orders", "available"] });
     } catch {
       // Order may have been taken by another rider
-      setAvailableOrder(null);
+      setSocketOffer(null);
+      queryClient.invalidateQueries({ queryKey: ["rider", "orders", "available"] });
+    } finally {
+      setPendingOrderId(null);
     }
   };
 
@@ -100,9 +118,6 @@ export default function RiderDashboardPage() {
       // Error is surfaced by the mutation hook
     }
   };
-
-  const isAvailable = rider?.isAvailable ?? false;
-  const isVerified = rider?.isVerified ?? false;
 
   const handleToggleAvailability = () => {
     if (!navigator.geolocation) {
@@ -168,42 +183,65 @@ export default function RiderDashboardPage() {
           <TodayStrip total={todayStats.total} count={todayStats.count} />
         )}
 
-        {/* Available Order Notification (from socket) */}
-        {availableOrder && !currentOrder && rider && (
-          <GlassCard className="animate-in slide-in-from-top-2 border-2 border-primary/40 p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="font-semibold text-primary">New order available</h3>
-              <span
-                className="flex h-2 w-2 animate-ping rounded-full bg-primary"
-                role="status"
-                aria-label="Live update"
-              />
-            </div>
-            <p className="mb-4 text-sm text-muted-foreground">
-              A delivery order is available near you. Accept it before another
-              rider does.
-            </p>
-            <div className="flex gap-3">
-              <Button
-                onClick={handleAcceptOrder}
-                disabled={acceptOrder.isPending}
-                className="flex-1"
-              >
-                {acceptOrder.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Accept Delivery"
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setAvailableOrder(null)}
-                disabled={acceptOrder.isPending}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </GlassCard>
+        {/* Available offers (fetched on load + socket broadcasts) */}
+        {rider && isAvailable && !currentOrder && (
+          <section className="space-y-2">
+            <h3 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Available offers
+            </h3>
+            {availableOrders && availableOrders.length > 0 ? (
+              availableOrders.map((order) => (
+                <AvailableOrderCard
+                  key={order._id}
+                  order={order}
+                  highlight={socketOffer?.orderId === order._id}
+                  isAccepting={acceptOrder.isPending && pendingOrderId === order._id}
+                  onAccept={() => handleAcceptOrder(order._id)}
+                />
+              ))
+            ) : socketOffer ? (
+              /* Socket popped an offer the list doesn't know about yet */
+              <GlassCard className="animate-in slide-in-from-top-2 border-2 border-primary/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="font-semibold text-primary">New order available</h3>
+                  <span
+                    className="flex h-2 w-2 animate-ping rounded-full bg-primary"
+                    role="status"
+                    aria-label="Live update"
+                  />
+                </div>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  A delivery order is available near you. Accept it before another
+                  rider does.
+                </p>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => handleAcceptOrder(socketOffer.orderId)}
+                    disabled={acceptOrder.isPending}
+                    className="flex-1"
+                  >
+                    {acceptOrder.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Accept Delivery"
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setSocketOffer(null)}
+                    disabled={acceptOrder.isPending}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </GlassCard>
+            ) : (
+              <p className="px-1 text-sm text-muted-foreground">
+                No offers right now — you&apos;ll see one here the moment a
+                nearby restaurant marks an order ready.
+              </p>
+            )}
+          </section>
         )}
 
         {/* Active delivery or listening state */}
@@ -415,6 +453,57 @@ function DeliveryCard({
 }
 
 // ─── Listening / Offline Empty State ─────────────────────────
+
+function AvailableOrderCard({
+  order,
+  highlight,
+  isAccepting,
+  onAccept,
+}: {
+  order: IOrder;
+  highlight: boolean;
+  isAccepting: boolean;
+  onAccept: () => void;
+}) {
+  return (
+    <GlassCard
+      className={`animate-in slide-in-from-top-2 p-4 ${
+        highlight ? "border-2 border-primary/40" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+            <Package className="h-5 w-5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">
+              Order #{order._id.slice(-6)}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {order.restaurantName}
+            </p>
+          </div>
+        </div>
+        <span className="flex shrink-0 items-center text-sm font-bold">
+          <IndianRupee className="h-3.5 w-3.5" />
+          {order.riderAmount}
+        </span>
+      </div>
+      <Button
+        onClick={onAccept}
+        disabled={isAccepting}
+        className="mt-3 w-full"
+      >
+        {isAccepting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          "Accept Delivery"
+        )}
+      </Button>
+    </GlassCard>
+  );
+}
 
 function ListeningState({ isAvailable }: { isAvailable: boolean }) {
   return (

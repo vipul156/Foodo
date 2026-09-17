@@ -3,6 +3,7 @@ import { isAuth, isRider } from "../middlewares/isAuth.js";
 import {
     acceptOrder,
   createRider,
+  fetchAvailableOrders,
   fetchMyCurrentOrder,
   fetchMyDeliveryHistory,
   fetchMyProfile,
@@ -26,6 +27,7 @@ router.get("/myprofile", fetchMyProfile);
 router.patch("/toggle", toogleRiderAvailablity);
 
 router.post("/accept/:orderId", acceptOrder);
+router.get("/order/available", fetchAvailableOrders);
 router.get("/order/current", fetchMyCurrentOrder)
 router.get("/order/history", fetchMyDeliveryHistory)
 router.put("/order/update", updateOrderStatus)
