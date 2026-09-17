@@ -15,7 +15,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Logo */}
-      <div className="mb-8">
+      <div className="mb-8 xl:hidden">
         <Link
           href="/"
           className="text-3xl font-bold tracking-tight text-foreground"
