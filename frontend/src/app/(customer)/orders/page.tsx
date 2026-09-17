@@ -16,6 +16,7 @@ import {
   type OrderDeliveredPayload,
 } from "@/lib/socket-events";
 import type { IOrder } from "@/types";
+import { LiveTracking } from "@/features/tracking/components";
 import {
   ArrowLeft,
   Package,
@@ -30,6 +31,8 @@ import {
   Bike,
   XCircle,
   Bell,
+  ChevronDown,
+  Navigation,
 } from "lucide-react";
 
 function useOrderSocket(refetch: () => void) {
@@ -153,7 +156,9 @@ export default function OrdersPage() {
       ) : orders && orders.length > 0 ? (
         <div className="space-y-4">
           {orders.map((order: IOrder) => (
-            <OrderCard key={order._id} order={order} />
+            <Link key={order._id} href={`/orders/${order._id}`} className="block group">
+              <OrderCard order={order} />
+            </Link>
           ))}
         </div>
       ) : (
@@ -178,7 +183,16 @@ export default function OrdersPage() {
 
 // ─── Order Card ──────────────────────────────────────────────
 
+/** The map shows only while the trip is running — delivered orders keep
+ * no route history (pings are transient), so a post-delivery map would be
+ * two static pins and a permanent "waiting for GPS". Pointless. */
+function isTrackable(order: IOrder): boolean {
+  return ["rider_assigned", "picked_up"].includes(order.status);
+}
+
 function OrderCard({ order }: { order: IOrder }) {
+  const [mapOpen, setMapOpen] = useState(false);
+  const trackable = isTrackable(order);
   const statusColor =
     order.status === "delivered"
       ? "border-emerald-500/30 bg-emerald-500/5"
@@ -241,6 +255,46 @@ function OrderCard({ order }: { order: IOrder }) {
             </span>
           )}
         </div>
+
+        {/* Live tracking map — expandable while the trip is running */}
+        {trackable && order.deliveryAddress && (
+          <div className="mt-3 border-t border-border/50 pt-3">
+            <button
+              onClick={() => setMapOpen((v) => !v)}
+              aria-expanded={mapOpen}
+              className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Navigation className="h-3.5 w-3.5" />
+                Track your order live
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${mapOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
+            {mapOpen && (
+              <div className="mt-2 animate-in slide-in-from-top-2">
+                <LiveTracking
+                  orderId={order._id}
+                  restaurant={{
+                    name: order.restaurantName,
+                    // Spice Villa coords arrive via the order's restaurant location;
+                    // the consumer stores them in the restaurant document, so the
+                    // order carries the drop-off only. Rider position comes live.
+                    latitude: order.restaurantLocation?.latitude ?? order.deliveryAddress.latitude,
+                    longitude: order.restaurantLocation?.longitude ?? order.deliveryAddress.longitude,
+                  }}
+                  dropoff={{
+                    formattedAddress: order.deliveryAddress.formattedAddress,
+                    latitude: order.deliveryAddress.latitude,
+                    longitude: order.deliveryAddress.longitude,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </GlassCard>
   );

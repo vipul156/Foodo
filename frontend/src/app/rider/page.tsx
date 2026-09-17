@@ -19,6 +19,7 @@ import {
   useUpdateOrderStatus,
 } from "@/features/rider/api";
 import { useSocketEvent } from "@/hooks/use-socket-event";
+import { useRiderLocationStream } from "@/hooks/use-rider-location-stream";
 import {
   SOCKET_EVENTS,
   type OrderAvailablePayload,
@@ -30,10 +31,12 @@ import {
   MapPin,
   Loader2,
   CheckCircle2,
-  ChevronRight,
+  Check,
   Power,
   PackageOpen,
   IndianRupee,
+  Store,
+  Zap,
 } from "lucide-react";
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -59,6 +62,12 @@ export default function RiderDashboardPage() {
 
   const isAvailable = rider?.isAvailable ?? false;
   const isVerified = rider?.isVerified ?? false;
+
+  // Stream GPS to the tracking room for the whole trip — from acceptance
+  // (heading to the restaurant) through pickup to delivery. NOTE: during a
+  // delivery isAvailable is false (the rider is intentionally marked
+  // unavailable for new offers), so availability must NOT gate streaming.
+  useRiderLocationStream(currentOrder?._id, Boolean(currentOrder));
 
   // Offers from the server — ready orders near the rider's last known
   // location. Covers riders who logged in / refreshed after the socket
@@ -186,8 +195,15 @@ export default function RiderDashboardPage() {
         {/* Available offers (fetched on load + socket broadcasts) */}
         {rider && isAvailable && !currentOrder && (
           <section className="space-y-2">
-            <h3 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Available offers
+            <h3 className="flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <span>
+                Available offers
+                {availableOrders && availableOrders.length > 0 && (
+                  <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                    {availableOrders.length}
+                  </span>
+                )}
+              </span>
             </h3>
             {availableOrders && availableOrders.length > 0 ? (
               availableOrders.map((order) => (
@@ -201,38 +217,47 @@ export default function RiderDashboardPage() {
               ))
             ) : socketOffer ? (
               /* Socket popped an offer the list doesn't know about yet */
-              <GlassCard className="animate-in slide-in-from-top-2 border-2 border-primary/40 p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="font-semibold text-primary">New order available</h3>
+              <GlassCard className="animate-in slide-in-from-top-2 overflow-hidden p-0 border-2 border-primary/50 shadow-xl shadow-primary/10">
+                <div className="flex items-center justify-between gap-3 bg-primary px-4 py-3 text-primary-foreground">
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-primary-foreground/70">
+                      New offer just came in
+                    </p>
+                    <p className="text-sm font-semibold">
+                      Accept before another rider does
+                    </p>
+                  </div>
                   <span
-                    className="flex h-2 w-2 animate-ping rounded-full bg-primary"
+                    className="flex h-2.5 w-2.5 shrink-0 animate-ping rounded-full bg-white"
                     role="status"
                     aria-label="Live update"
                   />
                 </div>
-                <p className="mb-4 text-sm text-muted-foreground">
-                  A delivery order is available near you. Accept it before another
-                  rider does.
-                </p>
-                <div className="flex gap-3">
+                <div className="px-4 py-3">
                   <Button
                     onClick={() => handleAcceptOrder(socketOffer.orderId)}
                     disabled={acceptOrder.isPending}
-                    className="flex-1"
+                    className="h-10 w-full rounded-xl text-sm shadow-sm"
                   >
                     {acceptOrder.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Accepting…
+                      </>
                     ) : (
-                      "Accept Delivery"
+                      <>
+                        <Zap className="h-4 w-4" />
+                        Accept Delivery
+                      </>
                     )}
                   </Button>
-                  <Button
-                    variant="outline"
+                  <button
                     onClick={() => setSocketOffer(null)}
                     disabled={acceptOrder.isPending}
+                    className="mt-2 w-full rounded-xl py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
                     Dismiss
-                  </Button>
+                  </button>
                 </div>
               </GlassCard>
             ) : (
@@ -389,70 +414,113 @@ function DeliveryCard({
   const isPickedUp = order.status === "picked_up";
 
   return (
-    <GlassCard className="p-4">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between rounded-xl bg-muted/50 p-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-              <Package className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">
-                Order #{order._id.slice(-6)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {order.restaurantName}
-                {order.distance ? ` · ${order.distance.toFixed(1)} km` : ""}
-              </p>
-            </div>
-          </div>
-          <span className="flex items-center text-sm font-bold">
-            <IndianRupee className="h-3.5 w-3.5" />
+    <GlassCard className="overflow-hidden p-0">
+      {/* Payout banner — mirrors the offer card */}
+      <div className="flex items-center justify-between gap-3 bg-muted/60 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            You earn
+          </p>
+          <p className="flex items-center text-lg font-bold leading-tight text-foreground">
+            <IndianRupee className="h-4 w-4" />
             {order.riderAmount}
-          </span>
+          </p>
         </div>
-
-        <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            {order.deliveryAddress?.formattedAddress ||
-              "Delivery address available in app"}
+        {order.distance ? (
+          <span className="shrink-0 rounded-full bg-background px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+            {order.distance.toFixed(1)} km
           </span>
-        </div>
+        ) : null}
+      </div>
 
-        {/* Progress + rider action */}
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 p-3">
-          <div className="flex items-center gap-2 text-xs font-medium">
+      {/* Trip route — doubles as progress: the pickup node checks off */}
+      <div className="space-y-2.5 px-4 py-3.5">
+        <div className="flex items-start gap-2.5">
+          {isPickedUp ? (
             <span
-              className={`inline-flex items-center gap-1 ${
+              className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-500"
+              aria-hidden="true"
+            >
+              <Check className="h-2.5 w-2.5 text-white" />
+            </span>
+          ) : (
+            <span
+              className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10"
+              aria-hidden="true"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium leading-tight">
+              {order.restaurantName}
+            </p>
+            <p
+              className={`text-[11px] ${
                 isPickedUp
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-foreground"
+                  ? "font-medium text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground"
               }`}
             >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Picked up
-            </span>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">Delivered</span>
+              Order #{order._id.slice(-6)}
+              {isPickedUp ? " · Picked up" : " · Pickup"}
+            </p>
           </div>
-          <Button size="sm" onClick={onUpdate} disabled={isUpdating}>
-            {isUpdating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {isPickedUp ? "Mark Delivered" : "Mark Picked Up"}
-              </>
-            )}
-          </Button>
         </div>
+        <div className="ml-[7px] h-3 w-px bg-border" aria-hidden="true" />
+        <div className="flex items-start gap-2.5">
+          <MapPin
+            className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden="true"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium leading-tight">
+              {order.deliveryAddress?.formattedAddress || "Delivery address in app"}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Drop off</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Action — full width, same weight as the offer accept button */}
+      <div className="border-t border-border/60 px-4 py-3">
+        <Button
+          onClick={onUpdate}
+          disabled={isUpdating}
+          className="h-10 w-full rounded-xl text-sm shadow-sm"
+        >
+          {isUpdating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Updating…
+            </>
+          ) : isPickedUp ? (
+            <>
+              <CheckCircle2 className="h-4 w-4" />
+              Mark Delivered
+            </>
+          ) : (
+            <>
+              <Package className="h-4 w-4" />
+              Mark Picked Up
+            </>
+          )}
+        </Button>
       </div>
     </GlassCard>
   );
 }
 
-// ─── Listening / Offline Empty State ─────────────────────────
+// ─── Available Offer Card — payout-first, built for a 3-second decision ──
+
+function formatWaitTime(createdAt?: string): string | null {
+  if (!createdAt) return null;
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+  if (mins < 1) return "Just ready";
+  if (mins < 60) return `Waiting ${mins}m`;
+  const h = Math.floor(mins / 60);
+  return `Waiting ${h}h ${mins % 60}m`;
+}
 
 function AvailableOrderCard({
   order,
@@ -465,42 +533,100 @@ function AvailableOrderCard({
   isAccepting: boolean;
   onAccept: () => void;
 }) {
+  const wait = formatWaitTime(order.createdAt);
+
   return (
     <GlassCard
-      className={`animate-in slide-in-from-top-2 p-4 ${
-        highlight ? "border-2 border-primary/40" : ""
+      className={`animate-in slide-in-from-top-2 overflow-hidden p-0 transition-shadow ${
+        highlight
+          ? "border-2 border-primary/50 shadow-xl shadow-primary/10"
+          : ""
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Package className="h-5 w-5 text-primary" />
-          </div>
+      {/* Payout banner — the decision lives here */}
+      <div
+        className={`flex items-center justify-between gap-3 px-4 py-3 ${
+          highlight
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted/60"
+        }`}
+      >
+        <div className="min-w-0">
+          <p
+            className={`text-[11px] font-medium uppercase tracking-wide ${
+              highlight ? "text-primary-foreground/70" : "text-muted-foreground"
+            }`}
+          >
+            You earn
+          </p>
+          <p
+            className={`flex items-center text-lg font-bold leading-tight ${
+              highlight ? "text-primary-foreground" : "text-foreground"
+            }`}
+          >
+            <IndianRupee className="h-4 w-4" />
+            {order.riderAmount}
+          </p>
+        </div>
+        {wait && (
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              highlight
+                ? "bg-white/20 text-primary-foreground"
+                : "bg-background text-muted-foreground"
+            }`}
+          >
+            {wait}
+          </span>
+        )}
+      </div>
+
+      {/* Trip route: pickup → dropoff */}
+      <div className="space-y-2.5 px-4 py-3.5">
+        <div className="flex items-start gap-2.5">
+          <Store className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold">
-              Order #{order._id.slice(-6)}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="truncate text-sm font-medium leading-tight">
               {order.restaurantName}
             </p>
+            <p className="text-[11px] text-muted-foreground">Pickup</p>
           </div>
         </div>
-        <span className="flex shrink-0 items-center text-sm font-bold">
-          <IndianRupee className="h-3.5 w-3.5" />
-          {order.riderAmount}
-        </span>
+        <div
+          className="ml-[7px] h-3 w-px bg-border"
+          aria-hidden="true"
+        />
+        <div className="flex items-start gap-2.5">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium leading-tight">
+              {order.deliveryAddress?.formattedAddress || "Delivery address in app"}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Drop off</p>
+          </div>
+        </div>
       </div>
-      <Button
-        onClick={onAccept}
-        disabled={isAccepting}
-        className="mt-3 w-full"
-      >
-        {isAccepting ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          "Accept Delivery"
-        )}
-      </Button>
+
+      {/* Action */}
+      <div className="border-t border-border/60 px-4 py-3">
+        <Button
+          onClick={onAccept}
+          disabled={isAccepting}
+          className="h-10 w-full rounded-xl text-sm shadow-sm"
+        >
+          {isAccepting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Accepting…
+            </>
+          ) : (
+            <>
+              <Zap className="h-4 w-4" />
+              Accept — ₹{order.riderAmount}
+            </>
+          )}
+        </Button>
+      </div>
     </GlassCard>
   );
 }

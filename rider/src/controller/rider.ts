@@ -213,8 +213,15 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
         riderId: rider._id,
         orderId,
         riderUserId: rider.userId,
-        riderName: rider.picture,
+        // Real name from the auth JWT (picture URL was stored here before —
+        // customers don't want a URL as their rider's name).
+        riderName:
+          (req.user as any)?.name ||
+          (req.user as any)?.user?.name ||
+          "Delivery Partner",
         riderPhone: rider.phoneNumber,
+        // Photo travels separately so the customer app can show an avatar
+        riderPicture: rider.picture,
       },
       {
         headers: {

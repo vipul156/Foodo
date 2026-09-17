@@ -5,7 +5,7 @@ import { Address } from "../models/Address.js";
 import { Order } from "../models/Order.js";
 import { Cart } from "../models/Cart.js";
 import { Restaurant } from "../models/Restaurant.js";
-import { IMenuItem } from "../models/MenuItem.js";
+import { MenuItem, IMenuItem } from "../models/MenuItem.js";
 import axios from "axios";
 import { publishEvent } from "../config/order.publisher.js";
 
@@ -121,6 +121,12 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     paymentMethod,
     restaurantId: restaurantId.toString(),
     restaurantName: restaurant.name,
+    // Frozen at creation so the live tracking map can draw the
+    // pickup → dropoff route even if the restaurant moves later.
+    restaurantLocation: {
+      latitude: restaurant.autoLocation.coordinates[1],
+      longitude: restaurant.autoLocation.coordinates[0],
+    },
     riderId: null,
     items: orderItems,
     subtotal,
@@ -419,9 +425,23 @@ export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Unauthorized");
   }
 
+  // Enrich items with menu images (the embedded snapshot stores only
+  // name/price/quantity) — one batched lookup, no per-item queries.
+  const itemIds = order.items.map((i) => i.itemId);
+  const menuItems = await MenuItem.find({ _id: { $in: itemIds } }).select(
+    "image",
+  );
+  const imageById = new Map(menuItems.map((m) => [m._id.toString(), m.image]));
+
+  const orderObj = order.toObject() as any;
+  orderObj.items = orderObj.items.map((item: any) => ({
+    ...item,
+    image: imageById.get(item.itemId) ?? null,
+  }));
+
   return res.status(200).json({
     success: true,
-    order,
+    order: orderObj,
   });
 });
 
@@ -431,7 +451,7 @@ export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Forbidden");
   }
 
-  const { orderId, riderId, riderName, riderPhone } = req.body;
+  const { orderId, riderId, riderName, riderPhone, riderPicture } = req.body;
 
   if (!orderId) {
     throw new Error("Order ID is required");
@@ -449,6 +469,7 @@ export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
     riderId,
     riderName,
     riderPhone,
+    riderPicture: riderPicture || null,
     status: "rider_assigned",
   }, { new: true });
 

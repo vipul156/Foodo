@@ -149,6 +149,8 @@ export interface IOrderItem {
   name: string;
   price: number;
   quantity: number;
+  /** Present on the single-order endpoint (enriched with menu data) */
+  image?: string | null;
 }
 
 export interface IDeliveryAddress {
@@ -163,8 +165,13 @@ export interface IOrder {
   userId: string;
   restaurantId: string;
   restaurantName: string;
+  restaurantLocation?: {
+    latitude: number;
+    longitude: number;
+  };
   riderId?: string | null;
   riderName?: string | null;
+  riderPicture?: string | null;
   riderPhone?: number | null;
   distance: number;
   riderAmount: number;

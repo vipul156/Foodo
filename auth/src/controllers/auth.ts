@@ -15,7 +15,7 @@ export const registerUser = tryCatch(async (req, res) => {
   if (!user) {
     user = await User.create({ name, email, password, role, image });
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
+      { id: user._id, name: user.name, email: user.email, role: user.role },
       process.env.JWT_SECRET!,
       { expiresIn: "7d" },
     );
@@ -37,7 +37,7 @@ export const loginUser = tryCatch(async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     } else {
       const token = jwt.sign(
-        { id: user._id, email: user.email, role: user.role },
+        { id: user._id, name: user.name, email: user.email, role: user.role },
         process.env.JWT_SECRET!,
         { expiresIn: "7d" },
       );
