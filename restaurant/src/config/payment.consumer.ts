@@ -44,6 +44,12 @@ export const startPaymentConsumer = async () => {
 
       console.log("Order updated:", order);
 
+      // Payment is confirmed by the gateway — clear the cart BEFORE
+      // notifying anyone. Any cart refetch triggered by the socket events
+      // below must see the empty cart, not a stale one.
+      // Abandoned checkouts keep their cart for the next attempt.
+      await Cart.deleteMany({ userId: order.userId });
+
       const emit = (event: string, room: string, payload: unknown) =>
         axios.post(
           `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
@@ -74,10 +80,6 @@ export const startPaymentConsumer = async () => {
         orderId: order._id,
         status: "placed",
       });
-
-      // Payment is confirmed by the gateway — only NOW is the cart cleared.
-      // Abandoned checkouts keep their cart for the next attempt.
-      await Cart.deleteMany({ userId: order.userId });
 
       channel.ack(msg);
     } catch (error) {

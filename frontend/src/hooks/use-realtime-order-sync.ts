@@ -23,6 +23,9 @@ export function useRealtimeOrderSync(): void {
     queryClient.invalidateQueries({ queryKey: ["orders"] });
     // Covers: rider current order, profile/availability, earnings, history
     queryClient.invalidateQueries({ queryKey: ["rider"] });
+    // Cart is cleared server-side when a payment succeeds — refetch so
+    // the badge/menu page empties without a manual page refresh.
+    queryClient.invalidateQueries({ queryKey: ["cart"] });
   }, [queryClient]);
 
   useSocketEvent(SOCKET_EVENTS.ORDER_NEW, invalidateOrderData);

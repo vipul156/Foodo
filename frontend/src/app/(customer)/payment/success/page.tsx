@@ -10,6 +10,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVerifyStripePayment } from "@/features/orders/api";
 import {
   CheckCircle2,
@@ -39,6 +40,7 @@ function PaymentSuccessContent() {
   const router = useRouter();
   const sessionId = useSearchParamsSafe();
   const verifyPayment = useVerifyStripePayment();
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<VerifyStatus>("verifying");
   // Guard against React strict-mode double effect runs —
   // verification must fire exactly once per attempt.
@@ -53,7 +55,17 @@ function PaymentSuccessContent() {
 
     verifyPayment
       .mutateAsync(sessionId)
-      .then(() => setStatus("success"))
+      .then(() => {
+        // Payment confirmed → the backend clears the cart. Update the
+        // cache immediately so the cart badge/sheet empties on the spot.
+        queryClient.setQueryData(["cart"], {
+          success: true,
+          cart: [],
+          subtotal: 0,
+          cartLength: 0,
+        });
+        setStatus("success");
+      })
       .catch(() => setStatus("error"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, attempt]);
