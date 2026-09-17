@@ -16,7 +16,6 @@ import {
   type OrderDeliveredPayload,
 } from "@/lib/socket-events";
 import type { IOrder } from "@/types";
-import { LiveTracking } from "@/features/tracking/components";
 import {
   ArrowLeft,
   Package,
@@ -31,7 +30,6 @@ import {
   Bike,
   XCircle,
   Bell,
-  ChevronDown,
   Navigation,
 } from "lucide-react";
 
@@ -191,7 +189,6 @@ function isTrackable(order: IOrder): boolean {
 }
 
 function OrderCard({ order }: { order: IOrder }) {
-  const [mapOpen, setMapOpen] = useState(false);
   const trackable = isTrackable(order);
   const statusColor =
     order.status === "delivered"
@@ -256,43 +253,13 @@ function OrderCard({ order }: { order: IOrder }) {
           )}
         </div>
 
-        {/* Live tracking map — expandable while the trip is running */}
-        {trackable && order.deliveryAddress && (
+        {/* Live tracking moved to the order detail page — the list stays lean */}
+        {trackable && (
           <div className="mt-3 border-t border-border/50 pt-3">
-            <button
-              onClick={() => setMapOpen((v) => !v)}
-              aria-expanded={mapOpen}
-              className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <Navigation className="h-3.5 w-3.5" />
-                Track your order live
-              </span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${mapOpen ? "rotate-180" : ""}`}
-                aria-hidden="true"
-              />
-            </button>
-            {mapOpen && (
-              <div className="mt-2 animate-in slide-in-from-top-2">
-                <LiveTracking
-                  orderId={order._id}
-                  restaurant={{
-                    name: order.restaurantName,
-                    // Spice Villa coords arrive via the order's restaurant location;
-                    // the consumer stores them in the restaurant document, so the
-                    // order carries the drop-off only. Rider position comes live.
-                    latitude: order.restaurantLocation?.latitude ?? order.deliveryAddress.latitude,
-                    longitude: order.restaurantLocation?.longitude ?? order.deliveryAddress.longitude,
-                  }}
-                  dropoff={{
-                    formattedAddress: order.deliveryAddress.formattedAddress,
-                    latitude: order.deliveryAddress.latitude,
-                    longitude: order.deliveryAddress.longitude,
-                  }}
-                />
-              </div>
-            )}
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+              <Navigation className="h-3.5 w-3.5" />
+              Tap to track live
+            </span>
           </div>
         )}
       </div>

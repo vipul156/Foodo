@@ -100,7 +100,6 @@ export default function OrderDetailPage() {
   }
 
   const live = isLiveTrip(order);
-  const ended = order.status === "delivered";
   const canCancel =
     order.status === "placed" || order.status === "accepted" || order.status === "preparing";
 
@@ -137,11 +136,13 @@ export default function OrderDetailPage() {
         </span>
       </div>
 
-      {/* Live tracking / trip recap */}
-      {order.restaurantLocation && order.deliveryAddress && (live || ended) && (
+      {/* Live tracking — only while the trip is running. Delivered orders
+          keep no route history (pings are transient), so a post-delivery map
+          would be two static pins pretending to be a recap. */}
+      {order.restaurantLocation && order.deliveryAddress && live && (
         <section className="mb-6">
           <SectionTitle icon={<Navigation className="h-4 w-4" />}>
-            {ended ? "Trip" : "Live tracking"}
+            Live tracking
           </SectionTitle>
           <LiveTracking
             orderId={order._id}
@@ -155,7 +156,6 @@ export default function OrderDetailPage() {
               latitude: order.deliveryAddress.latitude,
               longitude: order.deliveryAddress.longitude,
             }}
-            tripEnded={ended}
           />
         </section>
       )}
