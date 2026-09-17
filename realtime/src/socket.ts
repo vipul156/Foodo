@@ -55,6 +55,54 @@ export const initSocket = (server:http.Server) => {
             socket.join(`restaurant:${user.restaurantId}`);
         }
 
+        // ─── Live tracking rooms ─────────────────────────
+        // Clients (customer/seller dashboards) join an order's tracking
+        // room while a map is open, leave when it closes. NOTE: any
+        // authenticated socket may join any order room — fine for the
+        // demo, but production should verify ownership first.
+        socket.on("order:track", (payload: { orderId?: string }) => {
+            if (!payload?.orderId) return;
+            socket.join(`order:${payload.orderId}`);
+        });
+
+        socket.on("order:untrack", (payload: { orderId?: string }) => {
+            if (!payload?.orderId) return;
+            socket.leave(`order:${payload.orderId}`);
+        });
+
+        // ─── Live rider location relay ─────────────────────
+        // Riders stream position pings while delivering; the realtime
+        // service fans them out to everyone tracking that order
+        // (customer, seller, admin). Riders never receive them.
+        // Payload: { orderId, latitude, longitude } — role-checked so a
+        // customer socket can't spoof rider positions.
+        socket.on("rider:location", (payload: {
+            orderId?: string;
+            latitude?: number;
+            longitude?: number;
+        }) => {
+            if (user.role !== "rider") return;
+
+            const { orderId, latitude, longitude } = payload ?? {};
+
+            if (
+                !orderId ||
+                typeof latitude !== "number" ||
+                typeof longitude !== "number" ||
+                Number.isNaN(latitude) ||
+                Number.isNaN(longitude)
+            ) {
+                return;
+            }
+
+            io.to(`order:${orderId}`).emit("rider:location", {
+                orderId,
+                latitude,
+                longitude,
+                at: Date.now(),
+            });
+        });
+
         socket.on("disconnect", () => {
             console.log("User disconnected", user);
         });

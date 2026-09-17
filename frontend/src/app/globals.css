@@ -173,6 +173,117 @@
   }
 }
 
+/* ─── Live tracking map (Leaflet) ─────────────────────────── */
+
+:root {
+  --map-route: oklch(0.488 0.243 264.376);
+  --map-rider: oklch(0.627 0.194 149.214);
+  --map-restaurant: oklch(0.488 0.243 264.376);
+  --map-dropoff: oklch(0.627 0.194 149.214);
+}
+
+.dark {
+  --map-route: oklch(0.746 0.16 232.661);
+  --map-rider: oklch(0.765 0.177 163.223);
+  --map-restaurant: oklch(0.746 0.16 232.661);
+  --map-dropoff: oklch(0.765 0.177 163.223);
+}
+
+/* Leaflet container inside themed cards */
+.leaflet-container {
+  font: inherit;
+  background: var(--muted);
+}
+
+/* Attribution & zoom controls tuned to the app's chrome */
+.leaflet-control-attribution {
+  font-size: 9px;
+  background: color-mix(in oklch, var(--background) 75%, transparent);
+  color: var(--muted-foreground);
+}
+.leaflet-control-attribution a {
+  color: var(--muted-foreground);
+}
+.leaflet-bar a {
+  background: var(--background);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.leaflet-bar a:hover {
+  background: var(--accent);
+}
+
+/* Custom pins (divIcon) — drawn, not emoji */
+.foodo-marker {
+  background: transparent;
+  border: none;
+}
+
+.foodo-marker__pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  color: #fff;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 4px 12px -4px oklch(0 0 0 / 0.4);
+}
+
+.foodo-marker__pin svg {
+  width: 15px;
+  height: 15px;
+}
+
+.foodo-marker__pin--restaurant {
+  background: var(--map-restaurant);
+}
+
+.foodo-marker__pin--dropoff {
+  background: var(--map-dropoff);
+}
+
+.foodo-marker__pin--rider {
+  width: 34px;
+  height: 34px;
+  background: var(--map-rider);
+}
+
+.foodo-marker__pin--rider svg {
+  width: 18px;
+  height: 18px;
+}
+
+.foodo-marker__pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--map-rider) 35%, transparent);
+  animation: foodo-pulse 2s ease-out infinite;
+}
+
+@keyframes foodo-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foodo-marker__pulse {
+    animation: none;
+  }
+}
+
 /* Consistent elevation tokens: soft, offset shadows (never flat halos) */
 :root {
   --shadow-card: 0 1px 2px oklch(0 0 0 / 0.04), 0 8px 24px -12px oklch(0 0 0 / 0.12);

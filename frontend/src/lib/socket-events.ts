@@ -26,6 +26,9 @@ export const SOCKET_EVENTS = {
 
   /** Sent when a nearby order is available for a rider → user:{riderUserId} */
   ORDER_AVAILABLE: "order:available",
+
+  /** Live rider GPS ping → order:{orderId} room (rider streams, trackers watch) */
+  RIDER_LOCATION: "rider:location",
 } as const;
 
 export type SocketEventName = (typeof SOCKET_EVENTS)[keyof typeof SOCKET_EVENTS];
