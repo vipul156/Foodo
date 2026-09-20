@@ -2,12 +2,18 @@ import express from "express";
 import { registerUser, loginUser, refreshUser, getUser, logoutUser } from "../controllers/auth.js";
 import { getSocketToken } from "../controllers/socket-token.js";
 import { isAuth } from "../middlewares/isAuth.js";
+import {
+  authFloodLimiter,
+  bruteForceLimiter,
+} from "../middlewares/rate-limit.js";
 
 const router = express.Router();
 
-router.post("/register", registerUser);
+router.post("/register", authFloodLimiter, registerUser);
 
-router.post("/login", loginUser);
+// Login gets both layers: per-IP flood guard + per-IP+email failure
+// counter enforced BEFORE the handler touches the database.
+router.post("/login", authFloodLimiter, bruteForceLimiter, loginUser);
 
 // Rotates the refresh token and mints a new access token. Cookie-scoped
 // to /api/auth so the browser only sends it here.

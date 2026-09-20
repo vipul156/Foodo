@@ -3,7 +3,7 @@ import { tryCatch } from "../middlewares/trycatch.js";
 import { AuthRequest } from "../middlewares/isAuth.js";
 import { Restaurant } from "../models/Restaurant.js";
 import { dataUri } from "../config/dataUri.js";
-import axios from "axios";
+import { uploadViaBreaker } from "../config/http.js";
 
 export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) throw new Error("User not found");
@@ -25,12 +25,13 @@ export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const { data } = await axios.post(
-    `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
-    {
-      buffer: fileBuffer.content,
-    },
-  );
+  // Non-critical pool + breaker — upload retries are cheap; they must
+  // never queue behind (or trip breakers for) the critical release path.
+  const data = await uploadViaBreaker<{
+    url: string;
+  }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, {
+    buffer: fileBuffer.content,
+  });
 
   const menuItem = await MenuItem.create({
     name,

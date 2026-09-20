@@ -11,6 +11,10 @@ import {
 } from "../lib/tokens.js";
 import { hashRefreshToken } from "../models/User.js";
 import type { AuthRequest, AccessClaims } from "../middlewares/isAuth.js";
+import {
+  recordAuthFailure,
+  clearAuthFailures,
+} from "../middlewares/rate-limit.js";
 
 const allowedRoles = ["customer", "rider", "seller"] as const;
 
@@ -107,12 +111,16 @@ export const loginUser = tryCatch(async (req, res) => {
   // password is select:false — request it explicitly for the compare
   const user = await User.findOne({ email }).select("+password");
   if (!user) {
+    recordAuthFailure(req);
     return res.status(400).json({ message: "User not found" });
   }
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
+    recordAuthFailure(req);
     return res.status(400).json({ message: "Invalid password" });
   }
+
+  clearAuthFailures(req); // success — the failure counter resets
 
   const accessJwt = await issueSession(res, {
     _id: String(user._id),

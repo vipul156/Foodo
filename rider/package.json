@@ -21,6 +21,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/mongoose": "^5.11.96",
     "@types/multer": "^2.2.0",
+    "@types/opossum": "^8.1.9",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2"
   },
@@ -35,6 +36,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.4",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "opossum": "^5.0.1"
   }
 }

@@ -2,8 +2,13 @@ import { dataUri } from "../config/dataUri.js";
 import { AuthRequest } from "../middlewares/isAuth.js";
 import { tryCatch } from "../middlewares/trycatch.js";
 import { Rider } from "../model/Rider.js";
-import http from "../config/http.js";
+import { criticalPut, readGet, readPost } from "../config/http.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
+
+// Shared internal auth header
+const internalHeaders = {
+  "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
+};
 
 export const createRider = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
@@ -30,11 +35,14 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const { data } = await http.post(
+  // Upload forward rides the non-critical pool — registration can retry;
+  // a saturated upload path must not touch the critical order-update pool.
+  const data = await readPost<{ url: string }>(
     `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
     {
       buffer: fileBuffer.content,
     },
+    {},
   );
 
   const {
@@ -148,13 +156,9 @@ export const toogleRiderAvailablity = tryCatch(
     // finish the delivery (or have the seller cancel the order) first.
     if (isAvailable) {
       try {
-        const { data } = await http.get(
+        const data = await readGet<{ order?: unknown }>(
           `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
-          {
-            headers: {
-              "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-            },
-          },
+          { headers: internalHeaders },
         );
         if (data?.order) {
           return res.status(400).json({
@@ -276,13 +280,10 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  try {      const { data } = await http.get(
+  try {
+    const data = await readGet<{ order?: unknown }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
-      {
-        headers: {
-          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-        },
-      },
+      { headers: internalHeaders },
     );
 
     return res.status(200).json({
@@ -313,13 +314,13 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
     });
   }
 
-  try {      const { data } = await http.get(
+  try {
+    const data = await readGet<{
+      count?: number;
+      orders?: unknown[];
+    }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/history/rider?riderId=${rider._id}`,
-      {
-        headers: {
-          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-        },
-      },
+      { headers: internalHeaders },
     );
 
     return res.status(200).json({
@@ -358,13 +359,15 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
 
   const [longitude, latitude] = rider.location.coordinates;
 
-  try {      const { data } = await http.get(
+  try {
+    const data = await readGet<{
+      count?: number;
+      orders?: unknown[];
+    }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/ready/rider`,
       {
         params: { latitude, longitude },
-        headers: {
-          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-        },
+        headers: internalHeaders,
       },
     );
 
@@ -410,16 +413,14 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   }
 
   try {
-    const { data } = await http.put(
+    // Critical pool + breaker: rider payouts flow from status updates;
+    // they must never queue behind the non-critical read pool.
+    const data = await criticalPut<{
+      order?: { status?: string };
+    }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/update/status/rider`,
-      {
-        orderId,
-      },
-      {
-        headers: {
-          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-        },
-      },
+      { orderId },
+      { headers: internalHeaders },
     );
 
     // Delivered → the rider is automatically available again and shows

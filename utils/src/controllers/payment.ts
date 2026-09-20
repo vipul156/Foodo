@@ -1,10 +1,19 @@
 import { Request, Response } from "express";
-import http from "../config/http.js";
+import {
+  claimOrderViaBreaker,
+  attachOrderViaBreaker,
+  runProvider,
+} from "../config/http.js";
 import razorpay from "../config/razorpay.js";
 import crypto from "crypto";
 import { publishPaymentSuccess } from "../config/payment.producer.js";
 import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
+
+// Internal auth header shared by every order-owner call
+const internalHeaders = {
+  "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
+};
 
 // ─── Order-owner claim/attach helpers ───────────────────────
 // The restaurant service owns orders: it atomically claims the order for
@@ -21,12 +30,13 @@ const claimOrderPayment = async (
   orderId: string,
   provider: "razorpay" | "stripe",
 ): Promise<OrderPaymentClaim> => {
-  const { data } = await http.post<OrderPaymentClaim>(
+  // Critical pool + breaker: a dead order service trips the circuit and
+  // checkout fails fast instead of piling up sockets.
+  return claimOrderViaBreaker<OrderPaymentClaim>(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/claim/${orderId}`,
-    { provider },
-    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+    provider,
+    { headers: internalHeaders },
   );
-  return data;
 };
 
 const attachProviderOrder = async (
@@ -34,10 +44,10 @@ const attachProviderOrder = async (
   provider: "razorpay" | "stripe",
   providerOrderId: string,
 ) => {
-  await http.put(
+  await attachOrderViaBreaker(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/attached/${orderId}`,
     { provider, providerOrderId },
-    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+    { headers: internalHeaders },
   );
 };
 
@@ -62,15 +72,17 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
             });
         }
 
-        const razorpayOrder = await razorpay.orders.create({
-                amount: claim.amount * 100,
-                currency: claim.currency ?? "INR",
-                receipt: orderId,
-                // Notes ride along on every webhook payment entity, so the
-                // webhook can resolve the internal orderId without an API
-                // round-trip.
-                notes: { orderId },
-            })
+        const razorpayOrder = await runProvider(() =>
+          razorpay.orders.create({
+            amount: claim.amount * 100,
+            currency: claim.currency ?? "INR",
+            receipt: orderId,
+            // Notes ride along on every webhook payment entity, so the
+            // webhook can resolve the internal orderId without an API
+            // round-trip.
+            notes: { orderId },
+          }),
+        );
 
         // Remember it on the order so every future create returns the same one
         try {
@@ -250,8 +262,8 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
         const claim = await claimOrderPayment(orderId, "stripe");
 
         if (claim.attachedProviderOrderId) {
-            const existing = await stripe.checkout.sessions.retrieve(
-                claim.attachedProviderOrderId,
+            const existing = await runProvider(() =>
+                stripe.checkout.sessions.retrieve(claim.attachedProviderOrderId!),
             );
             if (existing?.url) {
                 return res.status(200).json({ url: existing.url });
@@ -260,7 +272,8 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
             // the idempotency key below still guards duplicate creation.
         }
 
-        const stripePaymentIntent = await stripe.checkout.sessions.create({
+        const stripePaymentIntent = await runProvider(async () =>
+          stripe.checkout.sessions.create({
            payment_method_types: ["card"],
             mode: "payment",
             
@@ -288,7 +301,7 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
         },
         // Stripe-native idempotency: retries with this key return the same
         // session instead of creating a new one.
-        { idempotencyKey: `order_${orderId}` })
+        { idempotencyKey: `order_${orderId}` }));
 
         try {
             await attachProviderOrder(orderId, "stripe", stripePaymentIntent.id);

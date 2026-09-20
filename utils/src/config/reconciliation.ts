@@ -1,4 +1,4 @@
-import http from "./http.js";
+import { fetchCandidatesViaBreaker } from "./http.js";
 import razorpay from "./razorpay.js";
 import stripe from "./stripe.js";
 import { publishPaymentSuccess } from "./payment.producer.js";
@@ -24,18 +24,16 @@ interface ReconciliationCandidate {
 const fetchCandidates = async (
   olderThanMinutes: number,
 ): Promise<ReconciliationCandidate[]> => {
-  const { data } = await http.get<{
-    success: boolean;
-    count: number;
-    orders: ReconciliationCandidate[];
-  }>(
+  // Background bulkhead pool + breaker: if the order service is struggling,
+  // this job trips its own circuit and stops adding load — the checkout
+  // path's pool is a separate axios instance and stays untouched.
+  return fetchCandidatesViaBreaker<ReconciliationCandidate>(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/reconciliation`,
     {
       params: { olderThanMinutes },
       headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY },
     },
   );
-  return data?.orders ?? [];
 };
 
 const reconcileRazorpay = async (

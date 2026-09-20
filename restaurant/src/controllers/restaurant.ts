@@ -1,4 +1,4 @@
-import http from "../config/http.js";
+import { uploadViaBreaker } from "../config/http.js";
 import { dataUri } from "../config/dataUri.js";
 import { AuthRequest } from "../middlewares/isAuth.js";
 import { tryCatch } from "../middlewares/trycatch.js";
@@ -46,10 +46,10 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
       });
     }
 
-    const { data } = await http.post(
-      `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
-      { buffer },
-    );
+    // Non-critical pool + breaker — upload retries are cheap.
+    const data = await uploadViaBreaker<{
+      url: string;
+    }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, { buffer });
     imageUrl = data.url;
   }
 
@@ -144,10 +144,9 @@ export const updateRestaurantDetails = tryCatch(
     if (file) {
       const buffer = typeof file === "string" ? file : dataUri(file)?.content;
       if (buffer) {
-        const { data } = await http.post(
-          `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
-          { buffer },
-        );
+        const data = await uploadViaBreaker<{
+          url: string;
+        }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, { buffer });
         updateFields.image = data.url;
       }
     }

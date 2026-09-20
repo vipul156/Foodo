@@ -5,7 +5,7 @@ import {
   handleConsumeFailure,
 } from "./queue.resilience.js";
 import { Rider } from "../model/Rider.js";
-import http from "./http.js";
+import { readHttp as http } from "./http.js";
 
 const onOrderReady =
   (channel: Channel) =>

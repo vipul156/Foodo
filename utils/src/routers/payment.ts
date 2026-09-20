@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createRazorpayOrder, createStripePaymentIntent, razorpayWebhook, stripeWebhook } from "../controllers/payment.js";
+import { paymentCreateLimiter, webhookLimiter } from "../config/rate-limit.js";
 
 const router = Router();
 
@@ -7,10 +8,12 @@ const router = Router();
 // on a raw-body mount (see index.ts) so signatures verify against exact
 // bytes. There is no client-driven verify endpoint by design; the frontend
 // polls the order status endpoint instead.
-router.post("/webhooks/razorpay", razorpayWebhook)
-router.post("/webhooks/stripe", stripeWebhook)
+// Bounded anyway: a runaway provider redelivery loop must not spin us.
+router.post("/webhooks/razorpay", webhookLimiter, razorpayWebhook)
+router.post("/webhooks/stripe", webhookLimiter, stripeWebhook)
 
-router.post("/create",createRazorpayOrder)
-router.post("/stripe/create",createStripePaymentIntent)
+// Tight limits: money-adjacent, abuse-prone.
+router.post("/create", paymentCreateLimiter, createRazorpayOrder)
+router.post("/stripe/create", paymentCreateLimiter, createStripePaymentIntent)
 
 export default router;

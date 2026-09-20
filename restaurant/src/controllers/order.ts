@@ -6,7 +6,7 @@ import { Order } from "../models/Order.js";
 import { Cart } from "../models/Cart.js";
 import { Restaurant } from "../models/Restaurant.js";
 import { MenuItem, IMenuItem } from "../models/MenuItem.js";
-import http from "../config/http.js";
+import { releaseRiderViaBreaker } from "../config/http.js";
 import { publishEvent } from "../config/order.publisher.js";
 import { publishRealtimeEvent } from "../config/realtime.publisher.js";
 import { deliveryDistanceKm } from "../lib/distance.js";
@@ -25,13 +25,19 @@ function notifyRealtime(event: string, room: string, payload: unknown) {
 // conditional ("free me ONLY if still claimed by THIS order").
 function releaseRider(riderId: unknown, orderId?: unknown) {
   if (!riderId) return;
-  http
-    .put(
-      `${process.env.RIDER_SERVICE_URL}/api/rider/release/internal`,
-      { riderId, orderId: orderId ?? null },
-      { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
-    )
-    .catch((err) => console.error("Rider release failed:", err?.message));
+  // Critical pool + breaker — this compensation must go through even
+  // when the upload pool is saturated or the rider service is struggling;
+  // the breaker fails fast instead of stacking sockets.
+  releaseRiderViaBreaker(
+    `${process.env.RIDER_SERVICE_URL}/api/rider/release/internal`,
+    { riderId, orderId: orderId ?? null },
+    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+  ).catch((err) =>
+    console.error(
+      "Rider release failed:",
+      err instanceof Error ? err.message : err,
+    ),
+  );
 }
 
 export const createOrder = tryCatch(async (req: AuthRequest, res) => {
