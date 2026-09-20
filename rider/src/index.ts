@@ -7,12 +7,14 @@ import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { riderRouter } from "./routes/rider.js";
 import { internalRouter } from "./routes/internal.js";
 import { startOrderReadyConsumer } from "./config/orderReady.consumer.js";
+import { startRiderEventConsumer } from "./config/riderEvent.consumer.js";
 import { seedDemoRider } from "./seed/demo-rider.js";
 
 dotenv.config();
 
 await connectRabbitMQ()
 startOrderReadyConsumer()
+startRiderEventConsumer()
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 

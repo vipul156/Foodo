@@ -1,4 +1,4 @@
-import axios from "axios";
+import http from "../config/http.js";
 import { dataUri } from "../config/dataUri.js";
 import { AuthRequest } from "../middlewares/isAuth.js";
 import { tryCatch } from "../middlewares/trycatch.js";
@@ -46,7 +46,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
       });
     }
 
-    const { data } = await axios.post(
+    const { data } = await http.post(
       `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
       { buffer },
     );
@@ -144,7 +144,7 @@ export const updateRestaurantDetails = tryCatch(
     if (file) {
       const buffer = typeof file === "string" ? file : dataUri(file)?.content;
       if (buffer) {
-        const { data } = await axios.post(
+        const { data } = await http.post(
           `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
           { buffer },
         );

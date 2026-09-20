@@ -2,7 +2,8 @@ import { dataUri } from "../config/dataUri.js";
 import { AuthRequest } from "../middlewares/isAuth.js";
 import { tryCatch } from "../middlewares/trycatch.js";
 import { Rider } from "../model/Rider.js";
-import axios from "axios";
+import http from "../config/http.js";
+import { publishRiderEvent } from "../config/event.publisher.js";
 
 export const createRider = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
@@ -29,7 +30,7 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const { data } = await axios.post(
+  const { data } = await http.post(
     `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
     {
       buffer: fileBuffer.content,
@@ -147,7 +148,7 @@ export const toogleRiderAvailablity = tryCatch(
     // finish the delivery (or have the seller cancel the order) first.
     if (isAvailable) {
       try {
-        const { data } = await axios.get(
+        const { data } = await http.get(
           `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
           {
             headers: {
@@ -198,7 +199,16 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const rider = await Rider.findOne({ userId: riderUserId, isAvailable: true });
+  // ─── Atomic local claim (the only synchronous work) ────────
+  // Flipping availability first makes double-clicks impossible at the
+  // rider level. If the order turns out to be gone, the restaurant
+  // service's failed assignment publishes rider.order_rejected and the
+  // rider event consumer frees this rider again (saga compensation).
+  const rider = await Rider.findOneAndUpdate(
+    { userId: riderUserId, isAvailable: true },
+    { isAvailable: false, lastActive: new Date() },
+    { new: true },
+  );
 
   if (!rider) {
     return res.status(404).json({
@@ -206,69 +216,26 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  try {
-    const { data } = await axios.put(
-      `${process.env.RESTAURANT_SERVICE_URL}/api/order/assign/rider`,
-      {
-        riderId: rider._id,
-        orderId,
-        riderUserId: rider.userId,
-        // Real name from the auth JWT (picture URL was stored here before —
-        // customers don't want a URL as their rider's name).
-        riderName:
-          (req.user as any)?.name ||
-          (req.user as any)?.user?.name ||
-          "Delivery Partner",
-        riderPhone: rider.phoneNumber,
-        // Photo travels separately so the customer app can show an avatar
-        riderPicture: rider.picture,
-      },
-      {
-        headers: {
-          "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-        },
-      },
-    );      if (data.success) {
-          const riderDetails = await Rider.findOneAndUpdate(
-            {
-              userId: riderUserId,
-              isAvailable: true,
-            },
-            {
-              isAvailable: false,
-            },
-            {
-              new: true,
-            },
-          );
+  // ─── Fire-and-forget: assignment happens asynchronously ────
+  // The restaurant service consumes this event, performs the atomic order
+  // assignment, and pushes the socket updates. This request returns
+  // instantly — no chained HTTP to restaurant or realtime.
+  publishRiderEvent("rider.order_accepted", {
+    orderId,
+    riderId: rider._id,
+    riderUserId: rider.userId,
+    // Real name from the auth JWT (picture URL was stored here before —
+    // customers don't want a URL as their rider's name).
+    riderName:
+      (req.user as any)?.name ||
+      (req.user as any)?.user?.name ||
+      "Delivery Partner",
+    riderPhone: rider.phoneNumber,
+    // Photo travels separately so the customer app can show an avatar
+    riderPicture: rider.picture,
+  });
 
-          // Rider dashboard flips to Active Delivery instantly — no refresh
-          axios
-            .post(
-              `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
-              {
-                event: "order:update",
-                room: `user:${riderUserId}`,
-                payload: { orderId, status: "rider_assigned" },
-              },
-              {
-                headers: {
-                  "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-                },
-              },
-            )
-            .catch((err) =>
-              console.error("Realtime notify failed (order accepted):", err?.message),
-            );
-
-          res.json({ message: "Order accepted" });
-        }
-  } catch (error) {
-    return res.status(500).json({
-      message: "Error accepting order",
-      error,
-    });
-  }
+  return res.status(200).json({ message: "Order accepted" });
 });
 
 export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
@@ -288,8 +255,7 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  try {
-    const { data } = await axios.get(
+  try {      const { data } = await http.get(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
       {
         headers: {
@@ -326,8 +292,7 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
     });
   }
 
-  try {
-    const { data } = await axios.get(
+  try {      const { data } = await http.get(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/history/rider?riderId=${rider._id}`,
       {
         headers: {
@@ -372,8 +337,7 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
 
   const [longitude, latitude] = rider.location.coordinates;
 
-  try {
-    const { data } = await axios.get(
+  try {      const { data } = await http.get(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/ready/rider`,
       {
         params: { latitude, longitude },
@@ -425,7 +389,7 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   }
 
   try {
-    const { data } = await axios.put(
+    const { data } = await http.put(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/update/status/rider`,
       {
         orderId,
@@ -484,20 +448,13 @@ export const releaseRiderInternal = tryCatch(async (req, res) => {
   rider.lastActive = new Date();
   await rider.save();
 
-  // Nudge the rider dashboard so availability + card refresh instantly
-  axios
-    .post(
-      `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
-      {
-        event: "order:update",
-        room: `user:${rider.userId}`,
-        payload: { orderId: null, status: "cancelled" },
-      },
-      { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
-    )
-    .catch((err) =>
-      console.error("Realtime notify failed (rider release):", err?.message),
-    );
+  // Rider dashboard learns the assignment fell through — over the fanout
+  // exchange, never over HTTP.
+  publishRiderEvent(
+    "order:update",
+    { orderId: null, status: "cancelled" },
+    `user:${rider.userId}`,
+  );
 
   return res.status(200).json({
     success: true,

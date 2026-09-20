@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import axios from "axios";
+import http from "../config/http.js";
 import razorpay from "../config/razorpay.js";
 import crypto from "crypto";
 import { publishPaymentSuccess } from "../config/payment.producer.js";
@@ -21,7 +21,7 @@ const claimOrderPayment = async (
   orderId: string,
   provider: "razorpay" | "stripe",
 ): Promise<OrderPaymentClaim> => {
-  const { data } = await axios.post<OrderPaymentClaim>(
+  const { data } = await http.post<OrderPaymentClaim>(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/claim/${orderId}`,
     { provider },
     { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
@@ -34,7 +34,7 @@ const attachProviderOrder = async (
   provider: "razorpay" | "stripe",
   providerOrderId: string,
 ) => {
-  await axios.put(
+  await http.put(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/attached/${orderId}`,
     { provider, providerOrderId },
     { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },

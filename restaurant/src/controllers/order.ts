@@ -6,7 +6,7 @@ import { Order } from "../models/Order.js";
 import { Cart } from "../models/Cart.js";
 import { Restaurant } from "../models/Restaurant.js";
 import { MenuItem, IMenuItem } from "../models/MenuItem.js";
-import axios from "axios";
+import http from "../config/http.js";
 import { publishEvent } from "../config/order.publisher.js";
 import { publishRealtimeEvent } from "../config/realtime.publisher.js";
 
@@ -22,7 +22,7 @@ function notifyRealtime(event: string, room: string, payload: unknown) {
 // order is cancelled so they can go online and take new orders again.
 function releaseRider(riderId: unknown) {
   if (!riderId) return;
-  axios
+  http
     .put(
       `${process.env.RIDER_SERVICE_URL}/api/rider/release/internal`,
       { riderId },
@@ -482,60 +482,98 @@ export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
 });
 
 
+// ─── Core: assign a rider to an order (atomic claim) ────────
+// Shared by the internal HTTP endpoint and the rider.order_accepted
+// consumer. The conditional update on riderId: null makes double-assign
+// impossible; a false result means the order is gone, taken, or expired.
+export const assignRiderToOrder = async (payload: {
+  orderId: string;
+  riderId: string;
+  riderUserId?: string;
+  riderName?: string;
+  riderPhone?: number | string;
+  riderPicture?: string | null;
+}): Promise<{ success: boolean; order?: any }> => {
+  const orderUpdate = await Order.findOneAndUpdate(
+    { _id: payload.orderId, riderId: null },
+    {
+      riderId: payload.riderId,
+      riderName: payload.riderName,
+      riderPhone: payload.riderPhone,
+      riderPicture: payload.riderPicture || null,
+      status: "rider_assigned",
+    },
+    { new: true },
+  );
+
+  if (!orderUpdate) {
+    return { success: false };
+  }
+
+  // Restaurant board (restaurantId room) — restaurantId is an ObjectId,
+  // the restaurant room expects the same id the socket joined with.
+  publishRealtimeEvent(
+    "order:rider_assigned",
+    `restaurant:${orderUpdate.restaurantId}`,
+    { order: orderUpdate },
+  );
+  // Seller's own socket (user room) + customer's "rider is on the way"
+  publishRealtimeEvent("order:rider_assigned", `user:${orderUpdate.userId}`, {
+    order: orderUpdate,
+  });
+
+  const assignedRestaurant = await Restaurant.findById(orderUpdate.restaurantId);
+  if (assignedRestaurant) {
+    publishRealtimeEvent(
+      "order:rider_assigned",
+      `user:${assignedRestaurant.ownerId}`,
+      { order: orderUpdate },
+    );
+  }
+  // The rider's own dashboard so Active Delivery flips without waiting
+  // for the next poll
+  if (payload.riderUserId) {
+    publishRealtimeEvent("order:rider_assigned", `user:${payload.riderUserId}`, {
+      order: orderUpdate,
+    });
+  }
+
+  return { success: true, order: orderUpdate };
+};
+
+// Internal HTTP entry kept for the contract; the primary path is now the
+// rider.order_accepted consumer.
 export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
-   if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
     throw new Error("Forbidden");
   }
 
-  const { orderId, riderId, riderName, riderPhone, riderPicture } = req.body;
+  const { orderId, riderId, riderUserId, riderName, riderPhone, riderPicture } =
+    req.body;
 
-  if (!orderId) {
-    throw new Error("Order ID is required");
+  if (!orderId || !riderId) {
+    throw new Error("Order ID and rider ID are required");
   }
 
-  const order = await Order.findById(orderId);
-  
-
-  if (order?.riderId !== null) {
-    throw new Error("Order already assigned to a rider");
-  }
-
-  const orderUpdate = await Order.findByIdAndUpdate(
-    {_id: orderId, riderId: null}, {
+  const result = await assignRiderToOrder({
+    orderId,
     riderId,
+    riderUserId,
     riderName,
     riderPhone,
-    riderPicture: riderPicture || null,
-    status: "rider_assigned",
-  }, { new: true });
+    riderPicture,
+  });
 
-  if (!orderUpdate) {
+  if (!result.success) {
     return res.status(409).json({
       success: false,
       message: "Order not found or already assigned",
     });
   }
 
-  // Restaurant board (restaurantId room) — restaurantId is an ObjectId,
-  // the restaurant room expects the same id the socket joined with.
-  notifyRealtime("order:rider_assigned", `restaurant:${orderUpdate.restaurantId}`, {
-    order: orderUpdate,
-  });
-  // Seller's own socket (user room) + customer's "rider is on the way"
-  notifyRealtime("order:rider_assigned", `user:${orderUpdate.userId}`, {
-    order: orderUpdate,
-  });
-
-  const assignedRestaurant = await Restaurant.findById(orderUpdate.restaurantId);
-  if (assignedRestaurant) {
-    notifyRealtime("order:rider_assigned", `user:${assignedRestaurant.ownerId}`, {
-      order: orderUpdate,
-    });
-  }
-
   return res.status(200).json({
     success: true,
-    order: orderUpdate,
+    order: result.order,
   });
 });
 

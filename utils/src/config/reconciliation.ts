@@ -1,4 +1,4 @@
-import axios from "axios";
+import http from "./http.js";
 import razorpay from "./razorpay.js";
 import stripe from "./stripe.js";
 import { publishPaymentSuccess } from "./payment.producer.js";
@@ -24,7 +24,7 @@ interface ReconciliationCandidate {
 const fetchCandidates = async (
   olderThanMinutes: number,
 ): Promise<ReconciliationCandidate[]> => {
-  const { data } = await axios.get<{
+  const { data } = await http.get<{
     success: boolean;
     count: number;
     orders: ReconciliationCandidate[];
