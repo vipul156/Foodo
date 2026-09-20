@@ -608,6 +608,9 @@ CLOUDINARY_API_SECRET=your-api-secret
 RAZORPAY_KEY_ID=your-razorpay-key
 RAZORPAY_KEY_SECRET=your-razorpay-secret
 STRIPE_SECRET_KEY=your-stripe-secret
+# Webhook signing secrets — webhooks are the source of truth for payment success
+RAZORPAY_WEBHOOK_SECRET=your-razorpay-webhook-secret
+STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
 RABBITMQ_URL=amqp://localhost
 INTERNAL_SERVICE_KEY=your-internal-service-key
 ```

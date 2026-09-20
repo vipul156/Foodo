@@ -10,6 +10,9 @@ dotenv.config();
 
 const app = express();
 app.use(cors());
+// Webhook signature verification needs the exact raw bytes — this must run
+// BEFORE the global JSON parser (body-parser skips already-parsed bodies).
+app.use("/api/utils/payment/webhooks", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
