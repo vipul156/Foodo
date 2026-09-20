@@ -4,12 +4,39 @@ import jwt from "jsonwebtoken";
 
 let io:Server
 
+// ─── Browser origin allow-list ─────────────────────────────
+// Socket connections are cross-origin (the browser talks to this
+// service directly, not through the frontend's own origin), so CORS
+// actually applies — unlike the service APIs, which the ALB serves
+// same-origin. Origins come from SOCKET_CORS_ORIGIN (comma-separated
+// to allow several environments) and fall back to FRONTEND_URL.
+// Never default to "*": an open websocket would let any site open an
+// authenticated socket once a visitor's token leaks (handshake auth
+// travels in the request).
+const getAllowedOrigins = (): string[] =>
+  (
+    process.env.SOCKET_CORS_ORIGIN ||
+    process.env.FRONTEND_URL ||
+    "http://localhost:3000"
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 export const initSocket = (server:http.Server) => {
+    const allowedOrigins = getAllowedOrigins();
+
     io = new Server(server, {
         cors: {
-            origin: "*",
+            origin: allowedOrigins,
+            methods: ["GET", "POST"],
+            credentials: true,
         },
     });
+
+    console.log(
+        `[Realtime] Socket CORS restricted to: ${allowedOrigins.join(", ")}`
+    );
 
     io.use((socket, next) => {
         try{

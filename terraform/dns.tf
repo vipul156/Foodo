@@ -23,6 +23,7 @@ locals {
     "utils"      = aws_instance.utils.private_ip
     "db"         = aws_instance.mongo.private_ip
     "rmq"        = aws_instance.rabbitmq.private_ip
+    "redis"      = aws_instance.redis.private_ip
   }
 }
 

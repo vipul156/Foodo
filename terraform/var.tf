@@ -45,6 +45,10 @@ variable "rmq-port" {
   default = 5672
 }
 
+variable "redis-port" {
+  default = 6379
+}
+
 variable "utils-port" {
   default = 3006
 }

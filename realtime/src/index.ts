@@ -5,6 +5,7 @@ import cookieSession from "cookie-session";
 import { initSocket } from "./socket.js";
 import { interRoute } from "./routes/internal.js";
 import { connectRealtimeEvents } from "./config/rabbitmq.js";
+import { connectRedisAdapter } from "./config/redis.js";
 import dotenv from "dotenv"
 
 dotenv.config();
@@ -27,6 +28,10 @@ app.use("/api/internal",interRoute)
 
 const server = http.createServer(app)
 initSocket(server)
+
+// Attach the Redis adapter before accepting connections (no-op when
+// REDIS_URL is unset) so rooms are cluster-wide from the first socket.
+await connectRedisAdapter()
 
 // Consume order events from the RabbitMQ fanout exchange — services no
 // longer need to reach realtime over HTTP to broadcast.

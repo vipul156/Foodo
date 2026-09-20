@@ -7,7 +7,7 @@ locals {
     "restaurant" = { port = var.restaurant-port, health_path = "/health", instance_id = aws_instance.restaurant.id }
     "rider"      = { port = var.rider-port, health_path = "/health", instance_id = aws_instance.rider.id }
     "admin"      = { port = var.admin-port, health_path = "/health", instance_id = aws_instance.admin.id }
-    "realtime"   = { port = var.realtime-port, health_path = "/health", instance_id = aws_instance.realtime.id }
+    "realtime"   = { port = var.realtime-port, health_path = "/health", instance_id = aws_instance.realtime.id, sticky = true }
     "utils"      = { port = var.utils-port, health_path = "/health", instance_id = aws_instance.utils.id }
   }
 
@@ -42,7 +42,7 @@ locals {
     "realtime" = {
       service  = "realtime"
       priority = 50
-      paths    = ["/api/internal/*"]
+      paths    = ["/api/internal/*", "/socket.io/*"]
     }
     "utils" = {
       service  = "utils"
@@ -84,6 +84,22 @@ resource "aws_lb_target_group" "service_tgs" {
   port     = each.value.port
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.default.id
+
+  # Socket.IO: the polling fallback transport opens fresh HTTP requests
+  # that must land on the instance already holding the client's state
+  # (pre-Redis-adapter rooms, and to avoid handshake churn on reconnects).
+  # LB-generated cookie stickiness pins a client to one target for the
+  # cookie duration. With the Redis adapter attached this is an
+  # optimization rather than a correctness requirement.
+  dynamic "stickiness" {
+    for_each = try(each.value.sticky, false) ? [1] : []
+
+    content {
+      type            = "lb_cookie"
+      cookie_duration = 3600
+      enabled         = true
+    }
+  }
 
   health_check {
     enabled             = true
