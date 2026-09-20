@@ -12,6 +12,7 @@ import { orderRouter } from "./routes/order.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentConsumer } from "./config/payment.consumer.js";
 import { addressRoute } from "./routes/address.js";
+import { internalRouter } from "./routes/internal.js";
 import { seedDemoRestaurant } from "./seed/demo-restaurant.js";
 
 dotenv.config();
@@ -36,6 +37,8 @@ app.use("/api/menu-item", menuItemRouter)
 app.use("/api/cart", cartRouter)
 app.use("/api/order", orderRouter)
 app.use("/api/address", addressRoute)
+// Internal service-to-service contract (admin reads go through here)
+app.use("/api/internal", internalRouter)
 
 const PORT = process.env.PORT || 3003
 

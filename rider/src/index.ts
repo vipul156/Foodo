@@ -5,6 +5,7 @@ import cors from "cors";
 import cookieSession from "cookie-session";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { riderRouter } from "./routes/rider.js";
+import { internalRouter } from "./routes/internal.js";
 import { startOrderReadyConsumer } from "./config/orderReady.consumer.js";
 import { seedDemoRider } from "./seed/demo-rider.js";
 
@@ -28,6 +29,8 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api/rider", riderRouter);
+// Internal service-to-service contract (admin reads go through here)
+app.use("/api/internal", internalRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({

@@ -577,10 +577,13 @@ UTILS_SERVICE_URL=http://localhost:PORT
 
 #### Admin Service `.env`
 ```env
-PORT=3004
-MONGO_URI=mongodb://localhost:27017/foodo
+PORT=3006
 JWT_SECRET=your-jwt-secret-key
 COOKIE_SECRET=your-cookie-secret
+AUTH_SERVICE_URL=http://localhost:3001
+RESTAURANT_SERVICE_URL=http://localhost:3003
+RIDER_SERVICE_URL=http://localhost:3004
+INTERNAL_SERVICE_KEY=your-internal-service-key
 ```
 
 #### Realtime Service `.env`

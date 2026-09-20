@@ -4,6 +4,7 @@ import connectDB from "./config/db.js";
 import cookieSession from "cookie-session";
 import cors from 'cors'
 import { authRoute } from "./routes/auth.js";
+import { internalRoute } from "./routes/internal.js";
 import { seedDemoUsers } from "./seed/demo-users.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
@@ -22,6 +23,8 @@ app.use(
 app.use(express.json());
 
 app.use('/api/auth', authRoute)
+// Internal service-to-service contract (admin reads go through here)
+app.use('/api/internal', internalRoute)
 
 app.get('/health', (req, res) => {
   res.status(200).json({
