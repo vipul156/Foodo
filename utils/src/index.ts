@@ -9,26 +9,50 @@ import paymentRouter from "./routers/payment.js";
 
 dotenv.config();
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 const app = express();
-app.use(cors());
-// Webhook signature verification needs the exact raw bytes — this must run
-// BEFORE the global JSON parser (body-parser skips already-parsed bodies).
+
+// ─── CORS: strict origin whitelist ─────────────────────────
+// This service processes PAYMENTS and file uploads — with a bare cors()
+// any origin could drive payment creation or abuse the upload endpoint.
+// Locked to the frontend origin with credentials, same as the other
+// services. (Provider webhooks are exempt by nature: Razorpay/Stripe
+// server-to-server POSTs send no Origin header, which cors() allows.)
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    credentials: true,
+  }),
+);
+
+// ─── Body parser: restrictive default, scoped override ─────
+// ORDER MATTERS. The 15mb upload parser must be registered BEFORE the
+// global 1mb parser — the global one would otherwise reject oversized
+// upload bodies with a 413 before the scoped parser is ever reached.
+//
+// Webhook signature verification needs the exact raw bytes — raw() runs
+// first and body-parser skips already-parsed bodies afterwards.
+
+// 1) Webhooks: raw bytes only (before any JSON parser)
 app.use("/api/utils/payment/webhooks", express.raw({ type: "application/json" }));
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-const { ClOUD_NAME, CLOUD_API_KEY, CLOUD_API_SECRET } = process.env;
+// 2) Upload route: the ONLY path with a raised cap. Internal callers
+//    (restaurant/rider services) forward base64 image data URIs here.
+app.use(
+  "/api/utils/upload",
+  express.json({ limit: "15mb" }),
+  express.urlencoded({ limit: "15mb", extended: true }),
+);
 
-if (!ClOUD_NAME || !CLOUD_API_KEY || !CLOUD_API_SECRET) {
-  throw new Error("Cloudinary credentials are not defined");
-}
+// 3) Global default: 1mb is far above any legit JSON body this API
+//    accepts (payments, internal claims). The old 50mb global limit was
+//    a trivial DoS amplification — every request could force 50MB of
+//    memory churn.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
-cloudinary.v2.config({
-  cloud_name: ClOUD_NAME,
-  api_key: CLOUD_API_KEY,
-  api_secret: CLOUD_API_SECRET,
-});
-
+// ─── Routers ────────────────────────────────────────────────
 app.use("/api/utils/", cloudinaryRouter);
 app.use("/api/utils/payment", paymentRouter);
 

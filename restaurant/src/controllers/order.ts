@@ -230,6 +230,14 @@ export const fetchOrderForPayment = tryCatch(async (req, res) => {
   });
 });
 
+// ─── Restaurant Orders (keyset-paginated) ───────────────────
+// Every response is bounded: default 50, hard cap 200, and deep pages
+// use keyset (createdAt+id cursor) so page N costs the same as page 1.
+// Deep pagination happens by following nextCursor, never by offset —
+// an offset scan degrades linearly while a keyset seek stays flat.
+const DEFAULT_ORDERS_LIMIT = 50;
+const MAX_ORDERS_LIMIT = 200;
+
 export const fetchRestaurantOrders = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
 
@@ -243,16 +251,259 @@ export const fetchRestaurantOrders = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Restaurant ID is required");
   }
 
-  const limit = req.query.limit ? Number(req.query.limit) : 0;
+  // Sellers may only read their own restaurant's orders
+  const restaurant = await Restaurant.findById(restaurantId);
 
-  const orders = await Order.find({ restaurantId, paymentStatus: "paid" })
-    .sort({ createdAt: -1 })
-    .limit(limit);
+  if (!restaurant || restaurant.ownerId.toString() !== user._id.toString()) {
+    throw new Error("Unauthorized");
+  }
+
+  const parsed = req.query.limit ? Number(req.query.limit) : DEFAULT_ORDERS_LIMIT;
+  const limit = Math.min(
+    Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_ORDERS_LIMIT,
+    MAX_ORDERS_LIMIT,
+  );
+
+  // Keyset cursor: "createdAt|_id" of the last order of the previous page.
+  // Ties on createdAt are broken by _id so pages never overlap or skip.
+  const filter: Record<string, unknown> = { restaurantId, paymentStatus: "paid" };
+  if (typeof req.query.cursor === "string" && req.query.cursor) {
+    const [ts, id] = req.query.cursor.split("|");
+    const cursorDate = ts ? new Date(ts) : null;
+    if (
+      cursorDate &&
+      !Number.isNaN(cursorDate.getTime()) &&
+      id &&
+      mongoose.isValidObjectId(id)
+    ) {
+      filter.$or = [
+        { createdAt: { $lt: cursorDate } },
+        { createdAt: cursorDate, _id: { $lt: new mongoose.Types.ObjectId(id) } },
+      ];
+    }
+  }
+
+  // Fetch one extra row to detect a next page without a count query.
+  const orders = await Order.find(filter)
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(limit + 1)
+    .select("-paymentIntent");
+
+  const hasMore = orders.length > limit;
+  const page = hasMore ? orders.slice(0, limit) : orders;
+
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last?.createdAt
+      ? `${new Date(last.createdAt).toISOString()}|${last._id.toString()}`
+      : null;
 
   return res.status(200).json({
     success: true,
-    count: orders.length,
-    orders,
+    count: page.length,
+    orders: page,
+    nextCursor,
+  });
+});
+
+// ─── Seller Analytics (server-side rollups) ─────────────────
+// One aggregation replaces shipping the entire order collection to the
+// browser for client-side math: daily revenue buckets, window totals,
+// previous-window comparison, completion counts, top items and weekday
+// totals. Everything is computed in Mongo over the compound index
+// { restaurantId, paymentStatus, createdAt } — the response is a few KB
+// regardless of order volume.
+const SELLER_STATUSES_EXCLUDED = ["cancelled"];
+
+export const getRestaurantAnalytics = tryCatch(async (req: AuthRequest, res) => {
+  const user = req.user;
+
+  const { restaurantId } = req.params;
+
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  if (!restaurantId) {
+    throw new Error("Restaurant ID is required");
+  }
+
+  const restaurant = await Restaurant.findById(restaurantId);
+
+  if (!restaurant || restaurant.ownerId.toString() !== user._id.toString()) {
+    throw new Error("Unauthorized");
+  }
+
+  const windowDays = req.query.days === "30" ? 30 : 7;
+  const now = new Date();
+  const today = new Date(now);
+  today.setUTCHours(0, 0, 0, 0);
+  const windowStart = new Date(today);
+  windowStart.setUTCDate(windowStart.getUTCDate() - (windowDays - 1));
+  const prevStart = new Date(windowStart);
+  prevStart.setUTCDate(prevStart.getUTCDate() - windowDays);
+
+  // All analytics math runs on UTC day boundaries. The frontend buckets by
+  // its local day; a restaurant in a half-hour-offset timezone can shift a
+  // midnight order ±1 bucket. Acceptable for dashboards; revisit with a
+  // per-restaurant timezone if merchants ever complain about day edges.
+  const [result] = await Order.aggregate<{
+    window: { revenue: number; orders: number }[];
+    previous: { revenue: number; orders: number }[];
+    delivered: { n: number }[];
+    cancelled: { n: number }[];
+    days: { _id: string; revenue: number; orders: number }[];
+    weekdays: { _id: number; revenue: number }[];
+    topItems: { _id: string; revenue: number; qty: number }[];
+  }>([
+    {
+      $match: {
+        restaurantId: restaurantId,
+        paymentStatus: "paid",
+        createdAt: { $gte: prevStart },
+      },
+    },
+    {
+      $facet: {
+        // Current window vs preceding same-length window
+        window: [
+          { $match: { createdAt: { $gte: windowStart } } },
+          {
+            $group: {
+              _id: null,
+              revenue: { $sum: "$totalAmount" },
+              orders: { $sum: 1 },
+            },
+          },
+        ],
+        previous: [
+          { $match: { createdAt: { $lt: windowStart } } },
+          {
+            $group: {
+              _id: null,
+              revenue: { $sum: "$totalAmount" },
+              orders: { $sum: 1 },
+            },
+          },
+        ],
+        delivered: [
+          { $match: { status: "delivered" } },
+          { $count: "n" },
+        ],
+        cancelled: [
+          { $match: { status: "cancelled" } },
+          { $count: "n" },
+        ],
+        // Daily buckets for the chart (current window only)
+        days: [
+          { $match: { createdAt: { $gte: windowStart } } },
+          {
+            $group: {
+              _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+              revenue: { $sum: "$totalAmount" },
+              orders: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ],
+        // Revenue by weekday across BOTH windows (matches the old
+        // client-side calc which used the whole fetched history)
+        weekdays: [
+          {
+            $group: {
+              _id: { $dayOfWeek: "$createdAt" },
+              revenue: { $sum: "$totalAmount" },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ],
+        // Best sellers — unwinding items is fine here because the $match
+        // above already bounded the docset to ~2 windows of one restaurant
+        topItems: [
+          { $unwind: "$items" },
+          {
+            $group: {
+              _id: "$items.name",
+              revenue: { $sum: { $multiply: ["$items.price", "$items.quantity"] } },
+              qty: { $sum: "$items.quantity" },
+            },
+          },
+          { $sort: { revenue: -1 } },
+          { $limit: 5 },
+        ],
+      },
+    },
+  ]);
+
+  // $facet always returns every facet key as an array (empty when the
+  // pipeline matched nothing), so no null-guarding is needed — but a
+  // missing aggregation result still means "no data".
+  const safe = result ?? {
+    window: [],
+    previous: [],
+    delivered: [],
+    cancelled: [],
+    days: [],
+    weekdays: [],
+    topItems: [],
+  };
+
+  const prevRevenue = safe.previous[0]?.revenue ?? 0;
+  const windowRevenue = safe.window[0]?.revenue ?? 0;
+  const windowOrders = safe.window[0]?.orders ?? 0;
+  const deliveredCount = safe.delivered[0]?.n ?? 0;
+  const cancelledCount = safe.cancelled[0]?.n ?? 0;
+
+  const dayMap = new Map(safe.days.map((d) => [d._id, d]));
+  const buckets = Array.from({ length: windowDays }, (_, i) => {
+    const d = new Date(windowStart);
+    d.setUTCDate(d.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    const hit = dayMap.get(key);
+    return {
+      date: key,
+      revenue: hit?.revenue ?? 0,
+      orders: hit?.orders ?? 0,
+    };
+  });
+
+  // Mongo $dayOfWeek: 1=Sunday … 7=Saturday → shift to JS getDay()
+  // indexing (0=Sunday … 6=Saturday)
+  const weekdayTotals = new Array<number>(7).fill(0);
+  for (const wd of safe.weekdays) {
+    weekdayTotals[wd._id - 1] = wd.revenue;
+  }
+
+  const change =
+    prevRevenue > 0
+      ? Math.round(((windowRevenue - prevRevenue) / prevRevenue) * 100)
+      : windowRevenue > 0
+        ? 100
+        : 0;
+
+  return res.status(200).json({
+    success: true,
+    analytics: {
+      window: windowDays,
+      windowRevenue,
+      windowOrders,
+      avgOrder: windowOrders ? Math.round(windowRevenue / windowOrders) : 0,
+      change,
+      prevRevenue,
+      delivered: deliveredCount,
+      cancelled: cancelledCount,
+      completionRate:
+        deliveredCount + cancelledCount > 0
+          ? Math.round((deliveredCount / (deliveredCount + cancelledCount)) * 100)
+          : null,
+      buckets,
+      weekdayTotals,
+      topItems: safe.topItems.map((t) => ({
+        name: t._id,
+        revenue: t.revenue,
+        qty: t.qty,
+      })),
+    },
   });
 });
 

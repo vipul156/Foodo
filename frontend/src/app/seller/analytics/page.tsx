@@ -8,8 +8,7 @@ import { useMemo, useState } from "react";
 import { GlassCard } from "@/components/shared/glass-card";
 import { RoleGuard } from "@/components/shared/role-guard";
 import { useGetMyRestaurant, useGetMenuItems } from "@/features/restaurants/api";
-import { useGetRestaurantOrders } from "@/features/orders/api";
-import type { IOrder } from "@/types";
+import { useGetSellerAnalytics, type ISellerAnalytics } from "@/features/orders/api";
 import {
   Loader2,
   AlertCircle,
@@ -21,13 +20,14 @@ import {
   TrendingDown,
   Minus,
   Crown,
-  Link2,
 } from "lucide-react";
 import Link from "next/link";
 
 type Window = 7 | 30;
 
-// ─── Aggregation ─────────────────────────────────────────────
+// ─── Chart helpers ──────────────────────────────────────────
+// Aggregation itself now happens server-side (see getRestaurantAnalytics):
+// the page only shapes the rollup payload for display.
 
 interface DayBucket {
   date: Date;
@@ -36,149 +36,68 @@ interface DayBucket {
   orders: number;
 }
 
-function buildDayBuckets(orders: IOrder[], days: number): DayBucket[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const buckets = new Map<string, DayBucket>();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    buckets.set(d.toDateString(), {
-      date: d,
-      label: d.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
-      revenue: 0,
-      orders: 0,
-    });
-  }
-
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - (days - 1));
-
-  for (const order of orders) {
-    if (!order.createdAt) continue;
-    const created = new Date(order.createdAt);
-    if (created < cutoff) continue;
-    const bucket = buckets.get(created.toDateString());
-    if (bucket) {
-      bucket.revenue += order.totalAmount || 0;
-      bucket.orders += 1;
-    }
-  }
-
-  return [...buckets.values()];
+function toDayBuckets(analytics: ISellerAnalytics): DayBucket[] {
+  return analytics.buckets.map((b) => ({
+    date: new Date(`${b.date}T00:00:00Z`),
+    label: new Date(`${b.date}T00:00:00Z`).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }),
+    revenue: b.revenue,
+    orders: b.orders,
+  }));
 }
 
 function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a.getTime() === b.getTime();
 }
-
 export default function SellerAnalyticsPage() {
-  const [window, setWindow] = useState<Window>(7);
-
-  const {
+  const [window, setWindow] = useState<Window>(7);  const {
     data: restaurant,
     isLoading: loadingRestaurant,
     error: restaurantError,
   } = useGetMyRestaurant();
-  const { data: orders, isLoading: loadingOrders } = useGetRestaurantOrders(
-    restaurant?._id || "",
-  );
+  const {
+    data: analytics,
+    isLoading: loadingAnalytics,
+  } = useGetSellerAnalytics(restaurant?._id || "", window);
   const { data: menuItems } = useGetMenuItems(restaurant?._id || "");
 
   const stats = useMemo(() => {
-    const all = orders || [];
-    const paid = all.filter((o) => o.status !== "cancelled");
-    const buckets = buildDayBuckets(paid, window);
+    if (!analytics) return null;
 
-    const windowRevenue = buckets.reduce((s, b) => s + b.revenue, 0);
-    const windowOrders = buckets.reduce((s, b) => s + b.orders, 0);
-    const avgOrder = windowOrders ? Math.round(windowRevenue / windowOrders) : 0;
+    const buckets = toDayBuckets(analytics);
+    const topItemsTotal = analytics.topItems.reduce((s, i) => s + i.revenue, 0);
 
-    // Compare against the preceding window of the same length
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const windowStart = new Date(now);
-    windowStart.setDate(windowStart.getDate() - (window - 1));
-    const prevStart = new Date(windowStart);
-    prevStart.setDate(prevStart.getDate() - window);
-
-    const prev = paid.filter((o) => {
-      if (!o.createdAt) return false;
-      const d = new Date(o.createdAt);
-      return d >= prevStart && d < windowStart;
-    });
-    const prevRevenue = prev.reduce((s, o) => s + (o.totalAmount || 0), 0);
-    const change =
-      prevRevenue > 0
-        ? Math.round(((windowRevenue - prevRevenue) / prevRevenue) * 100)
-        : windowRevenue > 0
-          ? 100
-          : 0;
-
-    const delivered = all.filter((o) => o.status === "delivered").length;
-    const cancelled = all.filter((o) => o.status === "cancelled").length;
-    const completionRate = delivered + cancelled > 0
-      ? Math.round((delivered / (delivered + cancelled)) * 100)
-      : null;
-
-    // Top items by revenue across the whole feed
-    const itemMap = new Map<string, { name: string; revenue: number; qty: number }>();
-    for (const order of paid) {
-      for (const item of order.items || []) {
-        const existing = itemMap.get(item.name);
-        if (existing) {
-          existing.revenue += item.price * item.quantity;
-          existing.qty += item.quantity;
-        } else {
-          itemMap.set(item.name, {
-            name: item.name,
-            revenue: item.price * item.quantity,
-            qty: item.quantity,
-          });
-        }
-      }
-    }
-    const topItems = [...itemMap.values()]
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
-    const topItemsTotal = topItems.reduce((s, i) => s + i.revenue, 0);
-
-    // Peak weekdays (0=Sun … 6=Sat)
+    // Peak weekdays (0=Sun … 6=Sat) — server sends totals indexed by
+    // JS getDay() ordering
     const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const weekdayTotals = new Array(7).fill(0) as number[];
-    for (const order of paid) {
-      if (!order.createdAt) continue;
-      weekdayTotals[new Date(order.createdAt).getDay()] += order.totalAmount || 0;
-    }
+    const weekdayTotals = analytics.weekdayTotals;
     const maxWeekday = Math.max(...weekdayTotals, 1);
     const busiestDayIndex = weekdayTotals.indexOf(Math.max(...weekdayTotals));
 
     return {
       buckets,
-      windowRevenue,
-      windowOrders,
-      avgOrder,
-      change,
-      prevRevenue,
-      delivered,
-      cancelled,
-      completionRate,
-      topItems,
+      windowRevenue: analytics.windowRevenue,
+      windowOrders: analytics.windowOrders,
+      avgOrder: analytics.avgOrder,
+      change: analytics.change,
+      prevRevenue: analytics.prevRevenue,
+      delivered: analytics.delivered,
+      cancelled: analytics.cancelled,
+      completionRate: analytics.completionRate,
+      topItems: analytics.topItems,
       topItemsTotal,
       weekdayTotals,
       weekdayNames,
       maxWeekday,
       busiestDayIndex,
-      hasData: all.length > 0,
+      hasData: analytics.windowOrders > 0 || analytics.delivered > 0 || analytics.cancelled > 0,
     };
-  }, [orders, window]);
+  }, [analytics]);
 
-  const isLoading = loadingRestaurant || loadingOrders;
+  const isLoading = loadingRestaurant || loadingAnalytics;
 
   return (
     <RoleGuard allowedRoles={["seller"]}>
@@ -207,7 +126,7 @@ export default function SellerAnalyticsPage() {
               </Link>
             )}
           </div>
-        ) : !stats.hasData ? (
+        ) : !stats || !stats.hasData ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <ShoppingBag className="mb-4 h-12 w-12 text-muted-foreground/30" />
             <h3 className="mb-2 text-lg font-semibold">No orders to analyze yet</h3>

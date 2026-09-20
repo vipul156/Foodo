@@ -60,6 +60,10 @@ export interface IOrder extends Document {
   };
 
   expiresAt: Date;
+
+  // Populated by the schema's `timestamps: true`
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const orderSchema = new Schema<IOrder>({

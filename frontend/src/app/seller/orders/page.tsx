@@ -9,7 +9,7 @@ import { GlassCard } from "@/components/shared/glass-card";
 import { RoleGuard } from "@/components/shared/role-guard";
 import { useGetMyRestaurant } from "@/features/restaurants/api";
 import {
-  useGetRestaurantOrders,
+  useRestaurantOrdersFlat,
   useUpdateOrderStatus,
   useCancelOrder,
 } from "@/features/orders/api";
@@ -264,10 +264,13 @@ function getTimeAgo(date: Date): string {
 export default function SellerOrdersPage() {
   const { data: restaurant, isLoading: loadingRestaurant } = useGetMyRestaurant();
   const {
-    data: orders,
+    orders,
     isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
     refetch,
-  } = useGetRestaurantOrders(restaurant?._id || "");
+  } = useRestaurantOrdersFlat(restaurant?._id || "");
   const updateStatus = useUpdateOrderStatus();
   const cancelOrder = useCancelOrder();
 
@@ -391,7 +394,7 @@ export default function SellerOrdersPage() {
           <div>
             <h2 className="text-xl font-bold">Orders</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {orders?.length || 0} total · {activeOrders.length} active
+              {orders.length} loaded · {activeOrders.length} active
             </p>
           </div>
           <button
@@ -413,7 +416,7 @@ export default function SellerOrdersPage() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : orders && orders.length > 0 ? (
+        ) : orders.length > 0 ? (
           <>
             {activeOrders.length > 0 && (
               <div className="space-y-3">
@@ -449,6 +452,22 @@ export default function SellerOrdersPage() {
                     isCancelling={cancellingId === order._id}
                   />
                 ))}
+              </div>
+            )}
+
+            {/* Load more — keyset cursor, one bounded page at a time */}
+            {hasNextPage && (
+              <div className="flex justify-center pt-2">
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-60 transition-all"
+                >
+                  {isFetchingNextPage && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {isFetchingNextPage ? "Loading…" : "Load more orders"}
+                </button>
               </div>
             )}
           </>

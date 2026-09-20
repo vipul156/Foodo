@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { GlassCard } from "@/components/shared/glass-card";
 import { RoleGuard } from "@/components/shared/role-guard";
 import { useGetMyRestaurant, useGetMenuItems } from "@/features/restaurants/api";
-import { useGetRestaurantOrders } from "@/features/orders/api";
+import { useRestaurantOrdersFlat } from "@/features/orders/api";
 import type { IOrder, OrderStatus } from "@/types";
 import {
   Loader2,
@@ -76,8 +76,9 @@ export default function SellerDashboardPage() {
     error: restaurantError,
   } = useGetMyRestaurant();
   const { data: menuItems } = useGetMenuItems(restaurant?._id || "");
-  // Fetch a wider window so today's stats are real; recent list uses the first 5
-  const { data: orders } = useGetRestaurantOrders(restaurant?._id || "", 50);
+  // First page (50) is enough for the today-stats + recent list; deeper
+  // history is available via the keyset cursor on the Orders page.
+  const { orders } = useRestaurantOrdersFlat(restaurant?._id || "");
 
   const isLoading = loadingRestaurant;
 

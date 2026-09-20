@@ -3,6 +3,7 @@ import {
   createOrder,
   fetchOrderForPayment,
   fetchRestaurantOrders,
+  getRestaurantAnalytics,
   updateOrderStatus,
   getMyOrders,
   getOrderPaymentStatus,
@@ -32,6 +33,9 @@ router.get("/payment/reconciliation", getReconciliationCandidates);
 
 router.get("/payment/:id", fetchOrderForPayment);
 router.get("/order/:restaurantId", isAuth, isSeller, fetchRestaurantOrders);
+// Seller analytics — MUST be registered before the /:orderId wildcard so
+// "analytics" isn't captured as an order id
+router.get("/analytics/:restaurantId", isAuth, isSeller, getRestaurantAnalytics);
 router.put("/:orderId", isAuth, isSeller, updateOrderStatus);
 router.get("/my", isAuth, getMyOrders);
 // Read-only payment status for frontend polling after the gateway redirect

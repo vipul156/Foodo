@@ -24,8 +24,18 @@ app.use(
     maxAge: 24 * 60 * 60 * 1000,
   }),
 );
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// ─── Body limits: restrictive default, scoped headroom ─────
+// 1mb covers every JSON API. Only rider registration (/api/rider/new)
+// carries a base64 image (data-URI) that gets forwarded to the upload
+// service, so only that path gets headroom. Scoped parsers MUST come
+// before the global one — the global parser would 413 the request first.
+app.use(
+  "/api/rider/new",
+  express.json({ limit: "10mb" }),
+  express.urlencoded({ limit: "10mb", extended: true }),
+);
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ limit: "1mb", extended: true }));
 app.use("/api/rider", riderRouter);
 // Internal service-to-service contract (admin reads go through here)
 app.use("/api/internal", internalRouter);

@@ -28,8 +28,21 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// ─── Body limits: restrictive default, scoped headroom ─────
+// 1mb covers every JSON API (orders, carts, status updates). The only
+// oversized bodies are base64 image data-URIs forwarded to the upload
+// service from the menu-item + restaurant create/update routes, so only
+// those get headroom. The scoped parsers MUST come before the global one
+// — Express matches middleware in order and the global parser would 413
+// an oversized upload before the scoped parser sees it.
+app.use(
+  ["/api/menu-item/new", "/api/restaurant/new", "/api/restaurant/update"],
+  express.json({ limit: "10mb" }),
+  express.urlencoded({ limit: "10mb", extended: true }),
+);
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ limit: "1mb", extended: true }));
+
 app.use("/api/restaurant", restaurantRouter)
 app.use("/api/menu-item", menuItemRouter)
 app.use("/api/cart", cartRouter)
