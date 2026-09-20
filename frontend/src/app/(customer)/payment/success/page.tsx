@@ -1,17 +1,17 @@
 // ============================================================
-// Foodo — Payment Success Page (Stripe return URL)
+// Foodo — Payment Success Page (gateway return URL)
 // ============================================================
-// Stripe redirects here with ?session_id=... after a successful
-// Checkout Session. We verify the session server-side (which
-// publishes the payment-success event over RabbitMQ) and then
-// send the user to their orders.
+// Stripe/Razorpay redirect here after payment. This page is UX-only:
+// it polls the read-only order status endpoint while the webhook
+// (source of truth) marks the order paid in the background, then
+// unlocks and sends the user to their orders.
 
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useVerifyStripePayment } from "@/features/orders/api";
+import { useOrderPaymentStatus } from "@/features/orders/api";
 import {
   CheckCircle2,
   Loader2,
@@ -20,7 +20,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-type VerifyStatus = "verifying" | "success" | "error";
+// Webhooks normally land in 1–2s; wait this long before offering
+// escape hatches instead of an endless spinner.
+const POLL_TIMEOUT_MS = 60_000;
 
 export default function PaymentSuccessPage() {
   return (
@@ -38,47 +40,49 @@ export default function PaymentSuccessPage() {
 
 function PaymentSuccessContent() {
   const router = useRouter();
-  const sessionId = useSearchParamsSafe();
-  const verifyPayment = useVerifyStripePayment();
+  const orderId = useOrderIdParam();
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<VerifyStatus>("verifying");
-  // Guard against React strict-mode double effect runs —
-  // verification must fire exactly once per attempt.
-  const verifiedRef = useRef(false);
-  // Bumped by "Try Again" to re-run verification
-  const [attempt, setAttempt] = useState(0);
+  const { data } = useOrderPaymentStatus(orderId);
+
+  const [timedOut, setTimedOut] = useState(false);
+  const startedAtRef = useRef(Date.now());
+
+  const isPaid = data?.paymentStatus === "paid";
+
+  // Reset the polling window whenever a fresh orderId arrives
+  useEffect(() => {
+    if (!orderId) return;
+    startedAtRef.current = Date.now();
+    setTimedOut(false);
+  }, [orderId]);
 
   useEffect(() => {
-    if (!sessionId || verifiedRef.current) return;
-    verifiedRef.current = true;
-    setStatus("verifying");
+    if (!orderId || isPaid) return;
+    const timer = setInterval(() => {
+      if (Date.now() - startedAtRef.current > POLL_TIMEOUT_MS) {
+        setTimedOut(true);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [orderId, isPaid]);
 
-    verifyPayment
-      .mutateAsync(sessionId)
-      .then(() => {
-        // Payment confirmed → the backend clears the cart. Update the
-        // cache immediately so the cart badge/sheet empties on the spot.
-        queryClient.setQueryData(["cart"], {
-          success: true,
-          cart: [],
-          subtotal: 0,
-          cartLength: 0,
-        });
-        setStatus("success");
-      })
-      .catch(() => setStatus("error"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, attempt]);
-
-  // Auto-redirect to orders once verified
+  // Paid → sync caches (the backend already cleared the cart when the
+  // webhook was processed) and auto-redirect to orders.
   useEffect(() => {
-    if (status !== "success") return;
+    if (!isPaid) return;
+    queryClient.setQueryData(["cart"], {
+      success: true,
+      cart: [],
+      subtotal: 0,
+      cartLength: 0,
+    });
+    queryClient.invalidateQueries({ queryKey: ["orders"] });
     const timer = setTimeout(() => router.push("/orders"), 2500);
     return () => clearTimeout(timer);
-  }, [status, router]);
+  }, [isPaid, queryClient, router]);
 
-  // No session id — Stripe never sent one
-  if (!sessionId) {
+  // No orderId — the gateway never sent one
+  if (!orderId) {
     return (
       <PaymentStateCard
         icon={<XCircle className="h-16 w-16 text-destructive" />}
@@ -95,22 +99,30 @@ function PaymentSuccessContent() {
     );
   }
 
-  if (status === "verifying") {
+  if (isPaid) {
     return (
       <PaymentStateCard
-        icon={<Loader2 className="h-16 w-16 animate-spin text-primary" />}
-        title="Confirming your payment..."
-        description="Hang tight while we verify your payment with Stripe."
-      />
+        icon={<CheckCircle2 className="h-16 w-16 text-emerald-500" />}
+        title="Payment successful!"
+        description="Your order has been placed and is being prepared. Redirecting you to your orders..."
+      >
+        <Link
+          href="/orders"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          <ShoppingBag className="h-4 w-4" />
+          View My Orders
+        </Link>
+      </PaymentStateCard>
     );
   }
 
-  if (status === "error") {
+  if (timedOut) {
     return (
       <PaymentStateCard
-        icon={<XCircle className="h-16 w-16 text-destructive" />}
-        title="Verification failed"
-        description="We couldn't confirm your payment automatically. If money was deducted, don't worry — check My Orders in a moment or contact support."
+        icon={<XCircle className="h-16 w-16 text-amber-500" />}
+        title="Still confirming your payment"
+        description="We haven't received the bank confirmation yet. If money was deducted, don't worry — your order will appear in My Orders the moment it lands."
       >
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -121,12 +133,12 @@ function PaymentSuccessContent() {
           </Link>
           <button
             onClick={() => {
-              verifiedRef.current = false;
-              setAttempt((n) => n + 1);
+              startedAtRef.current = Date.now();
+              setTimedOut(false);
             }}
             className="inline-flex h-10 items-center justify-center rounded-xl border border-border px-5 text-sm font-medium hover:bg-accent transition-colors"
           >
-            Try Again
+            Keep Waiting
           </button>
         </div>
       </PaymentStateCard>
@@ -135,32 +147,24 @@ function PaymentSuccessContent() {
 
   return (
     <PaymentStateCard
-      icon={<CheckCircle2 className="h-16 w-16 text-emerald-500" />}
-      title="Payment successful!"
-      description="Your order has been placed and is being prepared. Redirecting you to your orders..."
-    >
-      <Link
-        href="/orders"
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-      >
-        <ShoppingBag className="h-4 w-4" />
-        View My Orders
-      </Link>
-    </PaymentStateCard>
+      icon={<Loader2 className="h-16 w-16 animate-spin text-primary" />}
+      title="Confirming your payment..."
+      description="Hang tight while we confirm your payment with the bank. This usually takes just a few seconds."
+    />
   );
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-function useSearchParamsSafe(): string | null {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+function useOrderIdParam(): string | null {
+  const [orderId, setOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setSessionId(params.get("session_id"));
+    setOrderId(params.get("orderId"));
   }, []);
 
-  return sessionId;
+  return orderId;
 }
 
 function PaymentStateCard({

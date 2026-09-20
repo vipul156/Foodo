@@ -5,6 +5,7 @@ import {
   fetchRestaurantOrders,
   updateOrderStatus,
   getMyOrders,
+  getOrderPaymentStatus,
   fetchSingleOrder,
   assignOrderToRider,
   getCurrentOrdersForRider,
@@ -22,6 +23,8 @@ router.get("/payment/:id", fetchOrderForPayment);
 router.get("/order/:restaurantId", isAuth, isSeller, fetchRestaurantOrders);
 router.put("/:orderId", isAuth, isSeller, updateOrderStatus);
 router.get("/my", isAuth, getMyOrders);
+// Read-only payment status for frontend polling after the gateway redirect
+router.get("/:orderId/status", isAuth, getOrderPaymentStatus);
 router.get("/:orderId", isAuth, fetchSingleOrder);
 router.put("/assign/rider", assignOrderToRider);
 router.get("/current/rider", getCurrentOrdersForRider);

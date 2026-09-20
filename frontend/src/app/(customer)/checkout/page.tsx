@@ -14,7 +14,6 @@ import {
 import {
   useCreateOrder,
   useCreateRazorpayOrder,
-  useVerifyRazorpayPayment,
   useCreateStripeSession,
 } from "@/features/orders/api";
 import { useAuthStore } from "@/store/auth-store";
@@ -105,7 +104,6 @@ export default function CheckoutPage() {
   const createAddress = useCreateAddress();
   const createOrder = useCreateOrder();
   const createRazorpayOrder = useCreateRazorpayOrder();
-  const verifyRazorpayPayment = useVerifyRazorpayPayment();
   const createStripeSession = useCreateStripeSession();
 
   const [selectedAddressId, setSelectedAddressId] = useState("");
@@ -155,21 +153,12 @@ export default function CheckoutPage() {
         name: "Foodo",
         description: `Order #${orderId.slice(-6).toUpperCase()}`,
         order_id: razorpayOrderId,
-        handler: async (response: RazorpayResponse) => {
-          try {
-            await verifyRazorpayPayment.mutateAsync({
-              orderId,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-            handleOrderCreated();
-          } catch {
-            setPaymentError(
-              "Payment verification failed. Please contact support.",
-            );
-            setIsProcessing(false);
-          }
+        // Payment captured by the gateway — the webhook (source of truth)
+        // marks the order paid in the background. The success page polls
+        // the read-only status endpoint until it flips; the client never
+        // fulfills the payment itself.
+        handler: () => {
+          router.push(`/payment/success?orderId=${orderId}`);
         },
         prefill: {
           name: "Foodo User",
@@ -194,7 +183,7 @@ export default function CheckoutPage() {
       });
       rzp.open();
     },
-    [createRazorpayOrder, verifyRazorpayPayment, handleOrderCreated],
+    [createRazorpayOrder, router],
   );
 
   // ─── Geolocation ───────────────────────────────────────────

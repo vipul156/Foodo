@@ -400,6 +400,44 @@ export const getMyOrders = tryCatch(async (req: AuthRequest, res) => {
   });
 });
 
+// ─── Order Payment Status (read-only, poll-friendly) ────────
+// The frontend polls this after the payment gateway redirect while the
+// webhook (source of truth) flips the order to paid in the background.
+// Strictly read-only — the client can never fulfill a payment here.
+export const getOrderPaymentStatus = tryCatch(async (req: AuthRequest, res) => {
+  const user = req.user;
+
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  const { orderId } = req.params;
+
+  if (!orderId) {
+    return res.status(400).json({ message: "Order ID is required" });
+  }
+
+  const order = await Order.findById(orderId).select(
+    "userId status paymentStatus totalAmount",
+  );
+
+  if (!order) {
+    return res.status(404).json({ message: "No order found" });
+  }
+
+  if (order.userId.toString() !== user._id.toString()) {
+    throw new Error("Unauthorized");
+  }
+
+  return res.status(200).json({
+    success: true,
+    orderId: order._id,
+    paymentStatus: order.paymentStatus,
+    status: order.status,
+    totalAmount: order.totalAmount,
+  });
+});
+
 export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
 

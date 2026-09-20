@@ -5,7 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { restaurantApi } from "@/lib/api-client";
 import axios from "axios";
-import type { IOrder, ICreateOrderPayload } from "@/types";
+import type { IOrder, ICreateOrderPayload, PaymentStatus } from "@/types";
 
 // ─── Create Order ────────────────────────────────────────────
 
@@ -42,32 +42,6 @@ export function useCreateRazorpayOrder() {
   });
 }
 
-// ─── Razorpay: Verify Payment ───────────────────────────────
-
-export function useVerifyRazorpayPayment() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: {
-      orderId: string;
-      razorpay_payment_id: string;
-      razorpay_order_id: string;
-      razorpay_signature: string;
-    }) => {
-      const res = await axios.post<{ message: string }>(
-        "/api/utils/payment/verify",
-        data,
-        { withCredentials: true },
-      );
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["cart"] });
-    },
-  });
-}
-
 // ─── Stripe: Create Checkout Session ─────────────────────────
 
 export function useCreateStripeSession() {
@@ -83,28 +57,37 @@ export function useCreateStripeSession() {
   });
 }
 
-// ─── Stripe: Verify Payment ──────────────────────────────────
+// ─── Order Payment Status (read-only polling) ────────────────
+// After the gateway redirect the frontend polls this read-only endpoint —
+// it can never fulfill a payment. The webhook (source of truth) marks the
+// order paid in the background; the next poll unlocks the flow.
 
-export function useVerifyStripePayment() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      const res = await axios.post<{ message: string }>(
-        "/api/utils/payment/stripe/verify",
-        { sessionId },
-        { withCredentials: true },
-      );
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["cart"] });
-    },
-  });
+export interface IOrderPaymentStatus {
+  success: boolean;
+  orderId: string;
+  paymentStatus: PaymentStatus;
+  status: string;
+  totalAmount?: number;
 }
 
-// ─── Get My Orders ───────────────────────────────────────────
+export function useOrderPaymentStatus(orderId: string | null) {
+  return useQuery({
+    queryKey: ["orders", orderId, "payment-status"],
+    queryFn: async () => {
+      const res = await restaurantApi.get<IOrderPaymentStatus>(
+        `/order/${orderId}/status`,
+      );
+      return res;
+    },
+    enabled: !!orderId,
+    // Poll every 2s and stop the moment the webhook has flipped the order
+    refetchInterval: (query) =>
+      query.state.data?.paymentStatus === "paid" ? false : 2000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+    staleTime: 0,
+  });
+}
 
 export function useGetMyOrders() {
   return useQuery({

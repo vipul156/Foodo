@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import axios from "axios";
 import razorpay from "../config/razorpay.js";
 import crypto from "crypto";
-import { verifyRazorpaySignature } from "../config/verifyRazorpay.js";
 import { publishPaymentSuccess } from "../config/payment.producer.js";
 import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
@@ -40,34 +39,11 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
     }
 }
 
-export const verifyRazorpayPayment = async (req: Request, res: Response) => {
-    try {
-        const { orderId, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
-        
-       const isValid = verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
-        
-       if(!isValid) {
-        return res.status(400).json({ message: "Invalid signature" });
-       }
-
-       await publishPaymentSuccess({
-        orderId,
-        paymentId: razorpay_payment_id,
-        provider: "razorpay",
-       })
-
-        res.status(200).json({ message: "Payment verified successfully" });
-    } catch (error: any) {
-        console.error("Razorpay verify error:", error?.message);
-        res.status(500).json({ message: "Error verifying payment" });
-    }
-}
-
 // ─── Razorpay Webhook (source of truth) ─────────────────────
-// The browser-driven /verify endpoint is UX-only: if the tab closes before
-// it fires, the provider has still captured the money and THIS endpoint
-// guarantees the order gets marked paid. Signature-verified against the
-// raw request body with RAZORPAY_WEBHOOK_SECRET.
+// There is intentionally NO client-driven verify endpoint: payment
+// fulfillment comes exclusively from this signature-verified webhook,
+// checked against the raw request body with RAZORPAY_WEBHOOK_SECRET.
+// The frontend polls the order status endpoint instead.
 export const razorpayWebhook = async (req: Request, res: Response) => {
     try {
         // Webhook routes use express.raw() — req.body is the raw Buffer.
@@ -235,7 +211,9 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
                 orderId,
             },
 
-            success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+            // orderId rides in the return URL so the success page can poll
+            // the read-only status endpoint while the webhook lands.
+            success_url: `${process.env.FRONTEND_URL}/payment/success?orderId=${orderId}&session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
         })
         
@@ -249,38 +227,3 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
 }
 
 
-export const verifyStripePayment = async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.body;
-        
-        const stripeSession = await stripe.checkout.sessions.retrieve(sessionId);
-        
-        if(!stripeSession) {
-            return res.status(400).json({ message: "Invalid session id" });
-        }
-
-        const orderId = stripeSession.metadata?.orderId;
-        if(!orderId) {
-            return res.status(400).json({ message: "Invalid order id" });
-        }
-
-        // UX-only fast path: only a provider-confirmed PAID session may
-        // publish success (previously any session — even a pending one —
-        // could mark an order paid). The webhook remains the source of
-        // truth; the consumer's conditional update dedupes double-delivery.
-        if (stripeSession.payment_status !== "paid") {
-            return res.status(400).json({ message: "Payment not completed yet" });
-        }
-
-        await publishPaymentSuccess({
-            orderId,
-            paymentId: sessionId,
-            provider: "stripe",
-        })
-
-        res.status(200).json({ message: "Payment verified successfully" });
-    } catch (error: any) {
-        console.error("Stripe verify error:", error?.message);
-        res.status(500).json({ message: "Error verifying payment" });
-    }
-}
