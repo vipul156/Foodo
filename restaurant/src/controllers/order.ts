@@ -96,7 +96,8 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     subtotal += itemTotal;
 
     return {
-      itemId: item._id.toString(),
+      // Stored as ObjectId (ref MenuItem) — casts were the old string format
+      itemId: item._id,
       name: item.name,
       price: item.price,
       quantity: cart.quantity,

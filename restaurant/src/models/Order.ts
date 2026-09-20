@@ -1,4 +1,4 @@
-import { Schema, Document, model } from "mongoose";
+import { Schema, Document, model, Types } from "mongoose";
 
 export interface IOrder extends Document {
   userId: string;
@@ -16,7 +16,9 @@ export interface IOrder extends Document {
   riderAmount: number;
 
   items: {
-    itemId: string;
+    // ObjectId — matches MenuItem._id so $in lookups cast natively and
+    // embeds stay 12 bytes instead of a 24-char hex string.
+    itemId: Types.ObjectId;
     name: string;
     price: number;
     quauntity: number;
@@ -75,7 +77,7 @@ const orderSchema = new Schema<IOrder>({
   distance: { type: Number, required: true },
   items: [
     {
-      itemId: String,
+      itemId: { type: Schema.Types.ObjectId, ref: "MenuItem" },
       name: String,
       price: Number,
       quantity: Number,
@@ -139,5 +141,31 @@ const orderSchema = new Schema<IOrder>({
 },{
     timestamps: true
 });
+
+// ─── Compound indexes (match the real query shapes) ──────────
+// Without these, every "my orders", restaurant board and rider history
+// read is a full collection scan at scale. Each index follows the
+// ESR rule (Equality → Sort → Range) so the sort is satisfied from the
+// index itself instead of an in-memory block.
+
+// getMyOrders: find({ userId }).sort({ createdAt: -1 })
+orderSchema.index({ userId: 1, createdAt: -1 });
+
+// fetchRestaurantOrders: find({ restaurantId, paymentStatus: "paid" })
+//   .sort({ createdAt: -1 }) — equality first, sort last.
+orderSchema.index({ restaurantId: 1, paymentStatus: 1, createdAt: -1 });
+
+// Rider history + current delivery:
+//   find({ riderId, status: "delivered", paymentStatus: "paid" }) and
+//   find({ riderId, status: { $ne: "delivered" } }) — equality on
+//   riderId+status, createdAt covers the history sort.
+orderSchema.index({ riderId: 1, status: 1, createdAt: -1 });
+
+// Admin analytics: status-only counts (delivered / cancelled / active).
+orderSchema.index({ status: 1 });
+
+// getReadyOrdersNearRider: find({ status: "ready_for_rider",
+// paymentStatus: "paid" }).sort({ createdAt: 1 })
+orderSchema.index({ status: 1, paymentStatus: 1, createdAt: 1 });
 
 export const Order = model<IOrder>("Order", orderSchema);
