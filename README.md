@@ -602,6 +602,7 @@ RABBITMQ_URL=amqp://localhost
 PORT=3005
 MONGO_URI=mongodb://localhost:27017/foodo
 JWT_SECRET=your-jwt-secret-key
+FRONTEND_URL=http://localhost:3000
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
@@ -613,6 +614,8 @@ RAZORPAY_WEBHOOK_SECRET=your-razorpay-webhook-secret
 STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
 RABBITMQ_URL=amqp://localhost
 INTERNAL_SERVICE_KEY=your-internal-service-key
+# Optional: provider-vs-DB payment audit interval (default 1 hour)
+# PAYMENT_RECONCILE_INTERVAL_MS=3600000
 ```
 
 #### Frontend `.env.local`

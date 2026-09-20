@@ -6,34 +6,95 @@ import { publishPaymentSuccess } from "../config/payment.producer.js";
 import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
 
+// ─── Order-owner claim/attach helpers ───────────────────────
+// The restaurant service owns orders: it atomically claims the order for
+// payment (rejecting paid/cancelled/expired) and remembers the created
+// provider intent so client retries re-issue the SAME one.
+interface OrderPaymentClaim {
+  orderId: string;
+  amount: number;
+  currency: string;
+  attachedProviderOrderId: string | null;
+}
+
+const claimOrderPayment = async (
+  orderId: string,
+  provider: "razorpay" | "stripe",
+): Promise<OrderPaymentClaim> => {
+  const { data } = await axios.post<OrderPaymentClaim>(
+    `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/claim/${orderId}`,
+    { provider },
+    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+  );
+  return data;
+};
+
+const attachProviderOrder = async (
+  orderId: string,
+  provider: "razorpay" | "stripe",
+  providerOrderId: string,
+) => {
+  await axios.put(
+    `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/attached/${orderId}`,
+    { provider, providerOrderId },
+    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
+  );
+};
+
 export const createRazorpayOrder = async (req: Request, res: Response) => {
     try {
         const { orderId } = req.body;
-        
-        const {data} = await axios.get(
-            `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/${orderId}`,
-            {
-                headers: {
-                    "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-                },
-            }
-        )
+
+        if (!orderId) {
+            return res.status(400).json({ message: "orderId is required" });
+        }
+
+        // Atomic claim: rejects paid/cancelled/expired orders and returns
+        // any previously attached Razorpay order — double-clicks (and retry
+        // storms) re-issue the SAME intent instead of creating duplicates.
+        // The amount comes from the claim, so it can't race an order update.
+        const claim = await claimOrderPayment(orderId, "razorpay");
+
+        if (claim.attachedProviderOrderId) {
+            return res.status(200).json({
+                razorpayOrderId: claim.attachedProviderOrderId,
+                key: process.env.RAZORPAY_KEY_ID,
+            });
+        }
 
         const razorpayOrder = await razorpay.orders.create({
-                amount: data.amount * 100,
-                currency: "INR",
+                amount: claim.amount * 100,
+                currency: claim.currency ?? "INR",
                 receipt: orderId,
                 // Notes ride along on every webhook payment entity, so the
                 // webhook can resolve the internal orderId without an API
                 // round-trip.
                 notes: { orderId },
             })
-        
+
+        // Remember it on the order so every future create returns the same one
+        try {
+            await attachProviderOrder(orderId, "razorpay", razorpayOrder.id);
+        } catch (attachError: any) {
+            // Worst case is an orphan provider order — the reconciliation
+            // job flags those for manual cleanup.
+            console.error(
+                `[ALERT][RECONCILE] Failed to attach razorpay order ${razorpayOrder.id} to ${orderId}:`,
+                attachError?.message,
+            );
+        }
+
         res.status(200).json({ 
             razorpayOrderId: razorpayOrder.id,
             key: process.env.RAZORPAY_KEY_ID,
         });
     } catch (error: any) {
+        // Claim conflicts (paid/cancelled/expired) surface as 409 from the owner
+        if (error?.response?.status === 409) {
+            return res
+                .status(409)
+                .json({ message: error.response.data?.message ?? "Order not payable" });
+        }
         console.error("Razorpay create order error:", error?.message);
         res.status(500).json({ message: "Error creating order" });
     }
@@ -180,15 +241,24 @@ export const stripeWebhook = async (req: Request, res: Response) => {
 export const createStripePaymentIntent = async (req: Request, res: Response) => {
     try {
         const { orderId } = req.body;
-        
-        const {data} = await axios.get(
-            `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/${orderId}`,
-            {
-                headers: {
-                    "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-                },
+
+        if (!orderId) {
+            return res.status(400).json({ message: "orderId is required" });
+        }
+
+        // Same atomic claim as Razorpay: idempotent re-issue + trusted amount
+        const claim = await claimOrderPayment(orderId, "stripe");
+
+        if (claim.attachedProviderOrderId) {
+            const existing = await stripe.checkout.sessions.retrieve(
+                claim.attachedProviderOrderId,
+            );
+            if (existing?.url) {
+                return res.status(200).json({ url: existing.url });
             }
-        )
+            // No url (e.g. expired) → fall through and create a fresh one;
+            // the idempotency key below still guards duplicate creation.
+        }
 
         const stripePaymentIntent = await stripe.checkout.sessions.create({
            payment_method_types: ["card"],
@@ -201,7 +271,7 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
                         product_data: {
                             name: "Order Payment",
                         },
-                        unit_amount: data.amount * 100,
+                        unit_amount: claim.amount * 100,
                     },
                     quantity: 1,
                 },
@@ -215,12 +285,29 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
             // the read-only status endpoint while the webhook lands.
             success_url: `${process.env.FRONTEND_URL}/payment/success?orderId=${orderId}&session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
-        })
+        },
+        // Stripe-native idempotency: retries with this key return the same
+        // session instead of creating a new one.
+        { idempotencyKey: `order_${orderId}` })
+
+        try {
+            await attachProviderOrder(orderId, "stripe", stripePaymentIntent.id);
+        } catch (attachError: any) {
+            console.error(
+                `[ALERT][RECONCILE] Failed to attach stripe session ${stripePaymentIntent.id} to ${orderId}:`,
+                attachError?.message,
+            );
+        }
         
         res.status(200).json({ 
             url: stripePaymentIntent.url,
         });
     } catch (error: any) {
+        if (error?.response?.status === 409) {
+            return res
+                .status(409)
+                .json({ message: error.response.data?.message ?? "Order not payable" });
+        }
         console.error("Stripe create session error:", error?.message);
         res.status(500).json({ message: "Error creating payment intent" });
     }

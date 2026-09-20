@@ -48,6 +48,15 @@ export interface IOrder extends Document {
   paymentMethod: "razorpay" | "stripe" | "cod";
   paymentStatus: "pending" | "paid" | "failed";
 
+  // Payment initiation bookkeeping (set via the internal claim endpoint).
+  // Enables idempotent re-issue of the SAME provider intent on client
+  // retries, plus provider reconciliation for missed webhooks.
+  paymentIntent?: {
+    provider: "razorpay" | "stripe";
+    providerOrderId?: string;
+    initiatedAt?: Date;
+  };
+
   expiresAt: Date;
 }
 
@@ -120,7 +129,13 @@ const orderSchema = new Schema<IOrder>({
   expiresAt: {
     type: Date,
     index: {expireAfterSeconds: 0},
-  }
+  },
+
+  paymentIntent: {
+    provider: { type: String, enum: ["razorpay", "stripe"] },
+    providerOrderId: { type: String },
+    initiatedAt: { type: Date },
+  },
 },{
     timestamps: true
 });

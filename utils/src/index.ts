@@ -4,6 +4,7 @@ import cloudinary from "cloudinary";
 import cors from "cors";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
+import { startPaymentReconciliation } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
 
 dotenv.config();
@@ -32,6 +33,8 @@ app.use("/api/utils/", cloudinaryRouter);
 app.use("/api/utils/payment", paymentRouter);
 
 connectRabbitMQ();
+// Periodic provider-vs-database payment audit (missed-webhook safety net)
+startPaymentReconciliation();
 
 app.get('/health', (req, res) => {
   res.status(200).json({

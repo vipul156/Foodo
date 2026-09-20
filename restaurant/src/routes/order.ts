@@ -6,6 +6,9 @@ import {
   updateOrderStatus,
   getMyOrders,
   getOrderPaymentStatus,
+  claimOrderForPayment,
+  attachProviderOrder,
+  getReconciliationCandidates,
   fetchSingleOrder,
   assignOrderToRider,
   getCurrentOrdersForRider,
@@ -19,6 +22,14 @@ import { isAuth, isSeller } from "../middlewares/isAuth.js";
 const router = Router();
 
 router.post("/new", isAuth, createOrder);
+
+// Internal: idempotent payment initiation + reconciliation (utils service)
+router.post("/payment/claim/:id", claimOrderForPayment);
+router.put("/payment/attached/:id", attachProviderOrder);
+// Must be registered BEFORE GET /payment/:id so "reconciliation" isn't
+// captured as an order id
+router.get("/payment/reconciliation", getReconciliationCandidates);
+
 router.get("/payment/:id", fetchOrderForPayment);
 router.get("/order/:restaurantId", isAuth, isSeller, fetchRestaurantOrders);
 router.put("/:orderId", isAuth, isSeller, updateOrderStatus);

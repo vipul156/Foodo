@@ -707,3 +707,132 @@ export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => 
     order,
   });
 });
+
+// ─── Internal: Claim an Order for Payment Initiation ────────
+// utils calls this BEFORE creating a provider payment intent. Atomic and
+// idempotent: paid/cancelled orders are rejected, and any previously
+// attached provider order id is handed back so double-clicks and retry
+// storms re-issue the SAME intent instead of minting duplicates. The
+// amount also comes from this claim, closing the trust gap where the
+// internal amount fetch could race an order update.
+export const claimOrderForPayment = tryCatch(async (req, res) => {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+    throw new Error("Forbidden");
+  }
+
+  const { orderId } = req.params;
+  const { provider } = req.body ?? {};
+
+  if (!orderId) {
+    return res.status(400).json({ message: "Order ID is required" });
+  }
+
+  if (provider !== "razorpay" && provider !== "stripe") {
+    return res.status(400).json({ message: "Valid provider is required" });
+  }
+
+  const order = await Order.findOneAndUpdate(
+    {
+      _id: orderId,
+      paymentStatus: { $ne: "paid" },
+      status: { $ne: "cancelled" },
+    },
+    {
+      $set: {
+        "paymentIntent.provider": provider,
+        "paymentIntent.initiatedAt": new Date(),
+      },
+    },
+    { new: true },
+  ).select("totalAmount paymentIntent");
+
+  // TTL'd unpaid orders are already gone → same 409 as paid/cancelled
+  if (!order) {
+    return res.status(409).json({
+      message: "Order not claimable (paid, cancelled, or expired)",
+    });
+  }
+
+  const attached =
+    order.paymentIntent?.provider === provider
+      ? order.paymentIntent?.providerOrderId ?? null
+      : null;
+
+  return res.status(200).json({
+    success: true,
+    orderId: order._id,
+    amount: order.totalAmount,
+    currency: "INR",
+    attachedProviderOrderId: attached,
+  });
+});
+
+// ─── Internal: Attach the Provider Order Id ─────────────────
+// utils calls back right after creating the provider intent so every
+// future claim re-issues the same one.
+export const attachProviderOrder = tryCatch(async (req, res) => {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+    throw new Error("Forbidden");
+  }
+
+  const { orderId } = req.params;
+  const { provider, providerOrderId } = req.body ?? {};
+
+  if (!orderId || !providerOrderId) {
+    return res
+      .status(400)
+      .json({ message: "Order ID and providerOrderId are required" });
+  }
+
+  if (provider !== "razorpay" && provider !== "stripe") {
+    return res.status(400).json({ message: "Valid provider is required" });
+  }
+
+  const order = await Order.findOneAndUpdate(
+    { _id: orderId, paymentStatus: { $ne: "paid" } },
+    {
+      $set: {
+        "paymentIntent.provider": provider,
+        "paymentIntent.providerOrderId": providerOrderId,
+        "paymentIntent.initiatedAt": new Date(),
+      },
+    },
+    { new: true },
+  ).select("_id paymentIntent");
+
+  if (!order) {
+    return res
+      .status(409)
+      .json({ message: "Order not attachable (paid or expired)" });
+  }
+
+  return res.status(200).json({ success: true });
+});
+
+// ─── Internal: Reconciliation Candidates ────────────────────
+// Pending orders whose payment intent was initiated longer than the window
+// ago and never became paid. utils audits these against the provider:
+// captured money is republished through the SAME idempotent queue path as
+// webhooks; created-but-never-paid intents are flagged as orphans.
+export const getReconciliationCandidates = tryCatch(async (req, res) => {
+  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
+    throw new Error("Forbidden");
+  }
+
+  const olderThanMinutes = Number(req.query.olderThanMinutes) || 20;
+  const since = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+  const orders = await Order.find({
+    paymentStatus: "pending",
+    "paymentIntent.providerOrderId": { $exists: true, $ne: null },
+    "paymentIntent.initiatedAt": { $lte: since },
+  })
+    .limit(100)
+    .select("_id paymentIntent paymentStatus totalAmount");
+
+  return res.status(200).json({
+    success: true,
+    count: orders.length,
+    orders,
+  });
+});
