@@ -201,12 +201,15 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
 
   // ─── Atomic local claim (the only synchronous work) ────────
   // Flipping availability first makes double-clicks impossible at the
-  // rider level. If the order turns out to be gone, the restaurant
-  // service's failed assignment publishes rider.order_rejected and the
-  // rider event consumer frees this rider again (saga compensation).
+  // rider level. The claim also stamps currentOrderId so every later
+  // release is a conditional update keyed to THIS order — a stale
+  // compensation can never free a rider who already claimed another one.
+  // If the order turns out to be gone, the restaurant service's failed
+  // assignment publishes rider.order_rejected and the rider event
+  // consumer frees this rider again (saga compensation).
   const rider = await Rider.findOneAndUpdate(
     { userId: riderUserId, isAvailable: true },
-    { isAvailable: false, lastActive: new Date() },
+    { isAvailable: false, lastActive: new Date(), currentOrderId: orderId },
     { new: true },
   );
 
@@ -216,11 +219,13 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  // ─── Fire-and-forget: assignment happens asynchronously ────
-  // The restaurant service consumes this event, performs the atomic order
-  // assignment, and pushes the socket updates. This request returns
-  // instantly — no chained HTTP to restaurant or realtime.
-  publishRiderEvent("rider.order_accepted", {
+  // ─── Publish — with rollback on failure ────────────────────
+  // Assignment happens asynchronously: the restaurant service consumes
+  // this event, performs the atomic order assignment, and pushes socket
+  // updates. But the event MUST reach the broker — if it doesn't, no
+  // compensation exists (restaurant never learns of the claim), so we
+  // undo the claim right here instead of stranding the rider offline.
+  const published = await publishRiderEvent("rider.order_accepted", {
     orderId,
     riderId: rider._id,
     riderUserId: rider.userId,
@@ -234,6 +239,22 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
     // Photo travels separately so the customer app can show an avatar
     riderPicture: rider.picture,
   });
+
+  if (!published) {
+    // Conditional rollback: only flips back if this claim still owns the
+    // rider (a concurrent release could already have re-enabled them).
+    await Rider.findOneAndUpdate(
+      {
+        _id: rider._id,
+        isAvailable: false,
+        currentOrderId: orderId,
+      },
+      { isAvailable: true, currentOrderId: null, lastActive: new Date() },
+    );
+    return res.status(503).json({
+      message: "Could not reach order service — try again",
+    });
+  }
 
   return res.status(200).json({ message: "Order accepted" });
 });
@@ -403,11 +424,12 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
 
     // Delivered → the rider is automatically available again and shows
     // Online. Until then they stay Offline with the delivery in progress.
+    // Conditional + clears the claim marker atomically.
     let updatedRider = null;
     if (data.order?.status === "delivered") {
       updatedRider = await Rider.findOneAndUpdate(
-        { userId: riderUserId },
-        { isAvailable: true, lastActive: new Date() },
+        { userId: riderUserId, isAvailable: false, currentOrderId: orderId },
+        { isAvailable: true, currentOrderId: null, lastActive: new Date() },
         { new: true },
       );
     }
@@ -432,25 +454,38 @@ export const releaseRiderInternal = tryCatch(async (req, res) => {
     return res.status(403).json({ message: "Forbidden" });
   }
 
-  const { riderId } = req.body;
+  const { riderId, orderId } = req.body;
 
   if (!riderId) {
     return res.status(400).json({ message: "riderId is required" });
   }
 
-  const rider = await Rider.findById(riderId);
+  // Conditional release: flips the rider back ONLY if they are still
+  // claimed by this order. A stale call (rider already released and
+  // re-claimed by another order) matches nothing and is a no-op — it can
+  // never free a rider who moved on. All current callers send orderId;
+  // the bare-riderId branch only exists as a legacy fallback and keeps
+  // the old free-any-offline-rider semantics.
+  const rider = await Rider.findOneAndUpdate(
+    orderId
+      ? { _id: riderId, isAvailable: false, currentOrderId: orderId }
+      : { _id: riderId, isAvailable: false },
+    { isAvailable: true, currentOrderId: null, lastActive: new Date() },
+    { new: true },
+  );
 
   if (!rider) {
-    return res.status(404).json({ message: "Rider not found" });
+    // No match: either the rider doesn't exist, or this release is stale.
+    // Both are fine for the caller (idempotent) — report success.
+    return res.status(200).json({
+      success: true,
+      message: "Rider already released or claimed by another order",
+    });
   }
-
-  rider.isAvailable = true;
-  rider.lastActive = new Date();
-  await rider.save();
 
   // Rider dashboard learns the assignment fell through — over the fanout
   // exchange, never over HTTP.
-  publishRiderEvent(
+  await publishRiderEvent(
     "order:update",
     { orderId: null, status: "cancelled" },
     `user:${rider.userId}`,

@@ -23,23 +23,34 @@ const onRiderEvent =
       const { event, payload } = JSON.parse(msg.content.toString());
 
       if (event === "rider.order_rejected" && payload?.riderId) {
-        // Free the rider so they can take other orders
-        const rider = await Rider.findById(payload.riderId);
+        // Conditional saga compensation: free the rider ONLY if they are
+        // still claimed by the rejected order. A delayed/stale rejection
+        // (rider already claimed a different order in the meantime) must
+        // not flip their availability — that was a double-assignment race.
+        const released = await Rider.findOneAndUpdate(
+          {
+            _id: payload.riderId,
+            isAvailable: false,
+            currentOrderId: payload.orderId,
+          },
+          { isAvailable: true, currentOrderId: null, lastActive: new Date() },
+          { new: true },
+        );
 
-        if (rider && !rider.isAvailable) {
-          rider.isAvailable = true;
-          rider.lastActive = new Date();
-          await rider.save();
-
+        if (released) {
           // Rider dashboard learns the order didn't land — same signal the
           // cancel path sends.
-          publishRiderEvent(
+          await publishRiderEvent(
             "order:update",
             { orderId: null, status: "cancelled" },
-            `user:${rider.userId}`,
+            `user:${released.userId}`,
           );
           console.log(
-            `[COMPENSATE] rider ${rider._id} released (order ${payload.orderId} not assignable)`,
+            `[COMPENSATE] rider ${released._id} released (order ${payload.orderId} not assignable)`,
+          );
+        } else {
+          console.log(
+            `[COMPENSATE] skip — rider ${payload.riderId} no longer claimed by order ${payload.orderId}`,
           );
         }
       }

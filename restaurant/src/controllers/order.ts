@@ -19,14 +19,16 @@ function notifyRealtime(event: string, room: string, payload: unknown) {
   publishRealtimeEvent(event, room, payload);
 }
 
-// Fire-and-forget rider release — frees the rider when their assigned
-// order is cancelled so they can go online and take new orders again.
-function releaseRider(riderId: unknown) {
+// Fire-and-forget rider release — frees the rider when their claimed or
+// assigned order is cancelled so they can go online and take new orders
+// again. orderId travels along so the rider side can make the release
+// conditional ("free me ONLY if still claimed by THIS order").
+function releaseRider(riderId: unknown, orderId?: unknown) {
   if (!riderId) return;
   http
     .put(
       `${process.env.RIDER_SERVICE_URL}/api/rider/release/internal`,
-      { riderId },
+      { riderId, orderId: orderId ?? null },
       { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
     )
     .catch((err) => console.error("Rider release failed:", err?.message));
@@ -582,9 +584,12 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     console.log("Event published")
   }
 
-  // Seller cancelled an order that already has a rider assigned → free them
+  // Seller cancelled an order that already has a rider on it → free them.
+  // Includes the pre-assignment claim window (status ready_for_rider, no
+  // rider yet) — the rider may have claimed it but assignment hasn't
+  // landed; releasing by orderId covers both.
   if (status === "cancelled" && order.riderId) {
-    releaseRider(order.riderId);
+    releaseRider(order.riderId, order._id);
   }
 
   return res.status(200).json({
@@ -643,7 +648,7 @@ export const cancelOrder = tryCatch(async (req: AuthRequest, res) => {
 
   // Free the rider if one was on the way
   if (hadRiderAssigned && order.riderId) {
-    releaseRider(order.riderId);
+    releaseRider(order.riderId, order._id);
   }
 
   // Customer + seller dashboards refresh instantly
@@ -783,8 +788,19 @@ export const assignRiderToOrder = async (payload: {
   riderPhone?: number | string;
   riderPicture?: string | null;
 }): Promise<{ success: boolean; order?: any }> => {
+  // Atomic order claim — the rider-facing half of the double-assignment
+  // guard. Conditions: no rider yet AND still ready_for_rider AND paid.
+  // Without the status guard a race with cancelOrder could assign a rider
+  // to an already-cancelled order (the seller's release call would then
+  // find nothing to free). Matches nothing → the rider-service consumer
+  // compensates by freeing the rider.
   const orderUpdate = await Order.findOneAndUpdate(
-    { _id: payload.orderId, riderId: null },
+    {
+      _id: payload.orderId,
+      riderId: null,
+      status: "ready_for_rider",
+      paymentStatus: "paid",
+    },
     {
       riderId: payload.riderId,
       riderName: payload.riderName,
