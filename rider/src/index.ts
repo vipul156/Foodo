@@ -12,10 +12,6 @@ import { seedDemoRider } from "./seed/demo-rider.js";
 
 dotenv.config();
 
-await connectRabbitMQ()
-startOrderReadyConsumer()
-startRiderEventConsumer()
-
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 const app = express();
@@ -46,4 +42,11 @@ const PORT = process.env.PORT || 3004
 app.listen(PORT, () => {
     console.log("Server running on port ", PORT);
     connectDB().then(() => seedDemoRider());
+
+    // RabbitMQ connects in the background — the API boots and serves even
+    // while the broker is down. The manager retries with exponential
+    // backoff and re-attaches the consumers once the connection returns.
+    connectRabbitMQ();
+    startOrderReadyConsumer();
+    startRiderEventConsumer();
 });

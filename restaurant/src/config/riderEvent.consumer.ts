@@ -1,4 +1,5 @@
-import { getChannel } from "./rabbitmq.js";
+import type { Channel, ConsumeMessage } from "amqplib";
+import { onChannelReady } from "./rabbitmq.js";
 import {
   declareResilienceQueues,
   handleConsumeFailure,
@@ -12,31 +13,19 @@ import { assignRiderToOrder } from "../controllers/order.js";
 // background and pushes the socket updates over the fanout exchange.
 // If the assignment is impossible, it publishes rider.order_rejected —
 // the rider service's consumer compensates by freeing the rider.
-export const startRiderEventConsumer = async () => {
-  const channel = getChannel();
-
-  if (!channel) {
-    console.error(
-      "RabbitMQ channel not available, rider event consumer not started",
-    );
-    return;
-  }
-
-  const exchange = process.env.REALTIME_EXCHANGE || "order.status_changed";
-  const queue = process.env.RIDER_EVENTS_QUEUE || "restaurant.rider_events";
-
-  await channel.assertExchange(exchange, "fanout", { durable: true });
-  await channel.assertQueue(queue, { durable: true });
-  await channel.bindQueue(queue, exchange, "");
-  await declareResilienceQueues(channel, queue);
-
-  channel.consume(queue, async (msg) => {
+const onRiderEvent =
+  (channel: Channel, queue: string) =>
+  async (msg: ConsumeMessage | null): Promise<void> => {
     if (!msg) return;
 
     try {
       const { event, payload } = JSON.parse(msg.content.toString());
 
-      if (event === "rider.order_accepted" && payload?.orderId && payload?.riderId) {
+      if (
+        event === "rider.order_accepted" &&
+        payload?.orderId &&
+        payload?.riderId
+      ) {
         const result = await assignRiderToOrder(payload);
 
         if (!result.success) {
@@ -59,7 +48,25 @@ export const startRiderEventConsumer = async () => {
     }
 
     channel.ack(msg);
-  });
+  };
 
-  console.log(`Restaurant consuming rider events from exchange "${exchange}"`);
+export const startRiderEventConsumer = () => {
+  // Registered once; re-runs on EVERY fresh channel — consume
+  // registrations die with the channel, so after a RabbitMQ restart the
+  // consumer re-attaches automatically.
+  onChannelReady(async (channel) => {
+    const exchange = process.env.REALTIME_EXCHANGE || "order.status_changed";
+    const queue = process.env.RIDER_EVENTS_QUEUE || "restaurant.rider_events";
+
+    await channel.assertExchange(exchange, "fanout", { durable: true });
+    await channel.assertQueue(queue, { durable: true });
+    await channel.bindQueue(queue, exchange, "");
+    await declareResilienceQueues(channel, queue);
+
+    channel.consume(queue, onRiderEvent(channel, queue));
+
+    console.log(
+      `Restaurant consuming rider events from exchange "${exchange}"`,
+    );
+  });
 };

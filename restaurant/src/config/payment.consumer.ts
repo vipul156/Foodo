@@ -1,4 +1,5 @@
-import { getChannel } from "./rabbitmq.js";
+import type { Channel, ConsumeMessage } from "amqplib";
+import { onChannelReady } from "./rabbitmq.js";
 import {
   declareResilienceQueues,
   handleConsumeFailure,
@@ -8,17 +9,9 @@ import { Order } from "../models/Order.js";
 import { Restaurant } from "../models/Restaurant.js";
 import { Cart } from "../models/Cart.js";
 
-export const startPaymentConsumer = async () => {
-  const channel = getChannel();
-  if (!channel) {
-    console.error("RabbitMQ channel not available, payment consumer not started");
-    return;
-  }
-
-  // Retry parking lot + DLQ for this queue
-  await declareResilienceQueues(channel, process.env.PAYMENT_QUEUE!);
-
-  channel.consume(process.env.PAYMENT_QUEUE!, async (msg) => {
+const onPaymentMessage =
+  (channel: Channel) =>
+  async (msg: ConsumeMessage | null): Promise<void> => {
     if (!msg) {
       return;
     }
@@ -87,5 +80,17 @@ export const startPaymentConsumer = async () => {
       // forever and money taken left the order stuck in pending.
       handleConsumeFailure(channel, msg, process.env.PAYMENT_QUEUE!, error);
     }
+  };
+
+export const startPaymentConsumer = () => {
+  // Registered once; re-runs on EVERY fresh channel — consume
+  // registrations die with the channel, so after a RabbitMQ restart the
+  // consumer re-attaches automatically.
+  onChannelReady(async (channel) => {
+    // Retry parking lot + DLQ for this queue
+    await declareResilienceQueues(channel, process.env.PAYMENT_QUEUE!);
+
+    channel.consume(process.env.PAYMENT_QUEUE!, onPaymentMessage(channel));
+    console.log("Payment consumer attached");
   });
 };

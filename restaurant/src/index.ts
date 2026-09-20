@@ -18,10 +18,6 @@ import { seedDemoRestaurant } from "./seed/demo-restaurant.js";
 
 dotenv.config();
 
-await connectRabbitMQ()
-startPaymentConsumer()
-startRiderEventConsumer()
-
 const app = express();
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(
@@ -55,4 +51,11 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log("Server is running on port ", PORT);
   connectDB().then(() => seedDemoRestaurant());
+
+  // RabbitMQ connects in the background — the API boots and serves even
+  // while the broker is down. The manager retries with exponential
+  // backoff and re-attaches the consumers once the connection returns.
+  connectRabbitMQ();
+  startPaymentConsumer();
+  startRiderEventConsumer();
 });

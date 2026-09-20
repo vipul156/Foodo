@@ -1,4 +1,5 @@
-import { getChannel } from "./rabbitmq.js";
+import type { Channel, ConsumeMessage } from "amqplib";
+import { onChannelReady } from "./rabbitmq.js";
 import {
   declareResilienceQueues,
   handleConsumeFailure,
@@ -13,25 +14,9 @@ import { Rider } from "../model/Rider.js";
 // the restaurant service publishes rider.order_rejected and THIS consumer
 // is the saga compensation — it frees the rider again and tells the
 // rider's dashboard.
-export const startRiderEventConsumer = async () => {
-  const channel = getChannel();
-
-  if (!channel) {
-    console.error(
-      "RabbitMQ channel not available, rider event consumer not started",
-    );
-    return;
-  }
-
-  const exchange = process.env.REALTIME_EXCHANGE || "order.status_changed";
-  const queue = process.env.RIDER_EVENTS_QUEUE || "rider.rider_events";
-
-  await channel.assertExchange(exchange, "fanout", { durable: true });
-  await channel.assertQueue(queue, { durable: true });
-  await channel.bindQueue(queue, exchange, "");
-  await declareResilienceQueues(channel, queue);
-
-  channel.consume(queue, async (msg) => {
+const onRiderEvent =
+  (channel: Channel, queue: string) =>
+  async (msg: ConsumeMessage | null): Promise<void> => {
     if (!msg) return;
 
     try {
@@ -64,7 +49,23 @@ export const startRiderEventConsumer = async () => {
     }
 
     channel.ack(msg);
-  });
+  };
 
-  console.log(`Rider consuming events from exchange "${exchange}"`);
+export const startRiderEventConsumer = () => {
+  // Registered once; re-runs on EVERY fresh channel — consume
+  // registrations die with the channel, so after a RabbitMQ restart the
+  // consumer re-attaches automatically.
+  onChannelReady(async (channel) => {
+    const exchange = process.env.REALTIME_EXCHANGE || "order.status_changed";
+    const queue = process.env.RIDER_EVENTS_QUEUE || "rider.rider_events";
+
+    await channel.assertExchange(exchange, "fanout", { durable: true });
+    await channel.assertQueue(queue, { durable: true });
+    await channel.bindQueue(queue, exchange, "");
+    await declareResilienceQueues(channel, queue);
+
+    channel.consume(queue, onRiderEvent(channel, queue));
+
+    console.log(`Rider consuming events from exchange "${exchange}"`);
+  });
 };
