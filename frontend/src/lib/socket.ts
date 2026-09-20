@@ -4,7 +4,7 @@
 
 import { io, Socket } from "socket.io-client";
 import { useSocketStore } from "@/store/socket-store";
-import { getSocketToken } from "./api-client";
+import { fetchSocketToken, getSocketToken } from "./api-client";
 
 const REALTIME_URL =
   process.env.NEXT_PUBLIC_REALTIME_SERVICE_URL || "http://localhost:3002";
@@ -20,16 +20,20 @@ export function getSocket(): Socket | null {
 
 /**
  * Connect to the realtime Socket.IO server.
- * Auth is handled via the session cookie (same-domain through Next.js proxy),
- * so no token parameter is needed.
+ * The realtime service is cross-origin, so cookies don't apply — the
+ * socket authenticates with a short-lived bootstrap JWT (fetched with
+ * the session cookie, held in memory only).
  */
-export function connectSocket(): Socket | null {
+export async function connectSocket(): Promise<Socket | null> {
   // Disconnect existing socket if any
   disconnectSocket();
 
-  // Get the JWT token from sessionStorage (set after login/register)
-  const token = getSocketToken();
-  console.log("[Socket] Token available:", !!token);
+  // Reuse the in-memory bootstrap token, or fetch a fresh one
+  const token = getSocketToken() ?? (await fetchSocketToken());
+  if (!token) {
+    console.warn("[Socket] No bootstrap token; skipping connect");
+    return null;
+  }
 
   socket = io(REALTIME_URL, {
     auth: { token }, // passes JWT via handshake.auth.token

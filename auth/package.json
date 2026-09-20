@@ -26,8 +26,10 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "axios": "^1.18.1",
     "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "cookie-session": "^2.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

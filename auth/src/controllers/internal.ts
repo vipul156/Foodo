@@ -11,7 +11,7 @@ export const listUsers = tryCatch(async (req: Request, res: Response) => {
   const filter = role ? { role } : {};
 
   const users = await User.find(filter)
-    .select("-password -token")
+    .select("-password -refreshTokens")
     .sort({ createdAt: -1 })
     .limit(500);
 

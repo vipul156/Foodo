@@ -4,48 +4,62 @@
 // All requests go through Next.js rewrites at /api/*
 // Same-domain requests = cookies flow naturally.
 // No Authorization headers needed — cookie-based auth only.
+//
+// Session model:
+//   - Session cookie: 15-min minimal-claims JWT (sub + role), httpOnly
+//   - Refresh cookie: 30-day opaque token, httpOnly, scoped to /api/auth
+//   - On 401, requests transparently POST /api/auth/refresh once and retry
 
 import axios from "axios";
 import type { AxiosRequestConfig } from "axios";
 import { getApiClient } from "./api";
 
-// ─── Socket Token (in-memory + sessionStorage) ───────────────
-// HTTP API calls use cookie-based auth through Next.js proxy.
-// Socket.IO needs an explicit token via handshake.auth.
-// We store it in sessionStorage (cleared on tab close) so it
-// survives page refreshes but not new tab/window opens.
+// ─── Socket Token (in-memory only) ─────────────
+// Socket.IO connects cross-origin, so it can't use cookies — it needs
+// an explicit JWT in handshake.auth. The browser fetches a short-lived
+// bootstrap token on demand (authenticated by the session cookie) and
+// keeps it in memory only. Never sessionStorage/localStorage: any XSS
+// could read those; memory dies with the page.
 
-const SOCKET_TOKEN_KEY = "foodo_socket_token";
-
-function getStoredToken(): string | null {
-  if (typeof window !== "undefined") {
-    return sessionStorage.getItem(SOCKET_TOKEN_KEY);
-  }
-  return null;
-}
-
-function setStoredToken(token: string): void {
-  if (typeof window !== "undefined") {
-    sessionStorage.setItem(SOCKET_TOKEN_KEY, token);
-  }
-}
-
-function clearStoredToken(): void {
-  if (typeof window !== "undefined") {
-    sessionStorage.removeItem(SOCKET_TOKEN_KEY);
-  }
-}
+let socketToken: string | null = null;
 
 export function getSocketToken(): string | null {
-  return getStoredToken();
-}
-
-export function setSocketToken(token: string): void {
-  setStoredToken(token);
+  return socketToken;
 }
 
 export function clearSocketToken(): void {
-  clearStoredToken();
+  socketToken = null;
+}
+
+export async function fetchSocketToken(): Promise<string | null> {
+  if (socketToken) return socketToken;
+  try {
+    const res = await request<{ token: string }>("/api/auth/socket-token", {
+      method: "GET",
+    });
+    socketToken = res.token;
+    return socketToken;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Session refresh (single-flight) ───────────
+// Concurrent 401s share one POST /api/auth/refresh; the httpOnly
+// refresh cookie does the work, the response carries fresh cookies.
+let refreshInFlight: Promise<void> | null = null;
+
+export function refreshSession(): Promise<void> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        await request("/api/auth/refresh", { method: "POST" });
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
 }
 
 // ─── Error Type ─────────────────────────────────────────────
@@ -62,11 +76,18 @@ class ApiError extends Error {
   }
 }
 
-// ─── Generic Request Helper ─────────────────────────────────
+// Endpoints that must NOT trigger the 401 → refresh → retry dance
+// (refresh is the retry mechanism itself; login/register don't need a
+// session — retrying them can't help).
+const AUTH_RETRY_EXEMPT = [
+  "/api/auth/refresh",
+  "/api/auth/login",
+  "/api/auth/register",
+];
 
-async function request<T>(
+async function requestOnce<T>(
   url: string,
-  config: AxiosRequestConfig = {},
+  config: AxiosRequestConfig,
 ): Promise<T> {
   const client = getApiClient();
   try {
@@ -82,6 +103,29 @@ async function request<T>(
         error.response.status,
         error.response.data,
       );
+    }
+    throw error;
+  }
+}
+
+async function request<T>(
+  url: string,
+  config: AxiosRequestConfig = {},
+): Promise<T> {
+  try {
+    return await requestOnce<T>(url, config);
+  } catch (error: unknown) {
+    // Access token expired (15-min TTL): refresh once, then replay the
+    // original request. A second 401 propagates — the session is dead.
+    const status = error instanceof ApiError ? error.status : undefined;
+    const exempt = AUTH_RETRY_EXEMPT.some((p) => url.startsWith(p));
+    if (status === 401 && !exempt) {
+      try {
+        await refreshSession();
+      } catch {
+        throw error; // refresh failed — surface the original 401
+      }
+      return requestOnce<T>(url, config);
     }
     throw error;
   }

@@ -4,7 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { authApi, setSocketToken, clearSocketToken } from "@/lib/api-client";
+import { authApi, clearSocketToken } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth-store";
 import type {
   IAuthResponse,
@@ -26,7 +26,8 @@ export function useLogin() {
     },
     onSuccess: (data) => {
       setUser(data.user);
-      if (data.token) setSocketToken(data.token);
+      // Socket bootstrap token is no longer delivered in the login body —
+      // it's fetched on demand (see connectSocket) with the session cookie.
       queryClient.invalidateQueries({ queryKey: ["auth"] });
     },
   });
@@ -44,7 +45,6 @@ export function useRegister() {
     },
     onSuccess: (data) => {
       setUser(data.user);
-      if (data.token) setSocketToken(data.token);
     },
   });
 }

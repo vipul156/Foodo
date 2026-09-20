@@ -50,13 +50,14 @@ export const initSocket = (server:http.Server) => {
 
             const decode = jwt.verify(jwtToken, process.env.JWT_SECRET!) as any;
 
-            // Support both JWT formats:
-            // 1. Auth service: { id, email, role } — no .user wrapper
-            // 2. Restaurant service: { user: { ...user, restaurantId } }
+            // Support all JWT formats:
+            // 1. Auth service (current): minimal claims { sub, role }
+            // 2. Auth service (legacy): { id, email, role } — no .user wrapper
+            // 3. Restaurant service: { user: { ...user, restaurantId } }
             const userData = decode.user || decode;
 
-            // Normalize: auth service uses 'id', others use '_id'
-            const userId = userData._id || userData.id;
+            // Normalize user ID across claim styles (sub | id | _id)
+            const userId = userData._id || userData.sub || userData.id;
             if (!userId) {
                 return next(new Error("Authentication error"));
             }

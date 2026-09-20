@@ -23,7 +23,12 @@ export const isAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
       payload = payload.user;
     }
 
-    // Normalize user ID: auth service JWT uses 'id' (not '_id')
+    // Normalize user ID across token formats:
+    //   - auth service (current): minimal claims { sub, role }
+    //   - legacy: { id, ... } or { _id, ... }
+    if (payload.sub && !payload._id) {
+      payload._id = payload.sub;
+    }
     if (payload.id && !payload._id) {
       payload._id = payload.id;
     }
