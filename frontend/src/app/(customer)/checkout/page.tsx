@@ -222,9 +222,11 @@ export default function CheckoutPage() {
     try {
       const orderResult = await createOrder.mutateAsync({
         addressId: selectedAddressId,
-        // Send the real method — COD must not be billed a payment TTL
+        // Send the real method — COD must not be billed a payment TTL.
+        // Distance is computed server-side (Haversine between restaurant
+        // and saved-address coordinates) — it sets the rider payout, so
+        // the client is never trusted with it.
         paymentMethod,
-        distance: 5,
       });
 
       const { orderId, amount } = orderResult;

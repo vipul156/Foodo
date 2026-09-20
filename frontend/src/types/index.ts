@@ -193,7 +193,8 @@ export interface IOrder {
 export interface ICreateOrderPayload {
   addressId: string;
   paymentMethod: PaymentMethod;
-  distance: number;
+  // Distance is deliberately absent: computed server-side from stored
+  // coordinates (it drives the rider payout — client input is untrusted).
 }
 
 // ─── Rider ───────────────────────────────────────────────────

@@ -9,6 +9,7 @@ import { MenuItem, IMenuItem } from "../models/MenuItem.js";
 import http from "../config/http.js";
 import { publishEvent } from "../config/order.publisher.js";
 import { publishRealtimeEvent } from "../config/realtime.publisher.js";
+import { deliveryDistanceKm } from "../lib/distance.js";
 
 // Fire-and-forget realtime notification — published onto the RabbitMQ
 // fanout exchange the realtime service owns. The order hot path no longer
@@ -36,7 +37,12 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("User not found");
   }
 
-  const { addressId, paymentMethod, distance } = req.body;
+  // NOTE: `distance` is deliberately NOT accepted from the body — the
+  // client used to send it, and it directly sets the rider's payout
+  // (riderAmount = ceil(distance) * 17). A malicious client could mint
+  // arbitrarily large payouts. Distance is computed server-side from
+  // the two coordinate pairs we already store.
+  const { addressId, paymentMethod } = req.body;
 
   if (!paymentMethod) {
     throw new Error("Payment method is required");
@@ -46,10 +52,7 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Address is required");
   }
 
-  const address = await Address.findById({
-    _id: addressId,
-    userId: req.user._id,
-  });
+  const address = await Address.findOne({ _id: addressId, userId: req.user._id });
 
   if (!address) {
     throw new Error("Address not found");
@@ -103,7 +106,14 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   const deliveryFee = subtotal < 250 ? 49 : 0;
   const platformFee = 7;
   const totalAmount = subtotal + deliveryFee + platformFee;
-  const orderDistance = Number(distance) || 5;
+
+  // ─── Server-side distance & rider payout ──────────────────
+  // Haversine (with a road detour factor) between the restaurant's
+  // stored GeoJSON point and the saved address's stored point.
+  const orderDistance = deliveryDistanceKm(
+    restaurant.autoLocation.coordinates,
+    address.location.coordinates,
+  );
   const riderAmount = Math.ceil(orderDistance) * 17;
 
   // Online payments get 15 minutes to complete before the order expires.
@@ -113,60 +123,87 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
 
   const [longitude, latitude] = address.location.coordinates;
 
-  const order = await Order.create({
-    userId: req.user._id.toString(),
-    addressId: addressId.toString(),
-    paymentMethod,
-    restaurantId: restaurantId.toString(),
-    restaurantName: restaurant.name,
-    // Frozen at creation so the live tracking map can draw the
-    // pickup → dropoff route even if the restaurant moves later.
-    restaurantLocation: {
-      latitude: restaurant.autoLocation.coordinates[1],
-      longitude: restaurant.autoLocation.coordinates[0],
-    },
-    riderId: null,
-    items: orderItems,
-    subtotal,
-    deliveryFee,
-    platformFee,
-    totalAmount,
-    distance: orderDistance,
-    riderAmount,
-    expiresAt,
-    deliveryAddress: {
-      formattedAddress: address.formatterAddress,
-      mobile: address.mobile,
-      latitude,
-      longitude,
-    },
-    paymentStatus: isCod ? "paid" : "pending",
-    status: "placed",
-  });
+  // ─── Transactional create: order + (COD) cart clear ───────
+  // If any step fails, both roll back — no orphaned orders from a
+  // failed cart delete, no carts wiped for an order that never got
+  // created. Online-payment flows still clear the cart in the payment
+  // consumer after the gateway confirms the money, so only the COD
+  // path deletes inside the transaction.
+  const session = await mongoose.startSession();
+  try {
+    let createdOrder!: mongoose.Document;
+    await session.withTransaction(async () => {
+      const [order] = await Order.create(
+        [
+          {
+            userId: req.user!._id.toString(),
+            addressId: addressId.toString(),
+            paymentMethod,
+            restaurantId: restaurantId.toString(),
+            restaurantName: restaurant.name,
+            // Frozen at creation so the live tracking map can draw the
+            // pickup → dropoff route even if the restaurant moves later.
+            restaurantLocation: {
+              latitude: restaurant.autoLocation.coordinates[1],
+              longitude: restaurant.autoLocation.coordinates[0],
+            },
+            riderId: null,
+            items: orderItems,
+            subtotal,
+            deliveryFee,
+            platformFee,
+            totalAmount,
+            distance: orderDistance,
+            riderAmount,
+            expiresAt,
+            deliveryAddress: {
+              formattedAddress: address.formatterAddress,
+              mobile: address.mobile,
+              latitude,
+              longitude,
+            },
+            paymentStatus: isCod ? "paid" : "pending",
+            status: "placed",
+          },
+        ],
+        { session },
+      );
+      if (!order) {
+        throw new Error("Order creation failed");
+      }
+      createdOrder = order;
 
-  if (isCod) {
-    // Cash on delivery is a final, confirmed order — clear the cart now
-    // and tell everyone. Online payments clear the cart in the payment
-    // consumer only after the gateway confirms the money.
-    await Cart.deleteMany({ userId: req.user._id });
+      if (isCod) {
+        await Cart.deleteMany({ userId: req.user!._id }, { session });
+      }
+    });
 
-    notifyRealtime("order:new", `restaurant:${restaurantId}`, {
-      orderId: order._id,
+    const order = createdOrder;
+
+    if (isCod) {
+      // Transaction committed — now tell everyone. Notifications are
+      // fire-and-forget and must stay OUTSIDE the transaction: the
+      // commit is the single point where the order becomes real.
+      notifyRealtime("order:new", `restaurant:${restaurantId}`, {
+        orderId: order._id,
+      });
+      notifyRealtime("order:new", `user:${restaurant.ownerId}`, {
+        orderId: order._id,
+      });
+      notifyRealtime("order:update", `user:${req.user._id}`, {
+        orderId: order._id,
+        status: "placed",
+      });
+    }
+
+    return res.status(201).json({
+      message: "Order created successfully",
+      orderId: order._id.toString(),
+      amount: totalAmount,
     });
-    notifyRealtime("order:new", `user:${restaurant.ownerId}`, {
-      orderId: order._id,
-    });
-    notifyRealtime("order:update", `user:${req.user._id}`, {
-      orderId: order._id,
-      status: "placed",
-    });
+  } finally {
+    await session.endSession();
   }
-
-  return res.status(201).json({
-    message: "Order created successfully",
-    orderId: order._id.toString(),
-    amount: totalAmount,
-  });
 });
 
 export const fetchOrderForPayment = tryCatch(async (req, res) => {
