@@ -1,5 +1,9 @@
 import axios from "axios";
 import { getChannel } from "./rabbitmq.js";
+import {
+  declareResilienceQueues,
+  handleConsumeFailure,
+} from "./queue.resilience.js";
 import { Rider } from "../model/Rider.js";
 
 export const startOrderReadyConsumer = async() => {
@@ -11,6 +15,9 @@ export const startOrderReadyConsumer = async() => {
     }
 
     console.log("Starting to consume from:", process.env.ORDER_QUEUE!)
+
+    // Retry parking lot + DLQ for this queue
+    await declareResilienceQueues(channel, process.env.ORDER_QUEUE!)
 
     channel.consume(process.env.ORDER_QUEUE!, async(msg) =>{
         if(!msg) return;
@@ -65,8 +72,10 @@ export const startOrderReadyConsumer = async() => {
             }
             channel.ack(msg)
         } catch(error){
-            console.error("Error processing order ready event:", error)
-            channel.ack(msg)
+            // Never ack a failure: retry with backoff, then DLQ + alert.
+            // Previously the message was acked here, confirming deletion of
+            // an event that never got processed.
+            handleConsumeFailure(channel, msg, process.env.ORDER_QUEUE!, error)
         }
     })
 

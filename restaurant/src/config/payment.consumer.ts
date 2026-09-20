@@ -1,4 +1,8 @@
 import { getChannel } from "./rabbitmq.js";
+import {
+  declareResilienceQueues,
+  handleConsumeFailure,
+} from "./queue.resilience.js";
 import { publishRealtimeEvent } from "./realtime.publisher.js";
 import { Order } from "../models/Order.js";
 import { Restaurant } from "../models/Restaurant.js";
@@ -10,6 +14,9 @@ export const startPaymentConsumer = async () => {
     console.error("RabbitMQ channel not available, payment consumer not started");
     return;
   }
+
+  // Retry parking lot + DLQ for this queue
+  await declareResilienceQueues(channel, process.env.PAYMENT_QUEUE!);
 
   channel.consume(process.env.PAYMENT_QUEUE!, async (msg) => {
     if (!msg) {
@@ -75,7 +82,10 @@ export const startPaymentConsumer = async () => {
 
       channel.ack(msg);
     } catch (error) {
-      console.error("Error parsing payment event:", error);
+      // Never swallow a failure: retry with backoff, then DLQ + alert.
+      // Previously the error was only logged — the message sat unacked
+      // forever and money taken left the order stuck in pending.
+      handleConsumeFailure(channel, msg, process.env.PAYMENT_QUEUE!, error);
     }
   });
 };
