@@ -591,6 +591,10 @@ INTERNAL_SERVICE_KEY=your-internal-service-key
 PORT=3002
 JWT_SECRET=your-jwt-secret-key
 INTERNAL_SERVICE_KEY=your-internal-service-key
+RABBITMQ_URL=amqp://localhost
+# Optional overrides — defaults are order.status_changed / realtime.emit
+# REALTIME_EXCHANGE=order.status_changed
+# REALTIME_QUEUE=realtime.emit
 ```
 
 #### Utils Service `.env`

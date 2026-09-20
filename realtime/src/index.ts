@@ -4,6 +4,7 @@ import http from "http";
 import cookieSession from "cookie-session";
 import { initSocket } from "./socket.js";
 import { interRoute } from "./routes/internal.js";
+import { connectRealtimeEvents } from "./config/rabbitmq.js";
 import dotenv from "dotenv"
 
 dotenv.config();
@@ -26,6 +27,10 @@ app.use("/api/internal",interRoute)
 
 const server = http.createServer(app)
 initSocket(server)
+
+// Consume order events from the RabbitMQ fanout exchange — services no
+// longer need to reach realtime over HTTP to broadcast.
+connectRealtimeEvents()
 
 app.get('/health', (req, res) => {
   res.status(200).json({

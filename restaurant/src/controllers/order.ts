@@ -8,16 +8,14 @@ import { Restaurant } from "../models/Restaurant.js";
 import { MenuItem, IMenuItem } from "../models/MenuItem.js";
 import axios from "axios";
 import { publishEvent } from "../config/order.publisher.js";
+import { publishRealtimeEvent } from "../config/realtime.publisher.js";
 
-// Fire-and-forget realtime notification (non-blocking)
+// Fire-and-forget realtime notification — published onto the RabbitMQ
+// fanout exchange the realtime service owns. The order hot path no longer
+// makes HTTP calls to the socket tier: no timeouts, no socket exhaustion,
+// and a realtime outage only delays UI updates, never the order API.
 function notifyRealtime(event: string, room: string, payload: unknown) {
-  axios
-    .post(
-      `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
-      { event, room, payload },
-      { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
-    )
-    .catch((err) => console.error(`Realtime notify failed (${event}):`, err?.message));
+  publishRealtimeEvent(event, room, payload);
 }
 
 // Fire-and-forget rider release — frees the rider when their assigned

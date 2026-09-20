@@ -1,8 +1,8 @@
 import { getChannel } from "./rabbitmq.js";
+import { publishRealtimeEvent } from "./realtime.publisher.js";
 import { Order } from "../models/Order.js";
 import { Restaurant } from "../models/Restaurant.js";
 import { Cart } from "../models/Cart.js";
-import axios from "axios";
 
 export const startPaymentConsumer = async () => {
   const channel = getChannel();
@@ -50,19 +50,11 @@ export const startPaymentConsumer = async () => {
       // Abandoned checkouts keep their cart for the next attempt.
       await Cart.deleteMany({ userId: order.userId });
 
-      const emit = (event: string, room: string, payload: unknown) =>
-        axios.post(
-          `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
-          { event, room, payload },
-          {
-            headers: {
-              "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-            },
-          },
-        );
+      // Realtime notifications go over the RabbitMQ fanout exchange —
+      // fire-and-forget, never over HTTP to the socket tier.
 
       // Notify the restaurant board
-      await emit("order:new", `restaurant:${order.restaurantId}`, {
+      publishRealtimeEvent("order:new", `restaurant:${order.restaurantId}`, {
         orderId: order._id,
       });
 
@@ -70,13 +62,13 @@ export const startPaymentConsumer = async () => {
       // restaurantId) — dual-emit to the owner so the board updates live.
       const restaurant = await Restaurant.findById(order.restaurantId);
       if (restaurant) {
-        await emit("order:new", `user:${restaurant.ownerId}`, {
+        publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
           orderId: order._id,
         });
       }
 
       // Customer's "My Orders" fills in the moment payment succeeds
-      await emit("order:update", `user:${order.userId}`, {
+      publishRealtimeEvent("order:update", `user:${order.userId}`, {
         orderId: order._id,
         status: "placed",
       });
