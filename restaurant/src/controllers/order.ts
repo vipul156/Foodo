@@ -1069,7 +1069,7 @@ export const claimOrderForPayment = tryCatch(async (req, res) => {
     throw new Error("Forbidden");
   }
 
-  const { orderId } = req.params;
+  const orderId = req.params.orderId || req.params.id;
   const { provider } = req.body ?? {};
 
   if (!orderId) {
@@ -1124,7 +1124,7 @@ export const attachProviderOrder = tryCatch(async (req, res) => {
     throw new Error("Forbidden");
   }
 
-  const { orderId } = req.params;
+  const orderId = req.params.orderId || req.params.id;
   const { provider, providerOrderId } = req.body ?? {};
 
   if (!orderId || !providerOrderId) {

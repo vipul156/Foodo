@@ -11,9 +11,9 @@ import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
 
 // Internal auth header shared by every order-owner call
-const internalHeaders = {
-  "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-};
+const getInternalHeaders = () => ({
+  "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
+});
 
 // ─── Order-owner claim/attach helpers ───────────────────────
 // The restaurant service owns orders: it atomically claims the order for
@@ -35,7 +35,7 @@ const claimOrderPayment = async (
   return claimOrderViaBreaker<OrderPaymentClaim>(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/claim/${orderId}`,
     provider,
-    { headers: internalHeaders },
+    { headers: getInternalHeaders() },
   );
 };
 
@@ -47,7 +47,7 @@ const attachProviderOrder = async (
   await attachOrderViaBreaker(
     `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/attached/${orderId}`,
     { provider, providerOrderId },
-    { headers: internalHeaders },
+    { headers: getInternalHeaders() },
   );
 };
 
@@ -107,8 +107,11 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
                 .status(409)
                 .json({ message: error.response.data?.message ?? "Order not payable" });
         }
-        console.error("Razorpay create order error:", error?.message);
-        res.status(500).json({ message: "Error creating order" });
+        console.error("Razorpay create order error:", error?.response?.data || error?.message);
+        res.status(500).json({
+          message: "Error creating order",
+          detail: error?.response?.data?.message || error?.message,
+        });
     }
 }
 
@@ -321,8 +324,11 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
                 .status(409)
                 .json({ message: error.response.data?.message ?? "Order not payable" });
         }
-        console.error("Stripe create session error:", error?.message);
-        res.status(500).json({ message: "Error creating payment intent" });
+        console.error("Stripe create session error:", error?.response?.data || error?.message);
+        res.status(500).json({
+          message: "Error creating payment intent",
+          detail: error?.response?.data?.message || error?.message,
+        });
     }
 }
 

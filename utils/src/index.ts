@@ -1,13 +1,13 @@
-import express from "express";
 import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
 import cloudinary from "cloudinary";
 import cors from "cors";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentReconciliation } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
-
-dotenv.config();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
