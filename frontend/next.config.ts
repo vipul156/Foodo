@@ -19,6 +19,11 @@ const UTILS_SERVICE_URL =
 // restaurant/rider services proxy to it server-side. No browser rewrite.
 const AI_ORCHESTRATOR_URL =
   process.env.AI_ORCHESTRATOR_URL || "http://localhost:3008";
+// Conversational commerce agent (Python/FastAPI) — user-session auth over
+// the same cookies; the AI service verifies the session and forwards it
+// server-side to the restaurant service.
+const AI_COMMERCE_URL =
+  process.env.AI_COMMERCE_URL || "http://localhost:3009";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -78,6 +83,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/agent/:path*",
         destination: `${AI_ORCHESTRATOR_URL}/api/agent/:path*`,
+      },
+      {
+        source: "/api/commerce/:path*",
+        destination: `${AI_COMMERCE_URL}/api/commerce/:path*`,
       },
     ];
   },
