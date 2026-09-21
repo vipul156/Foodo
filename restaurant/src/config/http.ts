@@ -81,7 +81,11 @@ const uploadBreaker = breakerWrap<[UploadArgs], { data: { url?: string } }>(
   "upload-forward",
   15_000,
   async ({ url, body }) => {
-    const response = await uploadClient.post(url, body);
+    // The upload endpoint is internal-key gated on the utils service —
+    // every passthrough upload MUST present the shared service key.
+    const response = await uploadClient.post(url, body, {
+      headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "" },
+    });
     return { data: response.data };
   },
 );

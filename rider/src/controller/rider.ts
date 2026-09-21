@@ -38,12 +38,13 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
 
   // Upload forward rides the non-critical pool — registration can retry;
   // a saturated upload path must not touch the critical order-update pool.
+  // The utils upload endpoint is internal-key gated (fail-closed).
   const data = await readPost<{ url: string }>(
     `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
     {
       buffer: fileBuffer.content,
     },
-    {},
+    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "" } },
   );
 
   const {

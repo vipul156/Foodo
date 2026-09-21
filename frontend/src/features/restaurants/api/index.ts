@@ -164,16 +164,33 @@ export function useGetMenuItems(restaurantId: string) {
 }
 
 // ─── Create Menu Item ────────────────────────────────────────
+// Two paths:
+//   - Photo pipeline (default): the seller approved an AI-enhanced
+//     Cloudinary URL (direct upload) → JSON body, no file transfer.
+//   - Legacy fallback: multipart FormData with a raw file (old clients).
+
+export interface CreateMenuItemPayload {
+  name: string;
+  description?: string;
+  price: string | number;
+  /** AI-enhanced Cloudinary URL from the photo pipeline. */
+  enhancedUrl?: string;
+}
 
 export function useCreateMenuItem() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: FormData) => {
-      const res = await axios.post("/api/menu-item/new", data, {
-        withCredentials: true,
-      });
-      return res.data;
+    mutationFn: async (
+      data: CreateMenuItemPayload | FormData
+    ): Promise<unknown> => {
+      if (data instanceof FormData) {
+        const res = await axios.post("/api/menu-item/new", data, {
+          withCredentials: true,
+        });
+        return res.data;
+      }
+      return restaurantApi.post("/menu-item/new", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menu-items"] });

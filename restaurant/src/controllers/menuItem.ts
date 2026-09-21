@@ -9,35 +9,54 @@ export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) throw new Error("User not found");
   const restaurant = await Restaurant.findOne({ ownerId: req.user._id });
   if (!restaurant) throw new Error("Restaurant not found");
-  const { name, description, price } = req.body;
+  const { name, description, price, enhancedUrl } = req.body;
   if (!name || !price) {
     throw new Error("Name and price are required");
   }
 
-  const file = req.file;
-  if (!file) {
-    throw new Error("Image is required");
-  }
-  const fileBuffer = dataUri(file);
-  if (!fileBuffer) {
-    return res.status(500).json({
-      message: "Internal Server Error",
-    });
-  }
+  // ─── Photo pipeline (Cloudinary direct upload) ─────────────
+  // The seller's browser uploads the photo DIRECTLY to Cloudinary and
+  // the AI-enhanced delivery URL arrives here as `enhancedUrl`. In that
+  // flow no image bytes pass through this service at all.
+  // Fallback: the legacy multipart path forwards the file to the utils
+  // upload endpoint (internal-key gated) for partners on old clients.
+  let imageUrl: string | undefined;
+  if (
+    typeof enhancedUrl === "string" &&
+    /^https:\/\/res\.cloudinary\.com\/[A-Za-z0-9_\-]+\/image\/upload\/.+/.test(
+      enhancedUrl
+    ) &&
+    enhancedUrl.length <= 600
+  )
+  {
+    imageUrl = enhancedUrl;
+  } else {
+    const file = req.file;
+    if (!file) {
+      throw new Error("Image is required");
+    }
+    const fileBuffer = dataUri(file);
+    if (!fileBuffer) {
+      return res.status(500).json({
+        message: "Internal Server Error",
+      });
+    }
 
-  // Non-critical pool + breaker — upload retries are cheap; they must
-  // never queue behind (or trip breakers for) the critical release path.
-  const data = await uploadViaBreaker<{
-    url: string;
-  }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, {
-    buffer: fileBuffer.content,
-  });
+    // Non-critical pool + breaker — upload retries are cheap; they must
+    // never queue behind (or trip breakers for) the critical release path.
+    const data = await uploadViaBreaker<{
+      url: string;
+    }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, {
+      buffer: fileBuffer.content,
+    });
+    imageUrl = data.url;
+  }
 
   const menuItem = await MenuItem.create({
     name,
     description,
     price,
-    image: data.url,
+    image: imageUrl!,
     restaurantId: restaurant._id,
     isAvailable: true,
   });

@@ -4,7 +4,9 @@ dotenv.config();
 import express from "express";
 import cloudinary from "cloudinary";
 import cors from "cors";
+import cookieSession from "cookie-session";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
+import { photoRouter } from "./routers/photo.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentReconciliation } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
@@ -24,6 +26,19 @@ app.use(
   cors({
     origin: FRONTEND_URL,
     credentials: true,
+  }),
+);
+
+// ─── Cookie-session: SAME identity plane as sibling services ─
+// The photo-pipeline signing endpoint (/photo/sign, /photo/preview)
+// authenticates SELLERS via the same session cookie the auth service
+// mints — no separate login, no token plumbing. Config matches the
+// restaurant/rider services (name "session", shared COOKIE_SECRET).
+app.use(
+  cookieSession({
+    name: "session",
+    keys: [process.env.COOKIE_SECRET!],
+    maxAge: 15 * 60 * 1000, // access-token parity: 15 minutes
   }),
 );
 
@@ -58,6 +73,7 @@ app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
 // ─── Routers ────────────────────────────────────────────────
 app.use("/api/utils/", cloudinaryRouter);
+app.use("/api/utils/", photoRouter);
 app.use("/api/utils/payment", paymentRouter);
 app.use("/api/utils/refund", refundRouter);
 
