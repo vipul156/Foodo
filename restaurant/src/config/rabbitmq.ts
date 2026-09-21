@@ -98,6 +98,13 @@ const attemptConnect = async (): Promise<boolean> => {
       "fanout",
       { durable: true },
     );
+    // Order-events fanout — the ai-dispatch swarm binds its own queue
+    // here (ORDER_QUEUE itself stays point-to-point for the rider svc).
+    await ch.assertExchange(
+      process.env.ORDER_EVENTS_EXCHANGE || "order.events",
+      "fanout",
+      { durable: true },
+    );
     await ch.assertQueue(process.env.PAYMENT_QUEUE!, { durable: true });
     await ch.assertQueue(process.env.ORDER_QUEUE!, { durable: true });
 
