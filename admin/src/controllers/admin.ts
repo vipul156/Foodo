@@ -15,7 +15,7 @@ export const getPendingRestaurants = tryCatch(async (req, res) => {
   const data = await internalGet<{
     count: number;
     restaurants: unknown[];
-  }>(RESTAURANT_SERVICE, "/restaurants", { params: { status: "pending" } });
+  }>(RESTAURANT_SERVICE, "/api/internal/restaurants", { params: { status: "pending" } });
 
   res.json({
     count: data.count,
@@ -29,7 +29,7 @@ export const getAllRestaurants = tryCatch(async (req, res) => {
   const data = await internalGet<{
     count: number;
     restaurants: unknown[];
-  }>(RESTAURANT_SERVICE, "/restaurants");
+  }>(RESTAURANT_SERVICE, "/api/internal/restaurants");
 
   res.json({
     count: data.count,
@@ -42,7 +42,7 @@ export const getAllRestaurants = tryCatch(async (req, res) => {
 export const getPendingRiders = tryCatch(async (req, res) => {
   const data = await internalGet<{ count: number; riders: unknown[] }>(
     RIDER_SERVICE,
-    "/riders",
+    "/api/internal/riders",
     { params: { status: "pending" } },
   );
 
@@ -57,7 +57,7 @@ export const getPendingRiders = tryCatch(async (req, res) => {
 export const getAllRiders = tryCatch(async (req, res) => {
   const data = await internalGet<{ count: number; riders: unknown[] }>(
     RIDER_SERVICE,
-    "/riders",
+    "/api/internal/riders",
   );
 
   res.json({
@@ -74,7 +74,7 @@ export const getAllUsers = tryCatch(async (req, res) => {
 
   const data = await internalGet<{ count: number; users: unknown[] }>(
     AUTH_SERVICE,
-    "/users",
+    "/api/internal/users",
     { params: { role } },
   );
 
@@ -96,7 +96,7 @@ export const verifyRestaurant = tryCatch(async (req, res) => {
 
   await internalPatch(
     RESTAURANT_SERVICE,
-    `/restaurants/${encodeURIComponent(id)}/verify`,
+    `/api/internal/restaurants/${encodeURIComponent(id)}/verify`,
   );
 
   res.json({ message: "Restaurant verified" });
@@ -111,7 +111,7 @@ export const verifyRider = tryCatch(async (req, res) => {
 
   await internalPatch(
     RIDER_SERVICE,
-    `/riders/${encodeURIComponent(id)}/verify`,
+    `/api/internal/riders/${encodeURIComponent(id)}/verify`,
   );
 
   res.json({ message: "Rider verified" });
@@ -126,20 +126,20 @@ export const getPlatformStats = tryCatch(async (req, res) => {
   const [users, restaurants, riders, orders] = await Promise.all([
     internalGet<{ total: number; newThisMonth: number }>(
       AUTH_SERVICE,
-      "/users/stats",
+      "/api/internal/users/stats",
     ),
     internalGet<{
       total: number;
       verified: number;
       open: number;
       pending: number;
-    }>(RESTAURANT_SERVICE, "/restaurants/stats"),
+    }>(RESTAURANT_SERVICE, "/api/internal/restaurants/stats"),
     internalGet<{
       total: number;
       verified: number;
       online: number;
       pending: number;
-    }>(RIDER_SERVICE, "/riders/stats"),
+    }>(RIDER_SERVICE, "/api/internal/riders/stats"),
     internalGet<{
       total: number;
       delivered: number;
@@ -148,7 +148,7 @@ export const getPlatformStats = tryCatch(async (req, res) => {
       revenue: { total: number; thisMonth: number };
       daily: { date: string; revenue: number; orders: number }[];
       topRestaurants: { name: string; revenue: number; orders: number }[];
-    }>(RESTAURANT_SERVICE, "/orders/stats"),
+    }>(RESTAURANT_SERVICE, "/api/internal/orders/stats"),
   ]);
 
   res.json({

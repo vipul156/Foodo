@@ -1,5 +1,7 @@
-import express from "express";
 import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
 import connectDB from "./config/db.js";
 import cors from "cors";
 import cookieSession from "cookie-session";
@@ -9,8 +11,6 @@ import { internalRouter } from "./routes/internal.js";
 import { startOrderReadyConsumer } from "./config/orderReady.consumer.js";
 import { startRiderEventConsumer } from "./config/riderEvent.consumer.js";
 import { seedDemoRider } from "./seed/demo-rider.js";
-
-dotenv.config();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 

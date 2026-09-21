@@ -5,10 +5,10 @@ import { Rider } from "../model/Rider.js";
 import { criticalPut, readGet, readPost } from "../config/http.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
-// Shared internal auth header
-const internalHeaders = {
-  "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-};
+// Shared internal auth header (evaluated at request time)
+const getInternalHeaders = () => ({
+  "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
+});
 
 export const createRider = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
@@ -158,7 +158,7 @@ export const toogleRiderAvailablity = tryCatch(
       try {
         const data = await readGet<{ order?: unknown }>(
           `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
-          { headers: internalHeaders },
+          { headers: getInternalHeaders() },
         );
         if (data?.order) {
           return res.status(400).json({
@@ -283,7 +283,7 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
   try {
     const data = await readGet<{ order?: unknown }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
-      { headers: internalHeaders },
+      { headers: getInternalHeaders() },
     );
 
     return res.status(200).json({
@@ -320,7 +320,7 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
       orders?: unknown[];
     }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/history/rider?riderId=${rider._id}`,
-      { headers: internalHeaders },
+      { headers: getInternalHeaders() },
     );
 
     return res.status(200).json({
@@ -367,7 +367,7 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/ready/rider`,
       {
         params: { latitude, longitude },
-        headers: internalHeaders,
+        headers: getInternalHeaders(),
       },
     );
 
@@ -420,7 +420,7 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     }>(
       `${process.env.RESTAURANT_SERVICE_URL}/api/order/update/status/rider`,
       { orderId },
-      { headers: internalHeaders },
+      { headers: getInternalHeaders() },
     );
 
     // Delivered → the rider is automatically available again and shows

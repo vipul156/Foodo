@@ -1,5 +1,7 @@
-import express from "express";
 import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
 import connectDB from "./config/db.js";
 import cookieSession from "cookie-session";
 import cors from 'cors';
@@ -15,8 +17,6 @@ import { startRiderEventConsumer } from "./config/riderEvent.consumer.js";
 import { addressRoute } from "./routes/address.js";
 import { internalRouter } from "./routes/internal.js";
 import { seedDemoRestaurant } from "./seed/demo-restaurant.js";
-
-dotenv.config();
 
 const app = express();
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
