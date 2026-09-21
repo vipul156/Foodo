@@ -3,21 +3,7 @@ import { RedisStore } from "rate-limit-redis";
 import { Redis } from "ioredis";
 
 // ─── Rate limiting: Redis-backed across pods, memory fallback ──
-// Counts must be shared across replicas for the limit to mean anything;
-// a per-process memory store multiplies the limit by instance count.
-// When REDIS_URL is unset (single-node dev), we fall back to the default
-// in-memory store and say so.
-
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
-
-const store = redis
-  ? new RedisStore({
-      // sendCommand is the documented bridge between ioredis and
-      // rate-limit-redis
-      sendCommand: (cmd: string, ...args: string[]) =>
-        redis.call(cmd, ...args) as Promise<any>,
-    })
-  : undefined;
 
 if (!redis) {
   console.warn(
@@ -25,26 +11,37 @@ if (!redis) {
   );
 }
 
-const base: Partial<Options> = {
-  standardHeaders: true, // RateLimit-* headers for clients/proxies
-  legacyHeaders: false,
-  ...(store ? { store } : {}),
+// Helper to create a store instance with a unique prefix per limiter
+const createStore = (prefix: string) => {
+  if (!redis) return undefined;
+  return new RedisStore({
+    sendCommand: (cmd: string, ...args: string[]) =>
+      redis.call(cmd, ...args) as Promise<any>,
+    prefix: `rl:${prefix}:`,
+  });
 };
 
-// Payment-create endpoints: tight — money-adjacent, abuse-prone, and the
-// downstream claim/attach calls are not free.
+const base: Partial<Options> = {
+  standardHeaders: true,
+  legacyHeaders: false,
+};
+
+// Payment-create endpoints: tight — money-adjacent, abuse-prone
+const paymentStore = createStore("payment-create");
 export const paymentCreateLimiter = rateLimit({
   ...base,
   windowMs: 60_000,
-  limit: 10, // 10 payment creations / minute / IP
+  limit: 10,
   message: { message: "Too many payment attempts — slow down" },
+  ...(paymentStore ? { store: paymentStore } : {}),
 });
 
-// Webhooks: provider-originated and signature-verified, so generous but
-// still bounded — a runaway redelivery loop must not spin the service.
+// Webhooks: provider-originated and signature-verified
+const webhookStore = createStore("webhook");
 export const webhookLimiter = rateLimit({
   ...base,
   windowMs: 60_000,
   limit: 300,
   message: { message: "Webhook rate exceeded" },
+  ...(webhookStore ? { store: webhookStore } : {}),
 });

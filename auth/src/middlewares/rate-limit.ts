@@ -1,4 +1,4 @@
-import rateLimit, { Options } from "express-rate-limit";
+import rateLimit, { Options, ipKeyGenerator } from "express-rate-limit";
 import { NextFunction, Request, Response } from "express";
 
 // ─── Auth rate limiting ─────────────────────────────────────
@@ -18,10 +18,11 @@ const base: Partial<Options> = {
   legacyHeaders: false,
 };
 
-const ipKey = (req: Request): string => req.ip ?? "unknown";
+// Use the library's official IPv6-safe helper
+const ipKey = (req: Request): string => ipKeyGenerator(req.ip ?? "unknown");
 
 const ipEmailKey = (req: Request): string =>
-  `${req.ip ?? "unknown"}:${
+  `${ipKeyGenerator(req.ip ?? "unknown")}:${
     typeof req.body?.email === "string" ? req.body.email.toLowerCase() : "no-email"
   }`;
 

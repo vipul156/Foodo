@@ -13,8 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, LogIn, User, Store, Bike, Zap } from "lucide-react";
 import { loginSchema, type LoginFormValues } from "@/features/auth/schemas";
 import { useLogin } from "@/features/auth/api";
-import { useAuthStore } from "@/store/auth-store";
-import type { IAuthResponse, IUser, UserRole } from "@/types";
+import type { IAuthResponse, UserRole } from "@/types";
 
 // ─── Demo accounts (one per role) ────────────────────────────
 // These users are seeded automatically by the auth service at startup
@@ -72,7 +71,6 @@ export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const login = useLogin();
-  const { setUser } = useAuthStore();
 
   const {
     register,
@@ -102,28 +100,15 @@ export default function LoginPage() {
   };
 
   // ─── Demo login: real auth against the seeded demo account ──
-  // Falls back to a local mock user if the auth server isn't running,
-  // so the UI stays explorable offline.
   const handleDemoLogin = async (account: DemoAccount) => {
     try {
-      const result = await login.mutateAsync({
+      const result = (await login.mutateAsync({
         email: account.email,
         password: account.password,
-      }) as IAuthResponse;
+      })) as IAuthResponse;
       router.push(routeForRole(result?.user?.role));
     } catch (err: unknown) {
-      console.warn(
-        `[Demo Login] Server login failed for ${account.email}, using local mock user:`,
-        err,
-      );
-      const mockUser: IUser = {
-        _id: `demo-${account.role}`,
-        name: account.name,
-        email: account.email,
-        role: account.role,
-      };
-      setUser(mockUser);
-      router.push(account.redirectTo);
+      console.error(`[Demo Login] Server login failed for ${account.email}:`, err);
     }
   };
 

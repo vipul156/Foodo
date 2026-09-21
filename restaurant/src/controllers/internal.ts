@@ -11,7 +11,6 @@ import { Order } from "../models/Order.js";
 // GET /api/internal/restaurants?status=pending|all
 export const listRestaurants = tryCatch(async (req: Request, res: Response) => {
   const status = req.query.status;
-
   if (status === "pending") {
     const restaurants = await Restaurant.find({ isVerified: false });
     return res.json({ count: restaurants.length, restaurants });
