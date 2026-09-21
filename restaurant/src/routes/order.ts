@@ -1,5 +1,10 @@
 import { Router } from "express";
 import {
+  submitPackingVerification,
+  overridePackingVerification,
+  getPackingVerification,
+} from "../controllers/verification.js";
+import {
   createOrder,
   fetchOrderForPayment,
   fetchRestaurantOrders,
@@ -41,6 +46,13 @@ router.get("/my", isAuth, getMyOrders);
 // Read-only payment status for frontend polling after the gateway redirect
 router.get("/:orderId/status", isAuth, getOrderPaymentStatus);
 router.get("/:orderId", isAuth, fetchSingleOrder);
+
+// Visual kitchen verification — seller-owned. These paths carry an
+// extra segment (e.g. /verification/:id/packing) so they can never be
+// shadowed by the single-segment /:orderId routes above.
+router.post("/verification/:orderId/packing", isAuth, isSeller, submitPackingVerification);
+router.put("/verification/:orderId/override", isAuth, isSeller, overridePackingVerification);
+router.get("/verification/:orderId", isAuth, isSeller, getPackingVerification);
 router.put("/assign/rider", assignOrderToRider);
 router.get("/current/rider", getCurrentOrdersForRider);
 router.get("/ready/rider", getReadyOrdersNearRider);

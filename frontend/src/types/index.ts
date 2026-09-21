@@ -144,6 +144,47 @@ export type OrderStatus =
 export type PaymentMethod = "razorpay" | "stripe" | "cod";
 export type PaymentStatus = "pending" | "paid" | "failed";
 
+// ─── Visual Verification ────────────────────────────────────
+
+export type VerificationStatus = "verified" | "flagged" | "unverified";
+
+export interface IPackingVerification {
+  status: VerificationStatus;
+  flag: string | null;
+  confidence: number;
+  missing: string[];
+  override?: {
+    at: string;
+    byUserId: string;
+    note: string;
+  } | null;
+  verifiedAt: string | null;
+  evidenceUrl: string | null;
+}
+
+export interface IProofOfDelivery {
+  status: VerificationStatus;
+  flag: string | null;
+  confidence: number;
+  notes: string | null;
+  evidenceUrl: string | null;
+  at: string;
+}
+
+export interface IVerificationResponse {
+  status: VerificationStatus;
+  flag: string | null;
+  confidence: number;
+  detected: string[];
+  missing: string[];
+  unexpected: string[];
+  notes: string | null;
+  provider: string | null;
+  unverifiedReason: string | null;
+  evidenceUrl: string | null;
+  deduped: boolean;
+}
+
 export interface IOrderItem {
   itemId: string;
   name: string;
@@ -185,6 +226,8 @@ export interface IOrder {
   status: OrderStatus;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  packingVerification?: IPackingVerification | null;
+  proofOfDelivery?: IProofOfDelivery | null;
   expiresAt: string;
   createdAt?: string;
   updatedAt?: string;

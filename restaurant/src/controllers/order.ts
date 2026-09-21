@@ -9,6 +9,7 @@ import { MenuItem, IMenuItem } from "../models/MenuItem.js";
 import { releaseRiderViaBreaker } from "../config/http.js";
 import { publishEvent } from "../config/order.publisher.js";
 import { publishRealtimeEvent } from "../config/realtime.publisher.js";
+import { checkReadyGate } from "./verification.js";
 import { deliveryDistanceKm } from "../lib/distance.js";
 
 // Fire-and-forget realtime notification — published onto the RabbitMQ
@@ -555,6 +556,18 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Unauthorized");
   }
 
+  // ─── Visual verification gate ────────────────────────────
+  // ready_for_rider is the handoff to the rider fleet: block it while a
+  // packing flag is unresolved so a short-packed bag can't silently
+  // leave the kitchen. Cleared by repack + re-verify, or by an explicit
+  // seller override with a mandatory audit note.
+  if (status === "ready_for_rider") {
+    const gateError = checkReadyGate(order);
+    if (gateError) {
+      return res.status(409).json({ message: gateError });
+    }
+  }
+
   order.status = status;
   await order.save();
 
@@ -1023,6 +1036,36 @@ export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => 
 
   if (order.status === "picked_up") {
     order.status = "delivered";
+
+    // ─── Proof of delivery attach (from rider service) ───────
+    // The rider service forwards the AI verdict alongside the completion
+    // call. Advisory evidence only — never blocks or alters the status
+    // transition. Internal callers only (x-internal-key checked above).
+    const pod = (req.body as { proofOfDelivery?: unknown } | undefined)
+      ?.proofOfDelivery;
+    if (pod && typeof pod === "object") {
+      const p = pod as {
+        status?: unknown;
+        flag?: unknown;
+        confidence?: unknown;
+        notes?: unknown;
+        evidenceUrl?: unknown;
+      };
+      order.proofOfDelivery = {
+        status:
+          p.status === "verified" || p.status === "flagged" || p.status === "unverified"
+            ? p.status
+            : "unverified",
+        flag: typeof p.flag === "string" ? p.flag.slice(0, 80) : null,
+        confidence: Number.isFinite(Number(p.confidence))
+          ? Math.min(1, Math.max(0, Number(p.confidence)))
+          : 0,
+        notes: typeof p.notes === "string" ? p.notes.slice(0, 300) : null,
+        evidenceUrl: typeof p.evidenceUrl === "string" ? p.evidenceUrl.slice(0, 500) : null,
+        at: new Date(),
+      };
+    }
+
     await order.save();
 
     // Customer + seller both learn the delivery is complete

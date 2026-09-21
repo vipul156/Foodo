@@ -15,7 +15,9 @@
   - [4. Admin Service](#4-admin-service)
   - [5. Realtime Service](#5-realtime-service)
   - [6. Utils Service](#6-utils-service)
-  - [7. Frontend](#7-frontend)
+  - [7. AI Verification Service](#7-ai-verification-service)
+  - [8. AI Orchestrator Service](#8-ai-orchestrator-service)
+  - [9. Frontend](#9-frontend)
 - [Service Communication](#-service-communication)
 - [Database Schema Overview](#-database-schema-overview)
 - [API Endpoints Reference](#-api-endpoints-reference)
@@ -255,7 +257,7 @@
 
 ### 6. Utils Service
 
-**Purpose**: Shared utilities — file uploads (Cloudinary) and payment processing (Razorpay, Stripe).
+**Purpose**: Shared utilities — file uploads (Cloudinary), payment processing (Razorpay, Stripe), and the bounded refund execution surface used by the AI orchestrator.
 
 | Property | Value |
 |----------|-------|
@@ -268,6 +270,7 @@
 **Capabilities**:
 - **Image Uploads**: Proxy uploads to Cloudinary (used by Restaurant & Rider services)
 - **Payment Processing**: Razorpay and Stripe integration
+- **Bounded Refunds**: capped, idempotent, audit-trailed refund execution (agent tool surface, internal-key only)
 - **RabbitMQ**: Event-driven payment confirmation → order fulfillment
 
 ---
@@ -294,6 +297,52 @@
 | `/seller` | Seller | Restaurant owner dashboard |
 | `/rider` | Rider | Delivery rider mobile interface |
 | `/admin` | Admin | Platform admin control panel |
+
+---
+
+### 7. AI Verification Service
+
+**Purpose**: Multimodal visual verification — kitchen packing checks and rider proof-of-delivery, with evidence storage and an auditable verdict ledger.
+
+| Property | Value |
+|----------|-------|
+| Port | `3007` |
+| TypeScript | `6.x` |
+| Database | MongoDB (Verification collection, TTL-bounded) |
+| AI Providers | Gemini Flash (primary) → Claude Haiku (fallback) |
+
+**Dependencies**: `express`, `mongoose`, `cloudinary`, `opossum`, `amqplib`
+
+**Endpoints (internal-key only; proxied server-side by restaurant/rider services)**:
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/verification/packing` | Verify open-bag photo vs order ticket |
+| POST | `/api/verification/delivery` | Verify rider drop-off photo (POD) |
+| GET | `/api/verification/order/:orderId` | Audit read — all verdicts for an order |
+
+Verdicts are `{status: verified \| flagged \| unverified, flag, confidence, ...}` — never a 5xx on AI failure. Full design: [`docs/AI_SYSTEMS_DESIGN.md`](docs/AI_SYSTEMS_DESIGN.md).
+
+---
+
+### 8. AI Orchestrator Service
+
+**Purpose**: Bounded-autonomy support & refund arbitration agent — vision triage, delivery telemetry audit, customer trust scoring, and autonomous refund/voucher actions with HITL fallback.
+
+| Property | Value |
+|----------|-------|
+| Port | `3008` |
+| TypeScript | `6.x` |
+| Database | MongoDB (ArbitrationCase, RefundLedger) |
+| AI Providers | Claude Haiku (classifications only — policy is deterministic code) |
+
+**Endpoints**:
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/agent/dispute` | Public (rate-limited) | File a dispute → async arbitration graph, returns `caseId` |
+| GET | `/api/agent/case/:caseId` | Public | Full case record incl. every tool step (thought graph) |
+| GET | `/api/agent/queue` | Internal | Escalated cases awaiting human review |
+
+**Refund bounds enforced server-side**: cumulative per-order caps, server-resolved payment ids, idempotency keys, voucher caps. The agent classifies; deterministic policy decides; utils executes.
 
 ---
 
@@ -483,6 +532,18 @@ Rider {
 | **Rider** | GET | `/rider/order/current` | Rider | Current order |
 | **Rider** | PUT | `/rider/order/update` | Rider | Update status |
 | **Realtime** | POST | `/api/v1/internal/emit` | Internal | Emit socket event |
+| **Utils** | GET | `/api/utils/refund/order/:id/claim` | Internal | Refund pre-flight claim |
+| **Utils** | POST | `/api/utils/refund/execute` | Internal | Capped, idempotent refund execution |
+| **AI Verification** | POST | `/api/verification/packing` | Internal | Open-bag photo verification |
+| **AI Verification** | POST | `/api/verification/delivery` | Internal | Drop-off POD verification |
+| **AI Verification** | GET | `/api/verification/order/:orderId` | Internal | Verdict audit read |
+| **Restaurant** | POST | `/order/verification/:orderId/packing` | Seller | Submit packing snapshot (AI verdict) |
+| **Restaurant** | PUT | `/order/verification/:orderId/override` | Seller | Audited ship-anyway override |
+| **Restaurant** | GET | `/order/verification/:orderId` | Seller | Current verification state |
+| **Rider** | POST | `/rider/order/pod` | Rider | Proof-of-delivery photo + completion |
+| **AI Orchestrator** | POST | `/api/agent/dispute` | Public | File dispute → arbitration graph |
+| **AI Orchestrator** | GET | `/api/agent/case/:caseId` | Public | Case record with thought graph |
+| **AI Orchestrator** | GET | `/api/agent/queue` | Internal | HITL escalation review queue |
 
 ---
 
@@ -502,13 +563,15 @@ Each service is a separate repository/path under the `Foodo/` directory:
 
 ```
 Foodo/
-├── auth/          # Auth microservice
-├── restaurant/    # Restaurant microservice
-├── rider/         # Rider microservice
-├── admin/         # Admin microservice
-├── realtime/      # Socket.IO realtime service
-├── utils/         # Shared utilities (uploads, payments)
-└── frontend/      # Next.js web application
+├── auth/             # Auth microservice
+├── restaurant/       # Restaurant microservice
+├── rider/            # Rider microservice
+├── admin/            # Admin microservice
+├── realtime/         # Socket.IO realtime service
+├── utils/            # Shared utilities (uploads, payments, refunds)
+├── ai-verification/  # Multimodal visual verification (packing + POD)
+├── ai-orchestrator/  # Bounded-autonomy refund arbitration agent
+└── frontend/         # Next.js web application
 ```
 
 ### Quick Setup (All Services)
@@ -523,6 +586,8 @@ cd rider && npm install && cd ..
 cd admin && npm install && cd ..
 cd realtime && npm install && cd ..
 cd utils && npm install && cd ..
+cd ai-verification && npm install && cd ..
+cd ai-orchestrator && npm install && cd ..
 cd frontend && npm install && cd ..
 ```
 
@@ -618,6 +683,66 @@ INTERNAL_SERVICE_KEY=your-internal-service-key
 # PAYMENT_RECONCILE_INTERVAL_MS=3600000
 ```
 
+#### AI Verification Service `.env`
+```env
+PORT=3007
+MONGO_URI=mongodb://localhost:27017/foodo
+FRONTEND_URL=http://localhost:3000
+INTERNAL_SERVICE_KEY=your-internal-service-key
+RABBITMQ_URL=amqp://localhost
+CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
+# AI providers (configure at least one; both recommended)
+GEMINI_API_KEY=your-gemini-key
+GEMINI_MODEL=gemini-2.5-flash
+ANTHROPIC_API_KEY=your-anthropic-key
+ANTHROPIC_MODEL=claude-haiku-4-5
+# Optional tuning
+# AI_TIMEOUT_MS=12000
+# AI_MAX_IMAGE_BYTES=5242880
+# VERIFICATION_TTL_DAYS=90
+# VERIFICATION_EXCHANGE=verification.events
+# REDIS_URL=redis://localhost:6379
+```
+
+#### AI Orchestrator Service `.env`
+```env
+PORT=3008
+MONGO_URI=mongodb://localhost:27017/foodo
+FRONTEND_URL=http://localhost:3000
+INTERNAL_SERVICE_KEY=your-internal-service-key
+RABBITMQ_URL=amqp://localhost
+RESTAURANT_SERVICE_URL=http://localhost:3001
+RIDER_SERVICE_URL=http://localhost:3004
+ADMIN_SERVICE_URL=http://localhost:3006
+UTILS_SERVICE_URL=http://localhost:3005
+ANTHROPIC_API_KEY=your-anthropic-key
+ANTHROPIC_MODEL=claude-haiku-4-5
+# Autonomy bounds
+# AGENT_MAX_AUTO_REFUND=500
+# AGENT_VOUCHER_CAP=150
+# AGENT_EXCHANGE=agent.events
+# AGENT_DISPUTE_QUEUE=agent.disputes
+# INTERNAL_HTTP_TIMEOUT_MS=5000
+# LLM_TIMEOUT_MS=30000
+```
+
+#### Restaurant Service additions
+```env
+# VERIFICATION_HTTP_TIMEOUT_MS=20000   # AI-tier pool timeout
+```
+
+#### Rider Service additions
+```env
+# VERIFICATION_HTTP_TIMEOUT_MS=20000
+```
+
+#### Frontend `.env.local` additions
+```env
+AI_ORCHESTRATOR_URL=http://localhost:3008
+```
+
 #### Frontend `.env.local`
 ```env
 NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost:3000/api/auth
@@ -650,7 +775,13 @@ cd realtime && npm run dev
 # Terminal 6 — Utils Service
 cd utils && npm run dev
 
-# Terminal 7 — Frontend
+# Terminal 7 — AI Verification Service
+cd ai-verification && npm run dev
+
+# Terminal 8 — AI Orchestrator Service
+cd ai-orchestrator && npm run dev
+
+# Terminal 9 — Frontend
 cd frontend && npm run dev
 ```
 
@@ -673,9 +804,14 @@ Visit [http://localhost:3000](http://localhost:3000) in your browser.
 | `UTILS_SERVICE_URL` | Restaurant, Rider | URL of the Utils microservice (e.g. `http://localhost:3005`) |
 | `REALTIME_SERVICE_URL` | Restaurant | URL of the Realtime socket service (e.g. `http://localhost:3002`) |
 | `RESTAURANT_SERVICE` | Rider | URL of the Restaurant microservice (e.g. `http://localhost:3001`) |
-| `CLOUDINARY_*` | Utils | Cloudinary API credentials |
+| `CLOUDINARY_*` | Utils, AI Verification | Cloudinary API credentials |
 | `RAZORPAY_*` | Utils | Razorpay payment gateway keys |
 | `STRIPE_SECRET_KEY` | Utils | Stripe payment secret |
+| `GEMINI_API_KEY` | AI Verification | Primary vision provider key |
+| `ANTHROPIC_API_KEY` | AI Verification, AI Orchestrator | Fallback vision + agent LLM key |
+| `AGENT_MAX_AUTO_REFUND` | AI Orchestrator | Autonomous refund cap (default 500) |
+| `AGENT_VOUCHER_CAP` | AI Orchestrator | Goodwill voucher cap (default 150) |
+| `VERIFICATION_TTL_DAYS` | AI Verification | Evidence retention (default 90) |
 
 ---
 

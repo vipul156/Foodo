@@ -59,6 +59,41 @@ export interface IOrder extends Document {
     initiatedAt?: Date;
   };
 
+  // ─── Visual kitchen verification (AppSec / fraud defense) ──
+  // Set by the internal verification endpoint when the seller snapshots
+  // the open bag. `packingVerifiedAt` is the gate: marking an order
+  // ready_for_rider is BLOCKED while a pending flag exists — the kitchen
+  // screen must clear it (repack + re-shoot) or override with a note.
+  packingVerification?: {
+    status: "verified" | "flagged" | "unverified";
+    flag: string | null;
+    confidence: number;
+    missing: string[];
+    // Audit trail: who pressed "ship anyway" and why. Disputes pull
+    // this record; absence of an override on a flagged order means the
+    // flag was cleared by repacking, never silently skipped.
+    override?: {
+      at: Date;
+      byUserId: string;
+      note: string;
+    } | null;
+    verifiedAt: Date | null;
+    evidenceUrl: string | null;
+  };
+
+  // ─── Proof of delivery (rider side) ────────────────────────
+  // Attached by the internal rider status endpoint when the drop-off
+  // photo verdict arrives with the completion call. Advisory dispute
+  // evidence: a flagged POD never blocks delivery completion.
+  proofOfDelivery?: {
+    status: "verified" | "flagged" | "unverified";
+    flag: string | null;
+    confidence: number;
+    notes: string | null;
+    evidenceUrl: string | null;
+    at: Date;
+  };
+
   expiresAt: Date;
 
   // Populated by the schema's `timestamps: true`
@@ -141,6 +176,30 @@ const orderSchema = new Schema<IOrder>({
     provider: { type: String, enum: ["razorpay", "stripe"] },
     providerOrderId: { type: String },
     initiatedAt: { type: Date },
+  },
+
+  // Visual kitchen verification (packing gate + override audit)
+  packingVerification: {
+    status: { type: String, enum: ["verified", "flagged", "unverified"] },
+    flag: { type: String, default: null },
+    confidence: { type: Number, default: 0 },
+    missing: { type: [String], default: [] },
+    override: {
+      at: { type: Date },
+      byUserId: { type: String },
+      note: { type: String },
+    },
+    default: null,
+  },
+
+  // Proof of delivery (advisory dispute evidence, rider side)
+  proofOfDelivery: {
+    status: { type: String, enum: ["verified", "flagged", "unverified"] },
+    flag: { type: String, default: null },
+    confidence: { type: Number, default: 0 },
+    notes: { type: String, default: null },
+    evidenceUrl: { type: String, default: null },
+    at: { type: Date },
   },
 },{
     timestamps: true

@@ -26,11 +26,12 @@ app.use(
 );
 // ─── Body limits: restrictive default, scoped headroom ─────
 // 1mb covers every JSON API. Only rider registration (/api/rider/new)
-// carries a base64 image (data-URI) that gets forwarded to the upload
-// service, so only that path gets headroom. Scoped parsers MUST come
-// before the global one — the global parser would 413 the request first.
+// and the proof-of-delivery photo (/api/rider/order/pod) carry a base64
+// image (data-URI) that gets forwarded to the utils service, so only
+// those paths get headroom. Scoped parsers MUST come before the global
+// one — the global parser would 413 the request first.
 app.use(
-  "/api/rider/new",
+  ["/api/rider/new", "/api/rider/order/pod"],
   express.json({ limit: "10mb" }),
   express.urlencoded({ limit: "10mb", extended: true }),
 );

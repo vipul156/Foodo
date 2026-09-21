@@ -15,6 +15,10 @@ const REALTIME_SERVICE_URL =
   process.env.REALTIME_SERVICE_URL || "http://localhost:3002";
 const UTILS_SERVICE_URL =
   process.env.UTILS_SERVICE_URL || "http://localhost:3005";
+// Note: the ai-verification service (port 3007) is internal-only —
+// restaurant/rider services proxy to it server-side. No browser rewrite.
+const AI_ORCHESTRATOR_URL =
+  process.env.AI_ORCHESTRATOR_URL || "http://localhost:3008";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -70,6 +74,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/utils/:path*",
         destination: `${UTILS_SERVICE_URL}/api/utils/:path*`,
+      },
+      {
+        source: "/api/agent/:path*",
+        destination: `${AI_ORCHESTRATOR_URL}/api/agent/:path*`,
       },
     ];
   },

@@ -8,6 +8,7 @@ import { cloudinaryRouter } from "./routers/cloudinary.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentReconciliation } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
+import refundRouter from "./routers/refund.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
@@ -45,6 +46,9 @@ app.use(
   express.urlencoded({ limit: "15mb", extended: true }),
 );
 
+// 2b) Verification routes moved to the dedicated ai-verification
+//     service — this file keeps only uploads + payments.
+
 // 3) Global default: 1mb is far above any legit JSON body this API
 //    accepts (payments, internal claims). The old 50mb global limit was
 //    a trivial DoS amplification — every request could force 50MB of
@@ -55,6 +59,7 @@ app.use(express.urlencoded({ limit: "1mb", extended: true }));
 // ─── Routers ────────────────────────────────────────────────
 app.use("/api/utils/", cloudinaryRouter);
 app.use("/api/utils/payment", paymentRouter);
+app.use("/api/utils/refund", refundRouter);
 
 connectRabbitMQ();
 // Periodic provider-vs-database payment audit (missed-webhook safety net)

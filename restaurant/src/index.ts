@@ -40,6 +40,14 @@ app.use(
   express.json({ limit: "10mb" }),
   express.urlencoded({ limit: "10mb", extended: true }),
 );
+
+// Packing snapshots ride the same headroom: a compressed base64 photo
+// forwarded to the utils AI tier. Scoped before the 1mb default.
+app.use(
+  ["/api/order/verification/:orderId/packing"],
+  express.json({ limit: "10mb" }),
+  express.urlencoded({ limit: "10mb", extended: true }),
+);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ limit: "1mb", extended: true }));
 

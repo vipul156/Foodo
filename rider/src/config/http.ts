@@ -95,3 +95,29 @@ export const readPost = async <T>(
 // Raw clients for callers with bespoke needs (still timeout-bounded)
 export const http = criticalClient;
 export const readHttp = readClient;
+
+// ─── Pool C: AI verification (utils service) ────────────────
+// Multimodal verification legitimately takes 5-15s — far beyond the
+// 3s internal budget. A dedicated client + breaker keeps those slow
+// calls from tripping (or queuing behind) the read/critical pools.
+const VERIFICATION_TIMEOUT_MS =
+  Number(process.env.VERIFICATION_HTTP_TIMEOUT_MS) || 20_000;
+
+const verificationClient = axios.create({
+  timeout: VERIFICATION_TIMEOUT_MS,
+});
+
+const verifyPostBreaker = breakerWrap(
+  "rider-verification-post",
+  async ({ url, config, body }) => {
+    const response = await verificationClient.post(url, body, config);
+    return response.data;
+  },
+);
+
+export const verifyPost = async <T>(
+  url: string,
+  body: unknown,
+  config: AxiosRequestConfig,
+): Promise<T> =>
+  (await verifyPostBreaker.fire({ url, config, body })) as T;

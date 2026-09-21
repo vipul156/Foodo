@@ -12,6 +12,7 @@ import {
   updateOrderStatus,
 } from "../controller/rider.js";
 import uploadFile from "../middlewares/multer.js";
+import { submitProofOfDelivery } from "../controller/pod.js";
 
 const router = Router();
 
@@ -31,5 +32,13 @@ router.get("/order/available", fetchAvailableOrders);
 router.get("/order/current", fetchMyCurrentOrder)
 router.get("/order/history", fetchMyDeliveryHistory)
 router.put("/order/update", updateOrderStatus)
+
+// Proof of delivery — drop-off photo verified by the AI tier, verdict
+// attached to the delivery completion (advisory, never blocks).
+router.post("/order/pod", submitProofOfDelivery)
+
+// Proof of delivery — drop-off photo verified by the AI tier, verdict
+// attached to the delivery completion (advisory, never blocks).
+router.post("/order/pod", submitProofOfDelivery)
 
 export { router as riderRouter };

@@ -5,8 +5,9 @@ import { Rider } from "../model/Rider.js";
 import { criticalPut, readGet, readPost } from "../config/http.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
-// Shared internal auth header (evaluated at request time)
-const getInternalHeaders = () => ({
+// Shared internal auth header (evaluated at request time).
+// Exported: the POD controller shares the same internal contract.
+export const getInternalHeaders = () => ({
   "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
 });
 
