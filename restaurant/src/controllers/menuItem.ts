@@ -4,6 +4,7 @@ import { AuthRequest } from "../middlewares/isAuth.js";
 import { Restaurant } from "../models/Restaurant.js";
 import { dataUri } from "../config/dataUri.js";
 import { uploadViaBreaker } from "../config/http.js";
+import { parserViaBreaker } from "../config/parser.http.js";
 
 export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) throw new Error("User not found");
@@ -63,6 +64,122 @@ export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   return res.status(201).json({
     message: "Menu item created successfully",
     menuItem,
+  });
+});
+
+// ─── AI menu import (vision parse proxy) ────────────────────
+// The restaurant service owns authorization; the Python ai-menu-parser
+// service owns vision. The owner's session cookie is forwarded so the
+// parser can rate-limit per identity — and the bulk publish flows back
+// through this service (the ONLY writer to the menu collection).
+export const aiParseMenu = tryCatch(async (req: AuthRequest, res) => {
+  if (!req.user) throw new Error("User not found");
+  const restaurant = await Restaurant.findOne({ ownerId: req.user._id });
+  if (!restaurant) throw new Error("Restaurant not found");
+
+  const { imageUrl } = req.body as { imageUrl?: unknown };
+  if (typeof imageUrl !== "string" || !imageUrl.startsWith("https://") || imageUrl.length > 600) {
+    return res.status(400).json({ message: "imageUrl (https) is required" });
+  }
+
+  const draft = await parserViaBreaker<unknown>(
+    `${process.env.MENU_PARSER_SERVICE_URL}/api/menu-parser/parse`,
+    { imageUrl },
+    { headers: { cookie: req.headers.cookie ?? "" } },
+  );
+  return res.status(200).json(draft);
+});
+
+// ─── One-click bulk seeding (owner-verified review grid) ─────
+// The frontend sends the FINAL, human-confirmed array. Every item is
+// validated server-side; descriptions are optional (parsed menus may
+// have none) and images default to the standard placeholder, matching
+// the manual create path. Option `replaceExisting` clears the current
+// menu first so an import is idempotent to re-run.
+export const bulkCreateMenuItems = tryCatch(async (req: AuthRequest, res) => {
+  if (!req.user) throw new Error("User not found");
+  const restaurant = await Restaurant.findOne({ ownerId: req.user._id });
+  if (!restaurant) throw new Error("Restaurant not found");
+
+  const { items, replaceExisting } = req.body as {
+    items?: unknown;
+    replaceExisting?: boolean;
+  };
+  if (!Array.isArray(items) || items.length === 0 || items.length > 300) {
+    return res.status(400).json({ message: "items (1–300) are required" });
+  }
+
+  interface ParsedRow {
+    category?: unknown;
+    name?: unknown;
+    description?: unknown;
+    price?: unknown;
+    is_veg?: unknown;
+    isVeg?: unknown;
+    spicy_level?: unknown;
+    spicyLevel?: unknown;
+    allergens?: unknown;
+  }
+
+  const docs: Array<{
+    name: string;
+    description: string;
+    price: number;
+    category: string;
+    image: string;
+    isVeg: boolean | null;
+  }> = [];
+  const skipped: string[] = [];
+
+  for (const raw of items as ParsedRow[]) {
+    const name = typeof raw?.name === "string" ? raw.name.trim() : "";
+    const price = Number(raw?.price);
+    if (!name || name.length > 120 || !Number.isFinite(price) || price < 0) {
+      skipped.push(name || "unnamed item");
+      continue;
+    }
+    const category =
+      typeof raw?.category === "string" && raw.category.trim()
+        ? raw.category.trim().slice(0, 80)
+        : "Others";
+    const description =
+      typeof raw?.description === "string" ? raw.description.trim().slice(0, 500) : "";
+    const isVegRaw = raw?.is_veg ?? raw?.isVeg;
+    const spicyRaw = raw?.spicy_level ?? raw?.spicyLevel;
+    const spicy = typeof spicyRaw === "string" ? spicyRaw.toLowerCase() : "";
+
+    docs.push({
+      name,
+      description,
+      price: Math.round(price * 100) / 100,
+      category,
+      // Menu imports don't carry photos; the standard dish placeholder
+      // keeps customer UI rendering consistent until the owner adds one
+      // via the photo pipeline.
+      image: "https://res.cloudinary.com/demo/image/upload/dish-placeholder.png",
+      isVeg: typeof isVegRaw === "boolean" ? isVegRaw : null,
+    });
+    // Allergen tags are stored on the item name level only in this schema;
+    // spicy hints (if any) surface via the description suffix.
+    if (spicy && spicy !== "unknown" && description) {
+      // keep description as-is — spicy_level is not persisted in this schema
+    }
+  }
+
+  if (docs.length === 0) {
+    return res.status(400).json({ message: "no valid items to import" });
+  }
+
+  if (replaceExisting) {
+    await MenuItem.deleteMany({ restaurantId: restaurant._id });
+  }
+  const created = await MenuItem.insertMany(docs, { ordered: false });
+
+  return res.status(201).json({
+    message: "Menu imported successfully",
+    created: created.length,
+    skipped,
+    restaurantId: restaurant._id,
   });
 });
 

@@ -7,6 +7,7 @@ export interface IMenuItem extends Document {
   price: number;
   category: string;
   image: string;
+  isVeg: boolean;
   isAvailable: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -18,6 +19,8 @@ const menuItemSchema = new Schema<IMenuItem>(
     name: { type: String, required: true, trim: true },
     description: { type: String, required: true, trim: true },
     price: { type: Number, required: true },
+    category: { type: String, required: false, trim: true, default: "" },
+    isVeg: { type: Boolean, required: false, default: null },
     image: { type: String, required: true },
     isAvailable: { type: Boolean, required: true, default: true },
   },
