@@ -7,7 +7,7 @@ import cookieSession from "cookie-session";
 import cors from 'cors';
 import { restaurantRouter } from "./routes/restaurant.js";
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 import { menuItemRouter } from "./routes/menu-item.js";
 import { cartRouter } from "./routes/cart.js";
 import { orderRouter } from "./routes/order.js";
@@ -51,7 +51,6 @@ app.use("/api/address", addressRoute)
 // Internal service-to-service contract (admin reads go through here)
 app.use("/api/internal", internalRouter)
 
-const PORT = process.env.PORT || 3003
 
 app.get('/health', (req, res) => {
   res.status(200).json({

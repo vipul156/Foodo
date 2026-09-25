@@ -10,7 +10,7 @@ import dotenv from "dotenv"
 
 dotenv.config();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 
 const app = express();
 
@@ -45,7 +45,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3002
-server.listen(PORT, () => {
-    console.log("Server started on port ", PORT);
-});
+const serverlessApp = serverlessHttp(app);
+
+export const handler = async (event: any, context: any) => {
+  context.callbackWaitsForEmptyEventLoop = false;
+  return serverlessApp(event, context);
+};

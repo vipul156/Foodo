@@ -12,7 +12,7 @@ import { startOrderReadyConsumer } from "./config/orderReady.consumer.js";
 import { startRiderEventConsumer } from "./config/riderEvent.consumer.js";
 import { seedDemoRider } from "./seed/demo-rider.js";
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 
 const app = express();
 
@@ -48,7 +48,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3004
+
 app.listen(PORT, () => {
     console.log("Server running on port ", PORT);
     connectDB().then(() => seedDemoRider());

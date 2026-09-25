@@ -3,10 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import cookieSession from "cookie-session";
 import { adminRoutes } from "./routes/admin.js";
+import serverlessHttp from "serverless-http";
 
 dotenv.config();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 
 const app = express();
 app.use(cors());
@@ -22,8 +23,6 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
-const port = process.env.PORT || 3006;
-
 app.use("/api/admin", adminRoutes);
 
 app.get('/health', (req, res) => {
@@ -34,6 +33,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+const serverlessApp = serverlessHttp(app);
+
+export const handler = async (event: any, context: any) => {
+  context.callbackWaitsForEmptyEventLoop = false;
+  return serverlessApp(event, context);
+};

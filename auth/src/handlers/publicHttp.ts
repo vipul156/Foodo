@@ -12,7 +12,7 @@ import { cookieSessionOptions } from "../lib/tokens.js";
 
 dotenv.config();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 
 const app = express();
 

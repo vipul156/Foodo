@@ -9,7 +9,7 @@ import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentReconciliation } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
 
 const app = express();
 
@@ -68,7 +68,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3005
-app.listen(PORT, () => {
-    console.log("Server running on port ", PORT);
-});
+const serverlessApp = serverlessHttp(app);
+
+export const handler = async (event: any, context: any) => {
+  context.callbackWaitsForEmptyEventLoop = false;
+  return serverlessApp(event, context);
+};
