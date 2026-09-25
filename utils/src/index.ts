@@ -2,8 +2,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import cloudinary from "cloudinary";
 import cors from "cors";
+import serverlessHttp from "serverless-http";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
 import { startPaymentReconciliation } from "./config/reconciliation.js";
@@ -19,12 +19,7 @@ const app = express();
 // Locked to the frontend origin with credentials, same as the other
 // services. (Provider webhooks are exempt by nature: Razorpay/Stripe
 // server-to-server POSTs send no Origin header, which cors() allows.)
-app.use(
-  cors({
-    origin: FRONTEND_URL,
-    credentials: true,
-  }),
-);
+app.use(cors());
 
 // ─── Body parser: restrictive default, scoped override ─────
 // ORDER MATTERS. The 15mb upload parser must be registered BEFORE the
