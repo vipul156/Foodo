@@ -4,6 +4,9 @@
 
 ---
 
+<img width="4932" height="2880" alt="foodo-target-architecture-prd-p0-p2-roadmap" src="https://github.com/user-attachments/assets/dd65d3b5-f029-4a6b-910a-8b0d8cb9fe78" />
+
+
 ## 📋 Table of Contents
 
 - [Architecture Overview](#-architecture-overview)
