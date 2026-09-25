@@ -1,21 +1,47 @@
-import { tryCatch } from "./trycatch.js";
-import {
-  AUTH_SERVICE,
-  RESTAURANT_SERVICE,
-  RIDER_SERVICE,
-  internalGet,
-  internalPatch,
-} from "../util/internal.js";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { tryCatch } from "../lib/trycatch.js";
+
+const lambda = new LambdaClient({ region: process.env.AWS_REGION || "ap-south-1" });
+
+// Function Names from Environment Variables
+const AUTH_LAMBDA = process.env.AUTH_INTERNAL_LAMBDA_NAME || "auth-service-internalWorker";
+const RESTAURANT_LAMBDA = process.env.RESTAURANT_INTERNAL_LAMBDA_NAME || "restaurant-service-internalWorker";
+const RIDER_LAMBDA = process.env.RIDER_INTERNAL_LAMBDA_NAME || "rider-service-internalWorker";
+
+// ─── Generic Lambda Invocation Helper ───────────────────────
+async function invokeLambda<TResponse>(
+  functionName: string,
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<TResponse> {
+  const command = new InvokeCommand({
+    FunctionName: functionName,
+    Payload: Buffer.from(JSON.stringify({ action, payload })),
+  });
+
+  const response = await lambda.send(command);
+
+  if (!response.Payload) {
+    throw new Error(`Empty payload returned from Lambda: ${functionName}`);
+  }
+
+  const resultString = Buffer.from(response.Payload).toString("utf-8");
+  const parsed = JSON.parse(resultString);
+
+  // If the target Lambda threw an uncaught error, bubble it up
+  if (response.FunctionError) {
+    throw new Error(parsed.errorMessage || `Lambda invocation failed for ${functionName}`);
+  }
+
+  return parsed as TResponse;
+}
 
 // ─── Pending Restaurants ────────────────────────────────────
-// Read-through: the restaurant service owns restaurants and defines what
-// "pending" means. Admin just forwards the response shape the frontend
-// expects (unchanged contract).
 export const getPendingRestaurants = tryCatch(async (req, res) => {
-  const data = await internalGet<{
+  const data = await invokeLambda<{
     count: number;
     restaurants: unknown[];
-  }>(RESTAURANT_SERVICE, "/api/internal/restaurants", { params: { status: "pending" } });
+  }>(RESTAURANT_LAMBDA, "LIST_RESTAURANTS", { status: "pending" });
 
   res.json({
     count: data.count,
@@ -23,13 +49,12 @@ export const getPendingRestaurants = tryCatch(async (req, res) => {
   });
 });
 
-// Every restaurant on the platform — open ones first — so admins can
-// see the full roster beyond the pending verification queue.
+// ─── All Restaurants ────────────────────────────────────────
 export const getAllRestaurants = tryCatch(async (req, res) => {
-  const data = await internalGet<{
+  const data = await invokeLambda<{
     count: number;
     restaurants: unknown[];
-  }>(RESTAURANT_SERVICE, "/api/internal/restaurants");
+  }>(RESTAURANT_LAMBDA, "LIST_RESTAURANTS");
 
   res.json({
     count: data.count,
@@ -38,13 +63,11 @@ export const getAllRestaurants = tryCatch(async (req, res) => {
 });
 
 // ─── Pending Riders ─────────────────────────────────────────
-// The rider service owns riders and defines what "pending" means.
 export const getPendingRiders = tryCatch(async (req, res) => {
-  const data = await internalGet<{ count: number; riders: unknown[] }>(
-    RIDER_SERVICE,
-    "/api/internal/riders",
-    { params: { status: "pending" } },
-  );
+  const data = await invokeLambda<{
+    count: number;
+    riders: unknown[];
+  }>(RIDER_LAMBDA, "LIST_RIDERS", { status: "pending" });
 
   res.json({
     count: data.count,
@@ -52,13 +75,12 @@ export const getPendingRiders = tryCatch(async (req, res) => {
   });
 });
 
-// Every rider on the platform — online first, then by availability —
-// so admins can see the full roster beyond the pending queue.
+// ─── All Riders ─────────────────────────────────────────────
 export const getAllRiders = tryCatch(async (req, res) => {
-  const data = await internalGet<{ count: number; riders: unknown[] }>(
-    RIDER_SERVICE,
-    "/api/internal/riders",
-  );
+  const data = await invokeLambda<{
+    count: number;
+    riders: unknown[];
+  }>(RIDER_LAMBDA, "LIST_RIDERS");
 
   res.json({
     count: data.count,
@@ -67,16 +89,13 @@ export const getAllRiders = tryCatch(async (req, res) => {
 });
 
 // ─── Users ──────────────────────────────────────────────────
-// The auth service owns users and never exports credentials.
-// Role filter via ?role=customer|seller|rider|admin.
 export const getAllUsers = tryCatch(async (req, res) => {
   const role = req.query.role as string | undefined;
 
-  const data = await internalGet<{ count: number; users: unknown[] }>(
-    AUTH_SERVICE,
-    "/api/internal/users",
-    { params: { role } },
-  );
+  const data = await invokeLambda<{
+    count: number;
+    users: unknown[];
+  }>(AUTH_LAMBDA, "LIST_USERS", { role });
 
   res.json({
     count: data.count,
@@ -84,9 +103,7 @@ export const getAllUsers = tryCatch(async (req, res) => {
   });
 });
 
-// ─── Verification (writes via the owning services) ──────────
-// The owning service validates the id (400) and 404s unknown ids — admin
-// no longer needs to know the ObjectId representation at all.
+// ─── Verification (Writes) ──────────────────────────────────
 export const verifyRestaurant = tryCatch(async (req, res) => {
   const { id } = req.params;
 
@@ -94,10 +111,7 @@ export const verifyRestaurant = tryCatch(async (req, res) => {
     throw new Error("Invalid id");
   }
 
-  await internalPatch(
-    RESTAURANT_SERVICE,
-    `/api/internal/restaurants/${encodeURIComponent(id)}/verify`,
-  );
+  await invokeLambda(RESTAURANT_LAMBDA, "VERIFY_RESTAURANT", { id });
 
   res.json({ message: "Restaurant verified" });
 });
@@ -109,38 +123,31 @@ export const verifyRider = tryCatch(async (req, res) => {
     throw new Error("Invalid id");
   }
 
-  await internalPatch(
-    RIDER_SERVICE,
-    `/api/internal/riders/${encodeURIComponent(id)}/verify`,
-  );
+  await invokeLambda(RIDER_LAMBDA, "VERIFY_RIDER", { id });
 
   res.json({ message: "Rider verified" });
 });
 
-// ─── Platform Stats (analytics) ─────────────────────────────
-// Each block is computed by the service that owns the data — admin only
-// joins the four summaries for the analytics page. The aggregation logic
-// (active orders, revenue windows, top restaurants) can no longer drift
-// between services because it exists in exactly one place.
+// ─── Platform Stats (Parallel Aggregation) ──────────────────
 export const getPlatformStats = tryCatch(async (req, res) => {
   const [users, restaurants, riders, orders] = await Promise.all([
-    internalGet<{ total: number; newThisMonth: number }>(
-      AUTH_SERVICE,
-      "/api/internal/users/stats",
+    invokeLambda<{ total: number; newThisMonth: number }>(
+      AUTH_LAMBDA,
+      "GET_USER_STATS"
     ),
-    internalGet<{
+    invokeLambda<{
       total: number;
       verified: number;
       open: number;
       pending: number;
-    }>(RESTAURANT_SERVICE, "/api/internal/restaurants/stats"),
-    internalGet<{
+    }>(RESTAURANT_LAMBDA, "GET_RESTAURANT_STATS"),
+    invokeLambda<{
       total: number;
       verified: number;
       online: number;
       pending: number;
-    }>(RIDER_SERVICE, "/api/internal/riders/stats"),
-    internalGet<{
+    }>(RIDER_LAMBDA, "GET_RIDER_STATS"),
+    invokeLambda<{
       total: number;
       delivered: number;
       cancelled: number;
@@ -148,7 +155,7 @@ export const getPlatformStats = tryCatch(async (req, res) => {
       revenue: { total: number; thisMonth: number };
       daily: { date: string; revenue: number; orders: number }[];
       topRestaurants: { name: string; revenue: number; orders: number }[];
-    }>(RESTAURANT_SERVICE, "/api/internal/orders/stats"),
+    }>(RESTAURANT_LAMBDA, "GET_ORDER_STATS"),
   ]);
 
   res.json({
