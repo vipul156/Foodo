@@ -1,5 +1,5 @@
-/node_modules
-/dist
+node_modules/
+dist/
 .env
 .vagrant
 /env
@@ -63,3 +63,13 @@ id_rsa*
 # ------------------------------------------------------------------------------
 .agents/
 RESUME_ANALYSIS.md
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
