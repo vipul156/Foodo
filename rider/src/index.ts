@@ -16,7 +16,7 @@ import { seedDemoRider } from "./seed/demo-rider.js";
 
 const app = express();
 
-app.use(cors());
+
 app.use(
   cookieSession({
     name: "session",

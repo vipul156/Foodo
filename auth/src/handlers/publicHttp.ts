@@ -19,7 +19,7 @@ const app = express();
 // Trust API Gateway proxy headers so secure cookies & IP detection work
 app.set("trust proxy", 1);
 
-app.use(cors());
+
 app.use(cookieParser());
 app.use(cookieSession(cookieSessionOptions()));
 app.use(express.json());

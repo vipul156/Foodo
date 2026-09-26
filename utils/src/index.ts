@@ -2,7 +2,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import cors from "cors";
 import serverlessHttp from "serverless-http";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
@@ -12,14 +11,6 @@ import paymentRouter from "./routers/payment.js";
 
 
 const app = express();
-
-// ─── CORS: strict origin whitelist ─────────────────────────
-// This service processes PAYMENTS and file uploads — with a bare cors()
-// any origin could drive payment creation or abuse the upload endpoint.
-// Locked to the frontend origin with credentials, same as the other
-// services. (Provider webhooks are exempt by nature: Razorpay/Stripe
-// server-to-server POSTs send no Origin header, which cors() allows.)
-app.use(cors());
 
 // ─── Body parser: restrictive default, scoped override ─────
 // ORDER MATTERS. The 15mb upload parser must be registered BEFORE the

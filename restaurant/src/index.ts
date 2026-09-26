@@ -19,7 +19,7 @@ import { internalRouter } from "./routes/internal.js";
 import { seedDemoRestaurant } from "./seed/demo-restaurant.js";
 
 const app = express();
-app.use(cors());
+
 app.use(
   cookieSession({
     name: "session",

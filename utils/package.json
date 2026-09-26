@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --target node20 --clean --minify --no-splitting",
-    "start": "node dist/index.js",
+    "build": "tsup src/index.ts --format cjs --target node20 --platform node --shims --clean --minify --no-splitting",
+    "start": "node dist/index.cjs",
     "dev": "tsx --watch src/index.ts"
   },
   "keywords": [],
@@ -15,7 +15,6 @@
   "dependencies": {
     "amqplib": "^2.0.1",
     "cloudinary": "^2.10.0",
-    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
