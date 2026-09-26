@@ -1,16 +1,16 @@
-import { createCloudinaryUploadSignature } from "@foodo/backend-common";
+import { createCloudinaryUploadSignature } from "../cloudinary.js";
 
-// ─── Server-side Cloudinary upload (legacy fallback path) ────
-// The preferred flow is browser-direct upload via signed params
-// (controller/upload.ts). This helper keeps the multipart fallback
-// working without utils-service: it signs locally with the shared
-// helper and POSTs the data-URI payload straight to Cloudinary's REST
-// endpoint from this service. No internal HTTP hop.
+// ─── Server-side Cloudinary upload (legacy multipart fallback) ──
+// The preferred flow is browser-direct upload via signed params (each
+// service exposes an /upload-signature endpoint). This helper keeps the
+// multipart fallback working without utils-service: it signs locally
+// and POSTs the payload straight to Cloudinary's REST endpoint from
+// the calling service. No internal HTTP hop.
 
-interface ServerUploadOptions {
+export interface ServerUploadOptions {
   /** Data-URI or base64 string, or a raw Buffer */
   fileContent: string | Buffer;
-  /** Fixed destination folder, e.g. "foodo/riders/kyc" */
+  /** Fixed destination folder, e.g. "foodo/menu-items" */
   folder: string;
   tags?: string[];
 }

@@ -1,9 +1,9 @@
 import { AuthRequest, tryCatch } from "@foodo/backend-common";
+import { dataUri } from "@foodo/backend-common/files";
+import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 import { Order, Restaurant } from "@foodo/backend-common/models";
-import { dataUri } from "../config/dataUri.js";
 import { Rider } from "../model/Rider.js";
 import { criticalPut } from "../config/http.js";
-import { uploadToCloudinary } from "../config/cloudinary-upload.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
 // Shared internal auth header (evaluated at request time) — used by the

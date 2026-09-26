@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import cookieSession from "cookie-session";
 import serverlessHttp from "serverless-http";
 
-import connectDB from "../config/db.js";
+import connectDB from "@foodo/backend-common/db";
 import { authRoute } from "../routes/auth.js";
 import { cookieSessionOptions } from "../lib/tokens.js";
 

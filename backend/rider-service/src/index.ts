@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import connectDB from "./config/db.js";
+import connectDB from "@foodo/backend-common/db";
 import cors from "cors";
 import cookieSession from "cookie-session";
 import { connectRabbitMQ } from "./config/rabbitmq.js";

@@ -3,9 +3,8 @@ import { onChannelReady } from "./rabbitmq.js";
 import {
   declareResilienceQueues,
   handleConsumeFailure,
-} from "./queue.resilience.js";
+} from "@foodo/backend-common/queue";
 import { Rider } from "../model/Rider.js";
-import { http } from "./http.js";
 
 const onOrderReady =
   (channel: Channel) =>
@@ -44,20 +43,22 @@ const onOrderReady =
         return;
       }
 
+      // ─── Notify riders over the fanout exchange ─────────────
+      // One publish per rider (same envelope realtime consumes), no
+      // HTTP hop to the socket tier. Realtime ignores messages without
+      // a room, so restaurant's queue is unaffected by these events.
       for (const rider of riders) {
         try {
-          await http.post(
-            `${process.env.REALTIME_SERVICE_URL}/api/internal/emit`,
-            {
-              event: "order:available",
-              room: `user:${rider.userId}`,
-              payload: { orderId, restaurantId },
-            },
-            {
-              headers: {
-                "x-internal-key": process.env.INTERNAL_SERVICE_KEY,
-              },
-            },
+          channel.sendToQueue(
+            process.env.REALTIME_QUEUE || "realtime.emit",
+            Buffer.from(
+              JSON.stringify({
+                event: "order:available",
+                room: `user:${rider.userId}`,
+                payload: { orderId, restaurantId },
+              }),
+            ),
+            { persistent: true },
           );
         } catch (error: any) {
           console.error("Error notifying rider:", rider.userId, error?.message);

@@ -2,12 +2,12 @@ import axios, { AxiosRequestConfig } from "axios";
 import CircuitBreaker from "opossum";
 
 // ─── Bulkhead pools + circuit breakers ──────────────────────
-//   POOL A (critical)     — the rider-release compensation call: when a
-//                           seller cancels an order with a rider on it,
-//                           this must go through even under load.
-//   POOL B (non-critical) — the base64 image forward to the upload
-//                           service (menu-item / restaurant create).
-//                           Uploads can retry; payouts can't.
+//   POOL A (critical) — the rider-release compensation call: when a
+//                       seller cancels an order with a rider on it,
+//                       this must go through even under load.
+//
+//   (The upload forward pool was removed — image uploads are signed
+//   direct-to-Cloudinary via @foodo/backend-common/cloudinary.)
 //
 // Each pool is breaker-wrapped (opossum): repeated failures trip the
 // circuit OPEN (fail fast, no socket pile-up); after a cool-down a
@@ -66,32 +66,3 @@ export const releaseRiderViaBreaker = async (
 
 // Raw critical client (timeout-bounded) for the rare direct call
 export const http = criticalClient;
-
-// ─── Pool B: non-critical (upload forward) ──────────────────
-const uploadClient = axios.create({
-  timeout: 15_000, // base64 payloads are large; give the forward leeway
-});
-
-interface UploadArgs {
-  url: string;
-  body: unknown;
-}
-
-const uploadBreaker = breakerWrap<[UploadArgs], { data: { url?: string } }>(
-  "upload-forward",
-  15_000,
-  async ({ url, body }) => {
-    const response = await uploadClient.post(url, body);
-    return { data: response.data };
-  },
-);
-
-export const uploadViaBreaker = async <T>(
-  url: string,
-  body: unknown,
-): Promise<T> => {
-  const { data } = (await uploadBreaker.fire({ url, body })) as {
-    data: T;
-  };
-  return data;
-};

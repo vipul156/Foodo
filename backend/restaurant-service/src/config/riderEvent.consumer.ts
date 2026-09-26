@@ -3,7 +3,7 @@ import { onChannelReady } from "./rabbitmq.js";
 import {
   declareResilienceQueues,
   handleConsumeFailure,
-} from "./queue.resilience.js";
+} from "@foodo/backend-common/queue";
 import { publishRealtimeEvent } from "./realtime.publisher.js";
 import { assignRiderToOrder } from "../controllers/order.js";
 

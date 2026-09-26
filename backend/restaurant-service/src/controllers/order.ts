@@ -215,28 +215,9 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   }
 });
 
-export const fetchOrderForPayment = tryCatch(async (req, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
-
-  const order = await Order.findById(req.params.id);
-
-  if (!order) {
-    throw new Error("No order found");
-  }
-
-  if (order.paymentStatus !== "pending") {
-    throw new Error("Order already paid");
-  }
-
-  return res.status(200).json({
-    message: "Order fetched successfully",
-    orderId: order._id,
-    amount: order.totalAmount,
-    currency: "INR",
-  });
-});
+// [DELETED] GET /payment/:id (fetchOrderForPayment) — superseded by the
+// idempotent claim endpoint (POST /payment/claim/:id), which rejects
+// paid/cancelled/expired orders and returns the trusted amount.
 
 // ─── Restaurant Orders (keyset-paginated) ───────────────────
 // Every response is bounded: default 50, hard cap 200, and deep pages
@@ -852,41 +833,9 @@ export const assignRiderToOrder = async (payload: {
   return { success: true, order: orderUpdate };
 };
 
-// Internal HTTP entry kept for the contract; the primary path is now the
-// rider.order_accepted consumer.
-export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
-
-  const { orderId, riderId, riderUserId, riderName, riderPhone, riderPicture } =
-    req.body;
-
-  if (!orderId || !riderId) {
-    throw new Error("Order ID and rider ID are required");
-  }
-
-  const result = await assignRiderToOrder({
-    orderId,
-    riderId,
-    riderUserId,
-    riderName,
-    riderPhone,
-    riderPicture,
-  });
-
-  if (!result.success) {
-    return res.status(409).json({
-      success: false,
-      message: "Order not found or already assigned",
-    });
-  }
-
-  return res.status(200).json({
-    success: true,
-    order: result.order,
-  });
-});
+// [DELETED] PUT /assign/rider HTTP entry (assignOrderToRider) — the
+// primary assignment path is the rider.order_accepted consumer calling
+// assignRiderToOrder() above directly; this HTTP wrapper had no callers.
 
 // ─── [MOVED] Rider-facing read endpoints deleted ────────────
 // current/history/ready-order reads for rider dashboards and the

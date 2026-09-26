@@ -1,6 +1,6 @@
 import type { Channel, ConsumeMessage } from "amqplib";
 
-// ─── Consumer resilience: retries with backoff + DLQ ────────
+// ─── Consumer resilience: retries with backoff + DLQ ─────────
 // A failed message must never be silently dropped or left stuck unacked.
 // Failures are retried with exponential backoff (via a parking-lot queue
 // with per-message TTL that dead-letters back to the main queue — delay

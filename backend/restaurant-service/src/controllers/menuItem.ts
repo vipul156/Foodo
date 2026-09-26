@@ -2,8 +2,8 @@ import { MenuItem } from "../models/MenuItem.js";
 import { tryCatch } from "@foodo/backend-common";
 import { AuthRequest } from "@foodo/backend-common";
 import { Restaurant } from "../models/Restaurant.js";
-import { dataUri } from "../config/dataUri.js";
-import { uploadToCloudinary } from "../config/cloudinary-upload.js";
+import { dataUri } from "@foodo/backend-common/files";
+import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 
 export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) throw new Error("User not found");

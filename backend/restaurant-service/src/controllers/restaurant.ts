@@ -1,5 +1,5 @@
-import { uploadToCloudinary } from "../config/cloudinary-upload.js";
-import { dataUri } from "../config/dataUri.js";
+import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
+import { dataUri } from "@foodo/backend-common/files";
 import { AuthRequest } from "@foodo/backend-common";
 import { tryCatch } from "@foodo/backend-common";
 import { Restaurant } from "../models/Restaurant.js";

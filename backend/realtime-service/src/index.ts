@@ -3,7 +3,6 @@ import cors from "cors";
 import http from "http";
 import cookieSession from "cookie-session";
 import { initSocket } from "./socket.js";
-import { interRoute } from "./routes/internal.js";
 import { connectRealtimeEvents } from "./config/rabbitmq.js";
 import { connectRedisAdapter } from "./config/redis.js";
 import serverlessHttp from "serverless-http";
@@ -25,7 +24,9 @@ app.use(
 );
 app.use(express.json())
 
-app.use("/api/internal",interRoute)
+// [REMOVED] The /api/internal/emit HTTP endpoint — socket broadcasts are
+// consumed exclusively from the RabbitMQ fanout exchange now (the last
+// HTTP caller, rider-service's order-ready consumer, was migrated).
 
 const server = http.createServer(app)
 initSocket(server)

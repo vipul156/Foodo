@@ -708,6 +708,9 @@ importers:
       '@foodo/types':
         specifier: workspace:*
         version: link:../types
+      datauri:
+        specifier: 'catalog:'
+        version: 4.1.0
       express:
         specifier: ^4.0.0 || ^5.0.0
         version: 5.2.1
@@ -718,6 +721,9 @@ importers:
         specifier: ^2.0.0
         version: 2.4.0
     devDependencies:
+      '@types/amqplib':
+        specifier: 'catalog:'
+        version: 0.10.8
       '@types/bcrypt':
         specifier: 'catalog:'
         version: 6.0.0
@@ -733,6 +739,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
+      amqplib:
+        specifier: 'catalog:'
+        version: 2.0.1
       bcrypt:
         specifier: 'catalog:'
         version: 6.0.0

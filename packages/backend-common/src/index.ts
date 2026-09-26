@@ -18,9 +18,6 @@ export * from "./middlewares/isAuth.js";
 // tryCatch (plain) + tryCatchStatus (admin's status-preserving variant)
 export * from "./middlewares/trycatch.js";
 
-// Service-to-service INTERNAL_SERVICE_KEY header check
-export * from "./middlewares/internal.js";
-
 // Memory-storage single-file upload (multer .single("file"))
 export * from "./middlewares/multer.js";
 

@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import cookieSession from "cookie-session";
 import { adminRoutes } from "./routes/admin.js";
 import serverlessHttp from "serverless-http";
-import connectDB from "./config/db.js";
+import connectDB from "@foodo/backend-common/db";
 
 dotenv.config();
 
