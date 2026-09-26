@@ -335,43 +335,70 @@ resources:
   Outputs:
     EventsTopicArn:
       Value: !Ref EventsTopic
-      Export: { Name: ${self:service}-${sls:stage}-EventsTopicArn }
+      Export:
+        Name: ${self:service}-${sls:stage}-EventsTopicArn
+
     UsersTable:
       Value: ${self:service}-${sls:stage}-users
-      Export: { Name: ${self:service}-${sls:stage}-UsersTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-UsersTable
+
     RestaurantsTable:
       Value: ${self:service}-${sls:stage}-restaurants
-      Export: { Name: ${self:service}-${sls:stage}-RestaurantsTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-RestaurantsTable
+
     RidersTable:
       Value: ${self:service}-${sls:stage}-riders
-      Export: { Name: ${self:service}-${sls:stage}-RidersTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-RidersTable
+
     OrdersTable:
       Value: ${self:service}-${sls:stage}-orders
-      Export: { Name: ${self:service}-${sls:stage}-OrdersTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-OrdersTable
+
     MenuItemsTable:
       Value: ${self:service}-${sls:stage}-menu-items
-      Export: { Name: ${self:service}-${sls:stage}-MenuItemsTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-MenuItemsTable
+
     CartsTable:
       Value: ${self:service}-${sls:stage}-carts
-      Export: { Name: ${self:service}-${sls:stage}-CartsTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-CartsTable
+
     AddressesTable:
       Value: ${self:service}-${sls:stage}-addresses
-      Export: { Name: ${self:service}-${sls:stage}-AddressesTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-AddressesTable
+
     WebhookDedupeTable:
       Value: ${self:service}-${sls:stage}-webhook-dedupe
-      Export: { Name: ${self:service}-${sls:stage}-WebhookDedupeTable }
+      Export:
+        Name: ${self:service}-${sls:stage}-WebhookDedupeTable
+
     PaymentQueueUrl:
       Value: !Ref PaymentQueue
-      Export: { Name: ${self:service}-${sls:stage}-PaymentQueueUrl }
+      Export:
+        Name: ${self:service}-${sls:stage}-PaymentQueueUrl
+
     OrderQueueUrl:
       Value: !Ref OrderQueue
-      Export: { Name: ${self:service}-${sls:stage}-OrderQueueUrl }
+      Export:
+        Name: ${self:service}-${sls:stage}-OrderQueueUrl
+
     RestaurantRiderEventsQueueUrl:
       Value: !Ref RestaurantRiderEventsQueue
-      Export: { Name: ${self:service}-${sls:stage}-RestaurantRiderEventsQueueUrl }
+      Export:
+        Name: ${self:service}-${sls:stage}-RestaurantRiderEventsQueueUrl
+
     RiderEventsQueueUrl:
       Value: !Ref RiderEventsQueue
-      Export: { Name: ${self:service}-${sls:stage}-RiderEventsQueueUrl }
+      Export:
+        Name: ${self:service}-${sls:stage}-RiderEventsQueueUrl
+
     RealtimeQueueUrl:
       Value: !Ref RealtimeQueue
-      Export: { Name: ${self:service}-${sls:stage}-RealtimeQueueUrl }
+      Export:
+        Name: ${self:service}-${sls:stage}-RealtimeQueueUrl

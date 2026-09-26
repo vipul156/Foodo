@@ -12,14 +12,18 @@
     "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
 
-    "deploy:core": "serverless deploy --stage ${STAGE:-dev}",
-    "deploy:services": "serverless deploy --stage ${STAGE:-dev}",
+    "deploy:core": "cd infra/core && serverless deploy",
+    "deploy:services": "cd infra/services && serverless deploy",
     "deploy": "pnpm run deploy:core && pnpm run deploy:services",
-    "remove:services": "serverless remove --stage ${STAGE:-dev}",
-    "remove:core": "serverless remove --stage ${STAGE:-dev}",
-    "logs:payment": "serverless logs --function paymentConsumer --tail --stage ${STAGE:-dev}",
-    "logs:reconcile": "serverless logs --function reconcile --tail --stage ${STAGE:-dev}"
+
+    "remove:services": "cd infra/services && serverless remove",
+    "remove:core": "cd infra/core && serverless remove",
+    "remove": "pnpm run remove:services && pnpm run remove:core",
+
+    "logs:payment": "cd infra/services && serverless logs --function paymentConsumer --tail",
+    "logs:reconcile": "cd infra/services && serverless logs --function reconcile --tail"
   },
+
   "devDependencies": {
     "prettier": "^3.6.2",
     "serverless": "catalog:",
