@@ -1,7 +1,7 @@
 {
   "name": "@foodo/utils-service",
   "version": "1.0.0",
-  "description": "Foodo utils service (payments, uploads).",
+  "description": "Foodo utils service (serverless Lambda — payments, webhooks, EventBridge reconciliation).",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,22 +13,20 @@
   "dependencies": {
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
-    "amqplib": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
     "axios": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
     "express-rate-limit": "catalog:",
-    "ioredis": "catalog:",
     "jsonwebtoken": "catalog:",
     "multer": "catalog:",
     "opossum": "catalog:",
-    "rate-limit-redis": "catalog:",
     "razorpay": "catalog:",
     "serverless-http": "catalog:",
     "stripe": "catalog:"
   },
   "devDependencies": {
-    "@types/amqplib": "catalog:",
+    "@types/aws-lambda": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",
     "@types/jsonwebtoken": "catalog:",

@@ -65,6 +65,24 @@ catalog:
   rate-limit-redis: ^6.0.1
   "@aws-sdk/client-lambda": ^3.1141.0
 
+  # AWS serverless runtime (DynamoDB, SQS, SNS) — one version line across
+  # all SDK v3 modules so they stay interoperable.
+  "@aws-sdk/client-dynamodb": ^3.1141.0
+  "@aws-sdk/lib-dynamodb": ^3.1141.0
+  "@aws-sdk/client-sns": ^3.1141.0
+  "@aws-sdk/client-sqs": ^3.1141.0
+
+  # Lambda event types (APIGatewayProxyEvent, Context…). The `aws-lambda`
+  # runtime module itself ships inside the AWS Lambda runtime — never add
+  # it as a dependency; only the types package is needed.
+  "@types/aws-lambda": ^8.10.150
+
+  # Serverless Framework deploy tooling (root-level, infra only)
+  serverless: ^3.38.0
+  serverless-esbuild: ^1.54.0
+  serverless-prune-plugin: ^2.0.2
+  esbuild: ^0.25.0
+
 # @types/multer still depends on the Express-4 type packages internally,
 # which drags a second Express type universe into every consumer and breaks
 # interface identity (RequestHandler not assignable across universes).

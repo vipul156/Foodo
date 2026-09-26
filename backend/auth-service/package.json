@@ -1,7 +1,7 @@
 {
   "name": "@foodo/auth-service",
   "version": "1.0.0",
-  "description": "Foodo authentication service (HTTP + internal worker handlers).",
+  "description": "Foodo authentication service (serverless Lambda — API Gateway HTTP API + DynamoDB).",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,10 +23,10 @@
     "express-rate-limit": "catalog:",
     "googleapis": "catalog:",
     "jsonwebtoken": "catalog:",
-    "mongoose": "catalog:",
     "serverless-http": "catalog:"
   },
   "devDependencies": {
+    "@types/aws-lambda": "catalog:",
     "@types/bcrypt": "catalog:",
     "@types/cookie-parser": "catalog:",
     "@types/cors": "catalog:",

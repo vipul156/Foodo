@@ -3,7 +3,7 @@ import cors from "cors";
 import http from "http";
 import cookieSession from "cookie-session";
 import { initSocket } from "./socket.js";
-import { connectRealtimeEvents } from "./config/rabbitmq.js";
+import { connectRealtimeEvents } from "./config/events.js";
 import { connectRedisAdapter } from "./config/redis.js";
 import serverlessHttp from "serverless-http";
 import dotenv from "dotenv"

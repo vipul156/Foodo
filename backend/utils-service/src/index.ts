@@ -3,9 +3,13 @@ dotenv.config();
 
 import express from "express";
 import serverlessHttp from "serverless-http";
+import type {
+  APIGatewayProxyEvent,
+  APIGatewayProxyResult,
+  Context,
+} from "aws-lambda";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
-import { connectRabbitMQ } from "./config/rabbitmq.js";
-import { startPaymentReconciliation } from "./config/reconciliation.js";
+import { reconcile as reconciliationHandler } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
 
 
@@ -38,9 +42,9 @@ app.use(express.urlencoded({ limit: "1mb", extended: true }));
 app.use("/api/utils/", cloudinaryRouter);
 app.use("/api/utils/payment", paymentRouter);
 
-connectRabbitMQ();
-// Periodic provider-vs-database payment audit (missed-webhook safety net)
-startPaymentReconciliation();
+// The reconciliation job is an EventBridge Scheduler target invoking the
+// exported `reconcile` handler — no setInterval boot code (Lambda has no
+// background timers).
 
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -52,7 +56,15 @@ app.get('/health', (req, res) => {
 
 const serverlessApp = serverlessHttp(app);
 
-export const handler = async (event: any, context: any) => {
+// ─── Lambda entrypoints (the ONLY entrypoints) ──────────────
+//   handler   — API Gateway HTTP API (payments, webhooks, signatures)
+//   reconcile — EventBridge Scheduler (hourly missed-webhook audit)
+export const handler = async (
+  event: APIGatewayProxyEvent,
+  context: Context,
+): Promise<APIGatewayProxyResult> => {
   context.callbackWaitsForEmptyEventLoop = false;
-  return serverlessApp(event, context);
+  return serverlessApp(event, context) as unknown as APIGatewayProxyResult;
 };
+
+export const reconcile = reconciliationHandler;

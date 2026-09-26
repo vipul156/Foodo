@@ -1,34 +1,27 @@
-import mongoose from "mongoose";
-import { AuthRequest } from "@foodo/backend-common";
-import { tryCatch } from "@foodo/backend-common";
-import { Address } from "../models/Address.js";
-import { Order } from "@foodo/backend-common/models";
-import { Cart } from "../models/Cart.js";
-import { Restaurant } from "@foodo/backend-common/models";
-import { MenuItem, IMenuItem } from "../models/MenuItem.js";
+import { AuthRequest, tryCatch } from "@foodo/backend-common";
+import {
+  getOrderById,
+  listOrdersByUser,
+  listOrdersByRestaurant,
+  isValidOrderId,
+  createOrder as createOrderRecord,
+  setOrderStatus,
+  cancelOrder,
+  claimOrderForPayment,
+  getRestaurantById,
+} from "@foodo/backend-common/dynamo";
+import { deliveryDistanceKm } from "@foodo/backend-common/aws";
+import {
+  getAddress,
+  getCartRows,
+  fetchMenuItemsForCart,
+} from "../dynamo/cart.js";
 import {
   publishEvent,
   publishOrderEvent,
-} from "../config/order.publisher.js";
-import { publishRealtimeEvent } from "../config/realtime.publisher.js";
-import { deliveryDistanceKm } from "../lib/distance.js";
+  publishRealtimeEvent,
+} from "../config/events.js";
 
-// Fire-and-forget realtime notification — published onto the RabbitMQ
-// fanout exchange the realtime service owns. The order hot path no longer
-// makes HTTP calls to the socket tier: no timeouts, no socket exhaustion,
-// and a realtime outage only delays UI updates, never the order API.
-function notifyRealtime(event: string, room: string, payload: unknown) {
-  publishRealtimeEvent(event, room, payload);
-}
-
-// Fire-and-forget rider release — frees the rider when their claimed or
-// assigned order is cancelled so they can go online and take new orders
-// again. Published as an order.cancelled event onto the fanout exchange
-// (was an HTTP PUT to the rider service): the rider service's consumer
-// performs the conditional release keyed to orderId, and a broker blip
-// only delays the release (persistent message) instead of failing it.
-// orderId travels along so the release is conditional ("free me ONLY if
-// still claimed by THIS order").
 function releaseRider(riderId: unknown, orderId?: unknown) {
   if (!riderId) return;
   publishOrderEvent("order.cancelled", {
@@ -47,205 +40,153 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("User not found");
   }
 
-  // NOTE: `distance` is deliberately NOT accepted from the body — the
-  // client used to send it, and it directly sets the rider's payout
-  // (riderAmount = ceil(distance) * 17). A malicious client could mint
-  // arbitrarily large payouts. Distance is computed server-side from
-  // the two coordinate pairs we already store.
+  // `distance` is never accepted from the body — it sets the rider's
+  // payout. Computed server-side from the two stored coordinate pairs.
   const { addressId, paymentMethod } = req.body;
 
   if (!paymentMethod) {
     throw new Error("Payment method is required");
   }
-
   if (!addressId) {
     throw new Error("Address is required");
   }
 
-  const address = await Address.findOne({ _id: addressId, userId: req.user._id });
-
+  const address = await getAddress(String(req.user._id), String(addressId));
   if (!address) {
     throw new Error("Address not found");
   }
 
-  const cartItems = await Cart.find({ userId: req.user._id })
-    .populate<{ itemId: IMenuItem }>("itemId")
-    .populate("restaurantId");
-
-  if (cartItems.length === 0) {
+  const cartRows = await getCartRows(String(req.user._id));
+  if (cartRows.length === 0) {
     throw new Error("Cart is empty");
   }
 
-  const firstCartItem = cartItems[0];
+  const restaurantId = cartRows[0]!.restaurantId;
 
-  if (!firstCartItem?.restaurantId) {
-    throw new Error("Restaurant not found");
-  }
-
-  const restaurantId = firstCartItem.restaurantId._id;
-
-  const restaurant = await Restaurant.findById(restaurantId);
-
+  const restaurant = await getRestaurantById(restaurantId);
   if (!restaurant) {
     throw new Error("No restaurant with this id");
   }
-
   if (!restaurant.isOpen) {
     throw new Error("Restaurant is closed");
   }
 
-  let subtotal = 0;
-  const orderItems = cartItems.map((cart) => {
-    const item = cart.itemId;
+  // Enrich cart rows with menu items (replaces populate("itemId")).
+  const menuById = await fetchMenuItemsForCart(
+    cartRows.map((r) => r.itemId),
+  );
 
+  let subtotal = 0;
+  const orderItems: {
+    itemId: string;
+    name: string;
+    price: number;
+    quantity: number;
+  }[] = [];
+
+  for (const row of cartRows) {
+    const item = menuById.get(row.itemId);
     if (!item) {
       throw new Error("Invalid cart item");
     }
-
-    const itemTotal = item.price * cart.quantity;
+    const itemTotal = item.price * row.quantity;
     subtotal += itemTotal;
-
-    return {
-      // Stored as ObjectId (ref MenuItem) — casts were the old string format
-      itemId: item._id,
+    orderItems.push({
+      itemId: item.id,
       name: item.name,
       price: item.price,
-      quantity: cart.quantity,
-    };
-  });
+      quantity: row.quantity,
+    });
+  }
 
   const deliveryFee = subtotal < 250 ? 49 : 0;
   const platformFee = 7;
   const totalAmount = subtotal + deliveryFee + platformFee;
 
-  // ─── Server-side distance & rider payout ──────────────────
-  // Haversine (with a road detour factor) between the restaurant's
-  // stored GeoJSON point and the saved address's stored point.
   const orderDistance = deliveryDistanceKm(
     restaurant.autoLocation.coordinates,
     address.location.coordinates,
   );
   const riderAmount = Math.ceil(orderDistance) * 17;
 
-  // Online payments get 15 minutes to complete before the order expires.
-  // COD has no payment window, so it never carries the expiry TTL.
   const isCod = paymentMethod === "cod";
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  const expiresAt = isCod
+    ? null
+    : new Date(Date.now() + 15 * 60 * 1000);
 
   const [longitude, latitude] = address.location.coordinates;
 
-  // ─── Transactional create: order + (COD) cart clear ───────
-  // If any step fails, both roll back — no orphaned orders from a
-  // failed cart delete, no carts wiped for an order that never got
-  // created. Online-payment flows still clear the cart in the payment
-  // consumer after the gateway confirms the money, so only the COD
-  // path deletes inside the transaction.
-  const session = await mongoose.startSession();
-  try {
-    let createdOrder!: mongoose.Document;
-    await session.withTransaction(async () => {
-      const [order] = await Order.create(
-        [
-          {
-            userId: req.user!._id.toString(),
-            addressId: addressId.toString(),
-            paymentMethod,
-            restaurantId: restaurantId.toString(),
-            restaurantName: restaurant.name,
-            // Frozen at creation so the live tracking map can draw the
-            // pickup → dropoff route even if the restaurant moves later.
-            restaurantLocation: {
-              latitude: restaurant.autoLocation.coordinates[1],
-              longitude: restaurant.autoLocation.coordinates[0],
-            },
-            riderId: null,
-            items: orderItems,
-            subtotal,
-            deliveryFee,
-            platformFee,
-            totalAmount,
-            distance: orderDistance,
-            riderAmount,
-            expiresAt,
-            deliveryAddress: {
-              formattedAddress: address.formatterAddress,
-              mobile: address.mobile,
-              latitude,
-              longitude,
-            },
-            paymentStatus: isCod ? "paid" : "pending",
-            status: "placed",
-          },
-        ],
-        { session },
-      );
-      if (!order) {
-        throw new Error("Order creation failed");
-      }
-      createdOrder = order;
+  // Transactional create: order + (COD) cart clear commit together via
+  // TransactWriteItems — notifications stay outside the transaction.
+  const order = await createOrderRecord(
+    {
+      userId: String(req.user._id),
+      restaurantId,
+      restaurantName: restaurant.name,
+      restaurantLocation: {
+        latitude: restaurant.autoLocation.coordinates[1]!,
+        longitude: restaurant.autoLocation.coordinates[0]!,
+      },
+      items: orderItems,
+      subtotal,
+      deliveryFee,
+      platformFee,
+      totalAmount,
+      distance: orderDistance,
+      riderAmount,
+      addressId: String(addressId),
+      deliveryAddress: {
+        formattedAddress: address.formatterAddress,
+        mobile: address.mobile,
+        latitude,
+        longitude,
+      },
+      paymentMethod,
+      paymentStatus: isCod ? "paid" : "pending",
+      expiresAt,
+    },
+    isCod ? { userId: String(req.user._id) } : undefined,
+  );
 
-      if (isCod) {
-        await Cart.deleteMany({ userId: req.user!._id }, { session });
-      }
+  if (isCod) {
+    await publishRealtimeEvent("order:new", `restaurant:${restaurantId}`, {
+      orderId: order.id,
     });
-
-    const order = createdOrder;
-
-    if (isCod) {
-      // Transaction committed — now tell everyone. Notifications are
-      // fire-and-forget and must stay OUTSIDE the transaction: the
-      // commit is the single point where the order becomes real.
-      notifyRealtime("order:new", `restaurant:${restaurantId}`, {
-        orderId: order._id,
-      });
-      notifyRealtime("order:new", `user:${restaurant.ownerId}`, {
-        orderId: order._id,
-      });
-      notifyRealtime("order:update", `user:${req.user._id}`, {
-        orderId: order._id,
-        status: "placed",
-      });
-    }
-
-    return res.status(201).json({
-      message: "Order created successfully",
-      orderId: order._id.toString(),
-      amount: totalAmount,
+    await publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
+      orderId: order.id,
     });
-  } finally {
-    await session.endSession();
+    await publishRealtimeEvent("order:update", `user:${req.user._id}`, {
+      orderId: order.id,
+      status: "placed",
+    });
   }
+
+  return res.status(201).json({
+    message: "Order created successfully",
+    orderId: order.id,
+    amount: totalAmount,
+  });
 });
 
-// [DELETED] GET /payment/:id (fetchOrderForPayment) — superseded by the
-// idempotent claim endpoint (POST /payment/claim/:id), which rejects
-// paid/cancelled/expired orders and returns the trusted amount.
+// ─── Restaurant Orders (keyset-paginated) ────────────────────
+// Same wire contract: nextCursor = "createdAt|id", bounded page sizes.
 
-// ─── Restaurant Orders (keyset-paginated) ───────────────────
-// Every response is bounded: default 50, hard cap 200, and deep pages
-// use keyset (createdAt+id cursor) so page N costs the same as page 1.
-// Deep pagination happens by following nextCursor, never by offset —
-// an offset scan degrades linearly while a keyset seek stays flat.
 const DEFAULT_ORDERS_LIMIT = 50;
 const MAX_ORDERS_LIMIT = 200;
 
 export const fetchRestaurantOrders = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
-  const { restaurantId } = req.params;
+  const restaurantId = req.params.restaurantId as string;
 
   if (!user) {
     throw new Error("Unauthorized");
   }
-
   if (!restaurantId) {
     throw new Error("Restaurant ID is required");
   }
 
-  // Sellers may only read their own restaurant's orders
-  const restaurant = await Restaurant.findById(restaurantId);
-
-  if (!restaurant || restaurant.ownerId.toString() !== user._id.toString()) {
+  const restaurant = await getRestaurantById(restaurantId);
+  if (!restaurant || restaurant.ownerId !== String(user._id)) {
     throw new Error("Unauthorized");
   }
 
@@ -255,73 +196,46 @@ export const fetchRestaurantOrders = tryCatch(async (req: AuthRequest, res) => {
     MAX_ORDERS_LIMIT,
   );
 
-  // Keyset cursor: "createdAt|_id" of the last order of the previous page.
-  // Ties on createdAt are broken by _id so pages never overlap or skip.
-  const filter: Record<string, unknown> = { restaurantId, paymentStatus: "paid" };
-  if (typeof req.query.cursor === "string" && req.query.cursor) {
-    const [ts, id] = req.query.cursor.split("|");
-    const cursorDate = ts ? new Date(ts) : null;
-    if (
-      cursorDate &&
-      !Number.isNaN(cursorDate.getTime()) &&
-      id &&
-      mongoose.isValidObjectId(id)
-    ) {
-      filter.$or = [
-        { createdAt: { $lt: cursorDate } },
-        { createdAt: cursorDate, _id: { $lt: new mongoose.Types.ObjectId(id) } },
-      ];
-    }
-  }
-
-  // Fetch one extra row to detect a next page without a count query.
-  const orders = await Order.find(filter)
-    .sort({ createdAt: -1, _id: -1 })
-    .limit(limit + 1)
-    .select("-paymentIntent");
-
-  const hasMore = orders.length > limit;
-  const page = hasMore ? orders.slice(0, limit) : orders;
-
-  const last = page[page.length - 1];
-  const nextCursor =
-    hasMore && last?.createdAt
-      ? `${new Date(last.createdAt).toISOString()}|${last._id.toString()}`
-      : null;
+  const { orders, nextCursor } = await listOrdersByRestaurant(
+    restaurantId,
+    {
+      limit,
+      cursor:
+        typeof req.query.cursor === "string" && req.query.cursor
+          ? req.query.cursor
+          : null,
+    },
+  );
 
   return res.status(200).json({
     success: true,
-    count: page.length,
-    orders: page,
+    count: orders.length,
+    orders,
     nextCursor,
   });
 });
 
-// ─── Seller Analytics (server-side rollups) ─────────────────
-// One aggregation replaces shipping the entire order collection to the
-// browser for client-side math: daily revenue buckets, window totals,
-// previous-window comparison, completion counts, top items and weekday
-// totals. Everything is computed in Mongo over the compound index
-// { restaurantId, paymentStatus, createdAt } — the response is a few KB
-// regardless of order volume.
+// ─── Seller Analytics (computed in Lambda, not the DB) ───────
+// DynamoDB has no $facet. The bounded window query (paid orders of one
+// restaurant since the previous window start) replaces the aggregation:
+// fetch once over the restaurant-orders GSI, roll up in memory. Same
+// response shape; volume per restaurant per 60 days is dashboard-sized.
+
 const SELLER_STATUSES_EXCLUDED = ["cancelled"];
 
 export const getRestaurantAnalytics = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
-  const { restaurantId } = req.params;
+  const restaurantId = req.params.restaurantId as string;
 
   if (!user) {
     throw new Error("Unauthorized");
   }
-
   if (!restaurantId) {
     throw new Error("Restaurant ID is required");
   }
 
-  const restaurant = await Restaurant.findById(restaurantId);
-
-  if (!restaurant || restaurant.ownerId.toString() !== user._id.toString()) {
+  const restaurant = await getRestaurantById(restaurantId);
+  if (!restaurant || restaurant.ownerId !== String(user._id)) {
     throw new Error("Unauthorized");
   }
 
@@ -334,136 +248,56 @@ export const getRestaurantAnalytics = tryCatch(async (req: AuthRequest, res) => 
   const prevStart = new Date(windowStart);
   prevStart.setUTCDate(prevStart.getUTCDate() - windowDays);
 
-  // All analytics math runs on UTC day boundaries. The frontend buckets by
-  // its local day; a restaurant in a half-hour-offset timezone can shift a
-  // midnight order ±1 bucket. Acceptable for dashboards; revisit with a
-  // per-restaurant timezone if merchants ever complain about day edges.
-  const [result] = await Order.aggregate<{
-    window: { revenue: number; orders: number }[];
-    previous: { revenue: number; orders: number }[];
-    delivered: { n: number }[];
-    cancelled: { n: number }[];
-    days: { _id: string; revenue: number; orders: number }[];
-    weekdays: { _id: number; revenue: number }[];
-    topItems: { _id: string; revenue: number; qty: number }[];
-  }>([
-    {
-      $match: {
-        restaurantId: restaurantId,
-        paymentStatus: "paid",
-        createdAt: { $gte: prevStart },
-      },
-    },
-    {
-      $facet: {
-        // Current window vs preceding same-length window
-        window: [
-          { $match: { createdAt: { $gte: windowStart } } },
-          {
-            $group: {
-              _id: null,
-              revenue: { $sum: "$totalAmount" },
-              orders: { $sum: 1 },
-            },
-          },
-        ],
-        previous: [
-          { $match: { createdAt: { $lt: windowStart } } },
-          {
-            $group: {
-              _id: null,
-              revenue: { $sum: "$totalAmount" },
-              orders: { $sum: 1 },
-            },
-          },
-        ],
-        delivered: [
-          { $match: { status: "delivered" } },
-          { $count: "n" },
-        ],
-        cancelled: [
-          { $match: { status: "cancelled" } },
-          { $count: "n" },
-        ],
-        // Daily buckets for the chart (current window only)
-        days: [
-          { $match: { createdAt: { $gte: windowStart } } },
-          {
-            $group: {
-              _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-              revenue: { $sum: "$totalAmount" },
-              orders: { $sum: 1 },
-            },
-          },
-          { $sort: { _id: 1 } },
-        ],
-        // Revenue by weekday across BOTH windows (matches the old
-        // client-side calc which used the whole fetched history)
-        weekdays: [
-          {
-            $group: {
-              _id: { $dayOfWeek: "$createdAt" },
-              revenue: { $sum: "$totalAmount" },
-            },
-          },
-          { $sort: { _id: 1 } },
-        ],
-        // Best sellers — unwinding items is fine here because the $match
-        // above already bounded the docset to ~2 windows of one restaurant
-        topItems: [
-          { $unwind: "$items" },
-          {
-            $group: {
-              _id: "$items.name",
-              revenue: { $sum: { $multiply: ["$items.price", "$items.quantity"] } },
-              qty: { $sum: "$items.quantity" },
-            },
-          },
-          { $sort: { revenue: -1 } },
-          { $limit: 5 },
-        ],
-      },
-    },
-  ]);
+  // One bounded GSI query (newest→oldest until prevStart), rollups here.
+  const { orders } = await listOrdersByRestaurant(restaurantId, { limit: 500 });
+  const paid = orders.filter(
+    (o) =>
+      o.paymentStatus === "paid" &&
+      !SELLER_STATUSES_EXCLUDED.includes(o.status) &&
+      new Date(o.createdAt) >= prevStart,
+  );
 
-  // $facet always returns every facet key as an array (empty when the
-  // pipeline matched nothing), so no null-guarding is needed — but a
-  // missing aggregation result still means "no data".
-  const safe = result ?? {
-    window: [],
-    previous: [],
-    delivered: [],
-    cancelled: [],
-    days: [],
-    weekdays: [],
-    topItems: [],
-  };
+  let windowRevenue = 0, windowOrders = 0, prevRevenue = 0;
+  let delivered = 0, cancelled = 0;
+  const dayMap = new Map<string, { revenue: number; orders: number }>();
+  const weekdayTotals = new Array<number>(7).fill(0);
+  const itemMap = new Map<string, { revenue: number; qty: number }>();
 
-  const prevRevenue = safe.previous[0]?.revenue ?? 0;
-  const windowRevenue = safe.window[0]?.revenue ?? 0;
-  const windowOrders = safe.window[0]?.orders ?? 0;
-  const deliveredCount = safe.delivered[0]?.n ?? 0;
-  const cancelledCount = safe.cancelled[0]?.n ?? 0;
+  for (const o of paid) {
+    const created = new Date(o.createdAt);
+    weekdayTotals[created.getUTCDay()]! += o.totalAmount;
 
-  const dayMap = new Map(safe.days.map((d) => [d._id, d]));
+    if (created >= windowStart) {
+      windowRevenue += o.totalAmount;
+      windowOrders += 1;
+
+      const key = o.createdAt.slice(0, 10);
+      const bucket = dayMap.get(key) ?? { revenue: 0, orders: 0 };
+      bucket.revenue += o.totalAmount;
+      bucket.orders += 1;
+      dayMap.set(key, bucket);
+    } else {
+      prevRevenue += o.totalAmount;
+    }
+
+    if (o.status === "delivered") delivered += 1;
+    if (o.status === "cancelled") cancelled += 1;
+
+    for (const item of o.items) {
+      const agg = itemMap.get(item.name) ?? { revenue: 0, qty: 0 };
+      agg.revenue += item.price * item.quantity;
+      agg.qty += item.quantity;
+      itemMap.set(item.name, agg);
+    }
+  }
+
   const buckets = Array.from({ length: windowDays }, (_, i) => {
     const d = new Date(windowStart);
     d.setUTCDate(d.getUTCDate() + i);
     const key = d.toISOString().slice(0, 10);
     const hit = dayMap.get(key);
-    return {
-      date: key,
-      revenue: hit?.revenue ?? 0,
-      orders: hit?.orders ?? 0,
-    };
+    return { date: key, revenue: hit?.revenue ?? 0, orders: hit?.orders ?? 0 };
   });
-
-  // Mongo $dayOfWeek: 1=Sunday … 7=Saturday → shift to JS getDay()
-  // indexing (0=Sunday … 6=Saturday)
-  const weekdayTotals = new Array<number>(7).fill(0);
-  for (const wd of safe.weekdays) {
-    weekdayTotals[wd._id - 1] = wd.revenue;
-  }
 
   const change =
     prevRevenue > 0
@@ -481,19 +315,18 @@ export const getRestaurantAnalytics = tryCatch(async (req: AuthRequest, res) => 
       avgOrder: windowOrders ? Math.round(windowRevenue / windowOrders) : 0,
       change,
       prevRevenue,
-      delivered: deliveredCount,
-      cancelled: cancelledCount,
+      delivered,
+      cancelled,
       completionRate:
-        deliveredCount + cancelledCount > 0
-          ? Math.round((deliveredCount / (deliveredCount + cancelledCount)) * 100)
+        delivered + cancelled > 0
+          ? Math.round((delivered / (delivered + cancelled)) * 100)
           : null,
       buckets,
       weekdayTotals,
-      topItems: safe.topItems.map((t) => ({
-        name: t._id,
-        revenue: t.revenue,
-        qty: t.qty,
-      })),
+      topItems: [...itemMap.entries()]
+        .sort((a, b) => b[1].revenue - a[1].revenue)
+        .slice(0, 5)
+        .map(([name, agg]) => ({ name, revenue: agg.revenue, qty: agg.qty })),
     },
   });
 });
@@ -502,120 +335,97 @@ const ACCEPTED_STATUSES = ["preparing", "ready_for_rider", "accepted"];
 
 export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
-  const { orderId } = req.params;
+  const orderId = req.params.orderId as string;
   const { status } = req.body;
 
   if (!user) {
     throw new Error("Unauthorized");
   }
-
   if (!ACCEPTED_STATUSES.includes(status)) {
     throw new Error("Invalid status");
   }
-
   if (!orderId) {
     throw new Error("Order ID is required");
   }
 
-  const order = await Order.findById(orderId);
-
+  const order = await getOrderById(orderId);
   if (!order) {
     throw new Error("No order found");
   }
-
   if (order.paymentStatus !== "paid") {
     throw new Error("Order not paid");
   }
 
-  const restaurant = await Restaurant.findById(order.restaurantId);
-
+  const restaurant = await getRestaurantById(order.restaurantId);
   if (!restaurant) {
     throw new Error("No restaurant found");
   }
-
-  if (restaurant.ownerId.toString() !== user._id.toString()) {
+  if (restaurant.ownerId !== String(user._id)) {
     throw new Error("Unauthorized");
   }
 
-  order.status = status;
-  await order.save();
+  const updated = await setOrderStatus(orderId, status);
+  if (!updated) {
+    throw new Error("Order not paid");
+  }
 
-  notifyRealtime("order:update", `user:${order.userId}`, {
-    orderId: order._id,
-    status: order.status,
+  await publishRealtimeEvent("order:update", `user:${updated.userId}`, {
+    orderId: updated.id,
+    status: updated.status,
   });
-  notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
-    orderId: order._id,
-    status: order.status,
-  });
-  // Seller sockets join user:{id} rooms, not restaurant:{id} — emit to the
-  // owner too so their own board updates without a refresh.
-  notifyRealtime("order:update", `user:${restaurant.ownerId}`, {
-    orderId: order._id,
-    status: order.status,
+  await publishRealtimeEvent(
+    "order:update",
+    `restaurant:${updated.restaurantId}`,
+    { orderId: updated.id, status: updated.status },
+  );
+  await publishRealtimeEvent("order:update", `user:${restaurant.ownerId}`, {
+    orderId: updated.id,
+    status: updated.status,
   });
 
-  if(status === "ready_for_rider") {
-    console.log("Order is ready for rider",order._id)
-
+  if (status === "ready_for_rider") {
     await publishEvent("order:ready_for_rider", {
-      orderId: order._id,
-      restaurantId: restaurant._id,
-      // Plain GeoJSON object — Mongoose subdocs carry $-prefixed keys that
-      // break $near on the rider service's geo query.
+      orderId: updated.id,
+      restaurantId: updated.restaurantId,
       location: {
         type: "Point",
         coordinates: restaurant.autoLocation.coordinates,
       },
     });
-    
-    console.log("Event published")
   }
 
-  // Seller cancelled an order that already has a rider on it → free them.
-  // Includes the pre-assignment claim window (status ready_for_rider, no
-  // rider yet) — the rider may have claimed it but assignment hasn't
-  // landed; releasing by orderId covers both.
-  if (status === "cancelled" && order.riderId) {
-    releaseRider(order.riderId, order._id);
+  if (status === "cancelled" && updated.riderId) {
+    releaseRider(updated.riderId, updated.id);
   }
 
   return res.status(200).json({
     message: "Order updated successfully",
-    order,
+    order: updated,
   });
 });
 
-// ─── Cancel Order (customer or seller) ──────────────────────
-// Allowed while the order has no rider on the road yet: before assignment,
-// or while assigned but not picked up. Releases the rider automatically.
-export const cancelOrder = tryCatch(async (req: AuthRequest, res) => {
+export const cancelOrderController = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
   if (!user) {
     throw new Error("Unauthorized");
   }
 
-  const { orderId } = req.params;
-
+  const orderId = req.params.orderId as string;
   if (!orderId) {
     throw new Error("Order ID is required");
   }
 
-  const order = await Order.findById(orderId);
-
+  const order = await getOrderById(orderId);
   if (!order) {
     throw new Error("No order found");
   }
 
-  const isOwner = order.userId.toString() === user._id.toString();
-  const isSeller = order.restaurantName && user.role === "seller";
+  const isOwner = order.userId === String(user._id);
+  const isSellerUser = order.restaurantName && user.role === "seller";
 
-  // Sellers may cancel through their restaurant; customers only their own order
-  if (isSeller) {
-    const restaurant = await Restaurant.findById(order.restaurantId);
-    if (!restaurant || restaurant.ownerId.toString() !== user._id.toString()) {
+  if (isSellerUser) {
+    const restaurant = await getRestaurantById(order.restaurantId);
+    if (!restaurant || restaurant.ownerId !== String(user._id)) {
       throw new Error("Unauthorized");
     }
   } else if (!isOwner) {
@@ -625,34 +435,35 @@ export const cancelOrder = tryCatch(async (req: AuthRequest, res) => {
   if (order.status === "delivered") {
     throw new Error("Delivered orders cannot be cancelled");
   }
-
   if (order.status === "picked_up") {
     throw new Error("Order is already picked up — cancellation not possible");
   }
 
-  const hadRiderAssigned = order.status === "rider_assigned";
-
-  order.status = "cancelled";
-  await order.save();
-
-  // Free the rider if one was on the way
-  if (hadRiderAssigned && order.riderId) {
-    releaseRider(order.riderId, order._id);
+  const cancelled = await cancelOrder(orderId);
+  if (!cancelled) {
+    // The conditional update matched nothing — the pre-checks above
+    // already filtered delivered/picked_up, so this is a lost race
+    // (someone else delivered or cancelled first).
+    throw new Error("Order can no longer be cancelled");
   }
 
-  // Customer + seller dashboards refresh instantly
-  notifyRealtime("order:update", `user:${order.userId}`, {
-    orderId: order._id,
+  if (order.status === "rider_assigned" && order.riderId) {
+    releaseRider(order.riderId, order.id);
+  }
+
+  await publishRealtimeEvent("order:update", `user:${order.userId}`, {
+    orderId: order.id,
     status: "cancelled",
   });
-  notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
-    orderId: order._id,
-    status: "cancelled",
-  });
-  const cancelRestaurant = await Restaurant.findById(order.restaurantId);
+  await publishRealtimeEvent(
+    "order:update",
+    `restaurant:${order.restaurantId}`,
+    { orderId: order.id, status: "cancelled" },
+  );
+  const cancelRestaurant = await getRestaurantById(order.restaurantId);
   if (cancelRestaurant) {
-    notifyRealtime("order:update", `user:${cancelRestaurant.ownerId}`, {
-      orderId: order._id,
+    await publishRealtimeEvent("order:update", `user:${cancelRestaurant.ownerId}`, {
+      orderId: order.id,
       status: "cancelled",
     });
   }
@@ -660,21 +471,17 @@ export const cancelOrder = tryCatch(async (req: AuthRequest, res) => {
   return res.status(200).json({
     success: true,
     message: "Order cancelled successfully",
-    order,
+    order: cancelled,
   });
 });
 
 export const getMyOrders = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
   if (!user) {
     throw new Error("Unauthorized");
   }
 
-  const orders = await Order.find({ 
-    userId: user._id,
-    paymentStatus: "paid"
-   }).sort({ createdAt: -1 });
+  const orders = await listOrdersByUser(String(user._id));
 
   return res.status(200).json({
     success: true,
@@ -683,38 +490,29 @@ export const getMyOrders = tryCatch(async (req: AuthRequest, res) => {
   });
 });
 
-// ─── Order Payment Status (read-only, poll-friendly) ────────
-// The frontend polls this after the payment gateway redirect while the
-// webhook (source of truth) flips the order to paid in the background.
-// Strictly read-only — the client can never fulfill a payment here.
 export const getOrderPaymentStatus = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
   if (!user) {
     throw new Error("Unauthorized");
   }
 
-  const { orderId } = req.params;
-
+  const orderId = req.params.orderId as string;
   if (!orderId) {
     return res.status(400).json({ message: "Order ID is required" });
   }
 
-  const order = await Order.findById(orderId).select(
-    "userId status paymentStatus totalAmount",
-  );
-
+  const order = await getOrderById(orderId);
   if (!order) {
     return res.status(404).json({ message: "No order found" });
   }
 
-  if (order.userId.toString() !== user._id.toString()) {
+  if (order.userId !== String(user._id)) {
     throw new Error("Unauthorized");
   }
 
   return res.status(200).json({
     success: true,
-    orderId: order._id,
+    orderId: order.id,
     paymentStatus: order.paymentStatus,
     status: order.status,
     totalAmount: order.totalAmount,
@@ -723,39 +521,32 @@ export const getOrderPaymentStatus = tryCatch(async (req: AuthRequest, res) => {
 
 export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
-
-  const { orderId } = req.params;
+  const orderId = req.params.orderId as string;
 
   if (!user) {
     throw new Error("Unauthorized");
   }
-
   if (!orderId) {
     throw new Error("Order ID is required");
   }
 
-  const order = await Order.findById(orderId);
-
+  const order = await getOrderById(orderId);
   if (!order) {
     throw new Error("No order found");
   }
-
-  if (order.userId.toString() !== user._id.toString()) {
+  if (order.userId !== String(user._id)) {
     throw new Error("Unauthorized");
   }
 
-  // Enrich items with menu images (the embedded snapshot stores only
-  // name/price/quantity) — one batched lookup, no per-item queries.
-  const itemIds = order.items.map((i) => i.itemId);
-  const menuItems = await MenuItem.find({ _id: { $in: itemIds } }).select(
-    "image",
+  // Enrich items with menu images — batched lookups, no per-item queries.
+  const menuById = await fetchMenuItemsForCart(
+    order.items.map((i) => i.itemId),
   );
-  const imageById = new Map(menuItems.map((m) => [m._id.toString(), m.image]));
 
-  const orderObj = order.toObject() as any;
-  orderObj.items = orderObj.items.map((item: any) => ({
+  const orderObj: any = { ...order, pk: undefined, sk: undefined };
+  orderObj.items = order.items.map((item) => ({
     ...item,
-    image: imageById.get(item.itemId) ?? null,
+    image: menuById.get(item.itemId)?.image ?? null,
   }));
 
   return res.status(200).json({
@@ -764,158 +555,44 @@ export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
   });
 });
 
+// ─── Internal: Claim an Order for Payment Initiation ─────────
+// utils calls this before creating a provider intent. Atomic +
+// idempotent via the conditional update in the repository.
 
-// ─── Core: assign a rider to an order (atomic claim) ────────
-// Shared by the internal HTTP endpoint and the rider.order_accepted
-// consumer. The conditional update on riderId: null makes double-assign
-// impossible; a false result means the order is gone, taken, or expired.
-export const assignRiderToOrder = async (payload: {
-  orderId: string;
-  riderId: string;
-  riderUserId?: string;
-  riderName?: string;
-  riderPhone?: number | string;
-  riderPicture?: string | null;
-}): Promise<{ success: boolean; order?: any }> => {
-  // Atomic order claim — the rider-facing half of the double-assignment
-  // guard. Conditions: no rider yet AND still ready_for_rider AND paid.
-  // Without the status guard a race with cancelOrder could assign a rider
-  // to an already-cancelled order (the seller's release call would then
-  // find nothing to free). Matches nothing → the rider-service consumer
-  // compensates by freeing the rider.
-  const orderUpdate = await Order.findOneAndUpdate(
-    {
-      _id: payload.orderId,
-      riderId: null,
-      status: "ready_for_rider",
-      paymentStatus: "paid",
-    },
-    {
-      riderId: payload.riderId,
-      riderName: payload.riderName,
-      riderPhone: payload.riderPhone,
-      riderPicture: payload.riderPicture || null,
-      status: "rider_assigned",
-    },
-    { new: true },
-  );
-
-  if (!orderUpdate) {
-    return { success: false };
-  }
-
-  // Restaurant board (restaurantId room) — restaurantId is an ObjectId,
-  // the restaurant room expects the same id the socket joined with.
-  publishRealtimeEvent(
-    "order:rider_assigned",
-    `restaurant:${orderUpdate.restaurantId}`,
-    { order: orderUpdate },
-  );
-  // Seller's own socket (user room) + customer's "rider is on the way"
-  publishRealtimeEvent("order:rider_assigned", `user:${orderUpdate.userId}`, {
-    order: orderUpdate,
-  });
-
-  const assignedRestaurant = await Restaurant.findById(orderUpdate.restaurantId);
-  if (assignedRestaurant) {
-    publishRealtimeEvent(
-      "order:rider_assigned",
-      `user:${assignedRestaurant.ownerId}`,
-      { order: orderUpdate },
-    );
-  }
-  // The rider's own dashboard so Active Delivery flips without waiting
-  // for the next poll
-  if (payload.riderUserId) {
-    publishRealtimeEvent("order:rider_assigned", `user:${payload.riderUserId}`, {
-      order: orderUpdate,
-    });
-  }
-
-  return { success: true, order: orderUpdate };
-};
-
-// [DELETED] PUT /assign/rider HTTP entry (assignOrderToRider) — the
-// primary assignment path is the rider.order_accepted consumer calling
-// assignRiderToOrder() above directly; this HTTP wrapper had no callers.
-
-// ─── [MOVED] Rider-facing read endpoints deleted ────────────
-// current/history/ready-order reads for rider dashboards and the
-// payment reconciliation candidates read now run IN-PROCESS in the
-// consuming services via the shared read-only queries in
-// @foodo/backend-common/models (findCurrentOrderForRider,
-// findDeliveryHistoryForRider, findReadyOrdersNearRider,
-// findReconciliationCandidates) — no HTTP hop, identical logic.
-
-// [REMOVED] PUT /update/status/rider (updateOrderStatusRider) — the
-// picked_up / delivered transitions now arrive as rider.order_status_changed
-// events on the fanout exchange (see config/riderEvent.consumer.ts): the
-// rider app no longer blocks on an HTTP round-trip through two services,
-// and the $ne-style status guards make the transition idempotent.
-
-// ─── Internal: Claim an Order for Payment Initiation ────────
-// utils calls this BEFORE creating a provider payment intent. Atomic and
-// idempotent: paid/cancelled orders are rejected, and any previously
-// attached provider order id is handed back so double-clicks and retry
-// storms re-issue the SAME intent instead of minting duplicates. The
-// amount also comes from this claim, closing the trust gap where the
-// internal amount fetch could race an order update.
-export const claimOrderForPayment = tryCatch(async (req, res) => {
+export const claimOrderForPaymentController = tryCatch(async (req, res) => {
   if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
     throw new Error("Forbidden");
   }
 
-  const orderId = req.params.orderId || req.params.id;
+  const orderId = (req.params.orderId || req.params.id) as string;
   const { provider } = req.body ?? {};
 
   if (!orderId) {
     return res.status(400).json({ message: "Order ID is required" });
   }
-
   if (provider !== "razorpay" && provider !== "stripe") {
     return res.status(400).json({ message: "Valid provider is required" });
   }
-
-  const order = await Order.findOneAndUpdate(
-    {
-      _id: orderId,
-      paymentStatus: { $ne: "paid" },
-      status: { $ne: "cancelled" },
-    },
-    {
-      $set: {
-        "paymentIntent.provider": provider,
-        "paymentIntent.initiatedAt": new Date(),
-      },
-    },
-    { new: true },
-  ).select("totalAmount paymentIntent");
-
-  // TTL'd unpaid orders are already gone → same 409 as paid/cancelled
-  if (!order) {
+  if (!isValidOrderId(orderId)) {
     return res.status(409).json({
       message: "Order not claimable (paid, cancelled, or expired)",
     });
   }
 
-  const attached =
-    order.paymentIntent?.provider === provider
-      ? order.paymentIntent?.providerOrderId ?? null
-      : null;
+  const claim = await claimOrderForPayment(orderId, provider);
+
+  // TTL'd unpaid orders are already gone → same 409 as paid/cancelled
+  if (!claim) {
+    return res.status(409).json({
+      message: "Order not claimable (paid, cancelled, or expired)",
+    });
+  }
 
   return res.status(200).json({
     success: true,
-    orderId: order._id,
-    amount: order.totalAmount,
+    orderId: claim.order.id,
+    amount: claim.order.totalAmount,
     currency: "INR",
-    attachedProviderOrderId: attached,
+    attachedProviderOrderId: claim.attachedProviderOrderId,
   });
 });
-
-// [REMOVED] PUT /payment/attached/:id (attachProviderOrder) — utils now
-// publishes payment.intent.created on the fanout exchange and THIS
-// service's rider-event consumer stamps the provider order id (see
-// config/riderEvent.consumer.ts). Idempotent by construction: the stamp
-// is a $set of the same value, so redeliveries are no-ops.
-
-

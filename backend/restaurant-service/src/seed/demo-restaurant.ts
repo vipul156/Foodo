@@ -1,12 +1,21 @@
-import mongoose from "mongoose";
-import { Restaurant } from "@foodo/backend-common/models";
-import { MenuItem } from "../models/MenuItem.js";
+import {
+  getUserByEmail,
+  getRiderByUserId,
+  createRestaurant,
+  getRestaurantByOwner,
+  updateRestaurantByOwner,
+} from "@foodo/backend-common/dynamo";
+import {
+  createMenuItem,
+  listMenuItemsByRestaurant,
+} from "../dynamo/cart.js";
 
-// ─── Demo Restaurant + Menu ──────────────────────────────────
-// Runs on restaurant-service startup. Creates a fully verified,
-// open restaurant owned by the demo seller account
-// (restaurant@demo.com — seeded by the auth service), plus 3
-// menu items with real photos, so the customer app has content.
+// ─── Demo Restaurant + Menu (DynamoDB) ───────────────────────
+// Invoked by the auth-service's demo seeder via a Lambda invoke (or run
+// once manually) — seeding is not a startup side effect anymore because
+// Lambda containers boot per-invocation. Creates a fully verified, open
+// restaurant owned by the demo seller account (restaurant@demo.com),
+// plus 3 menu items, so the customer app has content.
 
 const DEMO_SELLER_EMAIL = "restaurant@demo.com";
 
@@ -72,51 +81,21 @@ const MENU_SEED = [
   },
 ];
 
-const upsert = async (
-  model: mongoose.Model<any>,
-  match: Record<string, unknown>,
-  payload: Record<string, unknown>,
-) => {
-  const existing = await model.findOne(match);
-  if (existing) {
-    await model.updateOne(match, { $set: payload });
-    return model.findOne(match);
-  }
-  return model.create({ ...match, ...payload });
-};
-
 export const seedDemoRestaurant = async (): Promise<void> => {
   try {
-    // The auth service creates the seller user; find it here.
-    // If auth hasn't run yet, retry on next boot (or when both are up).
-    // The User model lives in the auth service, so register a minimal,
-    // schemaless local copy just for this lookup.
-    const UserModel: mongoose.Model<any> =
-      (mongoose.models.User as mongoose.Model<any>) ??
-      mongoose.model("User", new mongoose.Schema({}, { strict: false }));
-    const seller = await UserModel.findOne({ email: DEMO_SELLER_EMAIL });
-
+    const seller = await getUserByEmail(DEMO_SELLER_EMAIL);
     if (!seller) {
       console.warn(
-        "[seed] Demo seller user not found yet — start the auth service once, then restart this service to attach the restaurant.",
+        "[seed] Demo seller user not found yet — run the auth-service demo seeder first, then seed the restaurant.",
       );
       return;
     }
 
-    // Prefer the demo rider's live location so "$near" matching in the
-    // order-ready consumer (10km radius) succeeds in the tester's city.
-    // Look the rider up via the demo rider USER (same identity the rider
-    // service seeds) — picking an arbitrary verified rider could snap the
-    // restaurant to a stray test rider in another city.
-    const UserModel2: mongoose.Model<any> =
-      (mongoose.models.User as mongoose.Model<any>) ??
-      mongoose.model("User", new mongoose.Schema({}, { strict: false }));
-    const demoRiderUser = await UserModel2.findOne({ email: "rider@demo.com" });
-    const RiderModel: mongoose.Model<any> =
-      (mongoose.models.Rider as mongoose.Model<any>) ??
-      mongoose.model("Rider", new mongoose.Schema({}, { strict: false }));
+    // Prefer the demo rider's live location so the 10km matching radius
+    // succeeds in the tester's city (same reasoning as the Mongo seeder).
+    const demoRiderUser = await getUserByEmail("rider@demo.com");
     const demoRider = demoRiderUser
-      ? await RiderModel.findOne({ userId: demoRiderUser._id.toString(), isVerified: true })
+      ? await getRiderByUserId(demoRiderUser.id)
       : null;
 
     const riderCoords = demoRider?.location?.coordinates as
@@ -127,19 +106,37 @@ export const seedDemoRestaurant = async (): Promise<void> => {
         ? snapNearRider(riderCoords)
         : DEFAULT_LOCATION;
 
-    const restaurant = await upsert(
-      Restaurant,
-      { ownerId: seller._id.toString() },
-      { ...RESTAURANT_SEED_BASE, autoLocation },
-    );
-
-    for (const item of MENU_SEED) {
-      await upsert(MenuItem, { restaurantId: restaurant._id, name: item.name }, item);
+    // Upsert by owner — never creates a second restaurant for the seller.
+    let restaurant = await getRestaurantByOwner(seller.id);
+    if (restaurant) {
+      restaurant =
+        (await updateRestaurantByOwner(seller.id, {
+          ...RESTAURANT_SEED_BASE,
+        })) ?? restaurant;
+    } else {
+      restaurant = await createRestaurant({
+        ...RESTAURANT_SEED_BASE,
+        ownerId: seller.id,
+        autoLocation,
+      });
     }
 
-    const menuCount = await MenuItem.countDocuments({
-      restaurantId: restaurant._id,
-    });
+    const existing = await listMenuItemsByRestaurant(restaurant.id);
+    const existingNames = new Set(existing.map((m) => m.name));
+
+    for (const item of MENU_SEED) {
+      if (existingNames.has(item.name)) continue; // idempotent upsert
+      await createMenuItem({
+        restaurantId: restaurant.id,
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        image: item.image,
+        category: item.category,
+      });
+    }
+
+    const menuCount = (await listMenuItemsByRestaurant(restaurant.id)).length;
     console.log(
       `[seed] Demo restaurant "${RESTAURANT_SEED_BASE.name}" ready with ${menuCount} menu items` +
         (riderCoords

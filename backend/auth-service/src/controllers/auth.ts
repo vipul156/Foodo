@@ -1,6 +1,15 @@
 import type { Response } from "express";
-import { User } from "@foodo/backend-common/models";
 import { tryCatch } from "@foodo/backend-common";
+import {
+  createUser,
+  getUserByEmail,
+  getUserById,
+  getUserByRefreshTokenHash,
+  grantRefreshToken,
+  revokeRefreshToken,
+  revokeAllActiveRefreshTokens,
+  hashRefreshToken,
+} from "@foodo/backend-common/dynamo";
 import bcrypt from "bcrypt";
 import {
   signAccessToken,
@@ -9,7 +18,6 @@ import {
   refreshCookieOptions,
   type IssuedRefresh,
 } from "../lib/tokens.js";
-import { hashRefreshToken } from "@foodo/backend-common/models";
 import type { AuthRequest, AccessClaims } from "../middlewares/isAuth.js";
 import {
   recordAuthFailure,
@@ -19,58 +27,40 @@ import {
 const allowedRoles = ["customer", "rider", "seller"] as const;
 
 // ─── Refresh-row pruning ────────────────────────────────────
-// refreshTokens is embedded, so Mongo TTL indexes are off the table
-// (a TTL index on an array field deletes the whole parent user doc).
-// Expired rows are pruned opportunistically on every session issue.
-async function pruneExpiredRefreshTokens(userId: string): Promise<void> {
-  await User.updateOne(
-    { _id: userId },
-    { $pull: { refreshTokens: { expiresAt: { $lte: new Date() } } } },
-  );
-}
+// No $pull needed anymore: refresh rows are their own DynamoDB items
+// with a `ttl` attribute — DynamoDB sweeps expired rows automatically.
+// Expired rows are also rejected on use (expiry check below), so the
+// sweep window is invisible to users.
 
 // ─── Shared issue logic: register + login ───────────────────
-// 1. Prune expired rows (keeps the embedded array from growing).
-// 2. Push a fresh refresh-token row (hash only — raw token never stored).
-// 3. Transport: access JWT in the session cookie (sibling services keep
+// 1. Push a fresh refresh-token row (hash only — raw token never stored).
+// 2. Transport: access JWT in the session cookie (sibling services keep
 //    reading req.session.jwt), refresh raw token in its own httpOnly
 //    cookie scoped to /api/auth.
 async function issueSession(
   res: Response,
-  user: { _id: string; role: string },
+  user: { id: string; role: string },
 ): Promise<string> {
-  await pruneExpiredRefreshTokens(user._id);
-
   const refresh = issueRefreshToken();
-  await User.updateOne(
-    { _id: user._id },
-    {
-      $push: {
-        refreshTokens: {
-          tokenHash: refresh.tokenHash,
-          expiresAt: refresh.expiresAt,
-        },
-      },
-    },
-  );
+  await grantRefreshToken(user.id, refresh.tokenHash, refresh.expiresAt);
 
   // NOTE: this helper only persists the refresh row and sets the refresh
   // cookie. The access JWT goes into the cookie-session, which lives on
   // req.session — callers must set req.session = { jwt: accessJwt }.
-  const accessJwt = signAccessToken(String(user._id), user.role);
+  const accessJwt = signAccessToken(user.id, user.role);
   res.cookie(refreshCookieName(), refresh.raw, refreshCookieOptions());
   return accessJwt;
 }
 
 function publicUser(user: {
-  _id: unknown;
+  id: string;
   name: string;
   email: string;
   role: string;
   image: string;
 }) {
   return {
-    _id: String(user._id),
+    _id: user.id, // web app contract keeps the Mongo-style `_id` key
     name: user.name,
     email: user.email,
     role: user.role,
@@ -85,16 +75,20 @@ export const registerUser = tryCatch(async (req, res) => {
   if (!allowedRoles.includes(role))
     return res.status(400).json({ message: "Invalid role" });
 
-  const existing = await User.findOne({ email });
+  const existing = await getUserByEmail(email);
   if (existing) {
     return res.status(400).json({ message: "User already exists" });
   }
 
-  const user = await User.create({ name, email, password, role, image });
-  const accessJwt = await issueSession(res, {
-    _id: String(user._id),
-    role: user.role,
+  // bcrypt replaces the old pre-save hook (DynamoDB has no schema hooks).
+  const user = await createUser({
+    name,
+    email,
+    password: await bcrypt.hash(password, 10),
+    role,
+    image,
   });
+  const accessJwt = await issueSession(res, { id: user.id, role: user.role });
   req.session = { jwt: accessJwt };
 
   return res.status(201).json({
@@ -108,8 +102,7 @@ export const registerUser = tryCatch(async (req, res) => {
 export const loginUser = tryCatch(async (req, res) => {
   const { email, password } = req.body;
 
-  // password is select:false — request it explicitly for the compare
-  const user = await User.findOne({ email }).select("+password");
+  const user = await getUserByEmail(email);
   if (!user) {
     recordAuthFailure(req);
     return res.status(400).json({ message: "User not found" });
@@ -122,10 +115,7 @@ export const loginUser = tryCatch(async (req, res) => {
 
   clearAuthFailures(req); // success — the failure counter resets
 
-  const accessJwt = await issueSession(res, {
-    _id: String(user._id),
-    role: user.role,
-  });
+  const accessJwt = await issueSession(res, { id: user.id, role: user.role });
   req.session = { jwt: accessJwt };
 
   return res.status(200).json({
@@ -148,22 +138,19 @@ export const refreshUser = tryCatch(async (req: AuthRequest, res) => {
   }
 
   const presentedHash = hashRefreshToken(presented);
-  const user = await User.findOne({ "refreshTokens.tokenHash": presentedHash });
-  const row = user?.refreshTokens.find((t) => t.tokenHash === presentedHash);
-  if (!user || !row) {
+  const found = await getUserByRefreshTokenHash(presentedHash);
+  if (!found) {
     return res
       .status(401)
       .json({ message: "Invalid refresh token; please log in again" });
   }
 
+  const { user, row } = found;
+
   // Reuse detection: a revoked token must never come back. Burn the
   // whole family so the thief and the legitimate client both stop here.
   if (row.revokedAt) {
-    await User.updateOne(
-      { _id: user._id },
-      { $set: { "refreshTokens.$[t].revokedAt": new Date() } },
-      { arrayFilters: [{ "t.revokedAt": null }] },
-    );
+    await revokeAllActiveRefreshTokens(user.id);
     req.session = null;
     res.clearCookie(refreshCookieName(), refreshCookieOptions());
     return res.status(401).json({
@@ -171,7 +158,7 @@ export const refreshUser = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  if (row.expiresAt.getTime() <= Date.now()) {
+  if (Date.parse(row.expiresAt) <= Date.now()) {
     return res
       .status(401)
       .json({ message: "Refresh token expired; please log in again" });
@@ -180,29 +167,10 @@ export const refreshUser = tryCatch(async (req: AuthRequest, res) => {
   // Single-use rotation: revoke the presented row, link it to the next
   // generation (enables chain walks / family audits), mint the new pair.
   const next: IssuedRefresh = issueRefreshToken();
-  await User.updateOne(
-    { _id: user._id, "refreshTokens.tokenHash": presentedHash },
-    {
-      $set: {
-        "refreshTokens.$.revokedAt": new Date(),
-        "refreshTokens.$.replacedByHash": next.tokenHash,
-      },
-    },
-  );
-  await pruneExpiredRefreshTokens(String(user._id));
-  await User.updateOne(
-    { _id: user._id },
-    {
-      $push: {
-        refreshTokens: {
-          tokenHash: next.tokenHash,
-          expiresAt: next.expiresAt,
-        },
-      },
-    },
-  );
+  await revokeRefreshToken(user.id, presentedHash, next.tokenHash);
+  await grantRefreshToken(user.id, next.tokenHash, next.expiresAt);
 
-  const accessJwt = signAccessToken(String(user._id), user.role);
+  const accessJwt = signAccessToken(user.id, user.role);
   req.session = { jwt: accessJwt };
   res.cookie(refreshCookieName(), next.raw, refreshCookieOptions());
 
@@ -219,15 +187,17 @@ export const refreshUser = tryCatch(async (req: AuthRequest, res) => {
 
 export const getUser = tryCatch(async (req: AuthRequest, res) => {
   const claims = req.user as AccessClaims;
-  const user = await User.findById(claims.sub).select(
-    "-password -refreshTokens",
-  );
+  const user = await getUserById(claims.sub);
   if (!user) {
     return res.status(404).json({ message: "User not found" });
   }
+
+  // Credentials never leave the DB — strip password/refresh state.
+  const { password: _password, ...safeUser } = user;
+
   return res
     .status(200)
-    .json({ message: "User fetched successfully", user });
+    .json({ message: "User fetched successfully", user: safeUser });
 });
 
 // ─── Logout (server-side revocation, not just cookie clearing) ──
@@ -240,14 +210,9 @@ export const logoutUser = tryCatch(async (req: AuthRequest, res) => {
 
   if (presented && sub) {
     const presentedHash = hashRefreshToken(presented);
-    await User.updateOne(
-      { _id: sub, "refreshTokens.tokenHash": presentedHash },
-      {
-        $set: {
-          "refreshTokens.$.revokedAt": new Date(),
-        },
-      },
-    );
+    await revokeRefreshToken(sub, presentedHash, null).catch(() => {
+      // Row already swept (TTL) or unknown — logout is still complete.
+    });
   }
 
   req.session = null;

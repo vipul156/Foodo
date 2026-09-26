@@ -1,35 +1,43 @@
-// ─── Webhook event dedupe ───────────────────────────────────
-// Providers redeliver webhooks (network blips, non-2xx responses), so every
-// webhook is deduped on its provider event id before the payment-success
-// event is published. Utils keeps no database, so this is an in-memory
-// window: it protects within one instance. The durable guarantee lives
-// downstream — the restaurant consumer's conditional update
-// (paymentStatus: { $ne: "paid" }) makes duplicate deliveries no-ops.
+import { PutCommand } from "@aws-sdk/lib-dynamodb";
+import { docClient, TABLE } from "@foodo/backend-common/aws";
 
-const SEEN_EVENTS = new Map<string, number>();
-const MAX_ENTRIES = 5000;
-const ENTRY_TTL_MS = 24 * 60 * 60 * 1000;
+// ─── Webhook event dedupe (DynamoDB) ─────────────────────────
+// Providers redeliver webhooks (network blips, non-2xx responses), so
+// every webhook is deduped on its provider event id before the
+// payment-success event is published.
+//
+// The old in-memory window only protected within one process — useless
+// across Lambda containers. The dedupe marker is now a DynamoDB row
+// with a 24h TTL: a ConditionalCheckFailedException on the put means
+// the event was seen. Durable guarantee downstream is unchanged — the
+// restaurant consumer's conditional update (paymentStatus <> paid)
+// makes duplicate deliveries no-ops regardless.
 
-const prune = (now: number) => {
-  for (const [id, ts] of SEEN_EVENTS) {
-    if (now - ts > ENTRY_TTL_MS) {
-      SEEN_EVENTS.delete(id);
+const ENTRY_TTL_SEC = 24 * 60 * 60; // 24h, then DynamoDB sweeps the row
+
+export const isDuplicateEvent = async (eventId: string): Promise<boolean> => {
+  const now = Math.floor(Date.now() / 1000);
+
+  try {
+    await docClient().send(
+      new PutCommand({
+        TableName: TABLE.webhookDedupe(),
+        Item: {
+          eventId, // PK
+          seenAt: now,
+          ttl: now + ENTRY_TTL_SEC,
+        },
+        ConditionExpression: "attribute_not_exists(eventId)",
+      }),
+    );
+    return false; // first sighting — we claimed the marker
+  } catch (error: any) {
+    if (error?.name === "ConditionalCheckFailedException") {
+      return true; // already seen
     }
+    // Dedupe store unavailable: prefer processing (the downstream
+    // consumer is idempotent) over dropping a real payment event.
+    console.error("[WebhookDedupe] store unavailable:", error?.message);
+    return false;
   }
-  // Hard cap for hostile/duplicated traffic bursts
-  while (SEEN_EVENTS.size > MAX_ENTRIES) {
-    SEEN_EVENTS.delete(SEEN_EVENTS.keys().next().value!);
-  }
-};
-
-export const isDuplicateEvent = (eventId: string): boolean => {
-  const now = Date.now();
-
-  if (SEEN_EVENTS.has(eventId)) {
-    return true;
-  }
-
-  SEEN_EVENTS.set(eventId, now);
-  prune(now);
-  return false;
 };

@@ -1,7 +1,7 @@
 {
   "name": "@foodo/realtime-service",
   "version": "1.0.0",
-  "description": "Foodo realtime service (socket.io + redis adapter).",
+  "description": "Foodo realtime service (long-running socket.io; events fan in from SNS via SQS).",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,8 +13,8 @@
   "dependencies": {
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
+    "@aws-sdk/client-sqs": "catalog:",
     "@socket.io/redis-adapter": "catalog:",
-    "amqplib": "catalog:",
     "cookie-session": "catalog:",
     "cors": "catalog:",
     "dotenv": "catalog:",
@@ -25,7 +25,6 @@
     "socket.io": "catalog:"
   },
   "devDependencies": {
-    "@types/amqplib": "catalog:",
     "@types/cors": "catalog:",
     "@types/cookie-session": "catalog:",
     "@types/dotenv": "catalog:",

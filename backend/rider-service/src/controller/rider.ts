@@ -1,22 +1,21 @@
 import { AuthRequest, tryCatch } from "@foodo/backend-common";
 import { dataUri } from "@foodo/backend-common/files";
 import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
-import { Order, Restaurant } from "@foodo/backend-common/models";
-import { Rider } from "@foodo/backend-common/models";
-import { publishRiderEvent } from "../config/event.publisher.js";
+import {
+  createRider,
+  claimRiderForOrder,
+  releaseRiderFromOrder,
+  getRiderById,
+  getRiderByUserId,
+  setRiderAvailability,
+  listDeliveredOrdersByRider,
+  findCurrentOrderForRider,
+  listReadyOrders,
+  listRestaurantsNear,
+} from "@foodo/backend-common/dynamo";
+import { publishRiderEvent } from "../config/events.js";
 
-// ─── Local order read (2 call sites in this file) ───────────
-// Direct read over the shared Order schema. Lived behind a
-// restaurant-service HTTP endpoint once; with the shared schemas it
-// runs in-process. The single-use history/available queries are
-// inlined at their only caller below.
-const findMyCurrentOrder = (riderId: string) =>
-  Order.findOne({
-    riderId,
-    status: { $ne: "delivered" },
-  }).populate("restaurantId");
-
-export const createRider = tryCatch(async (req: AuthRequest, res) => {
+export const createRiderController = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
 
   if (!user) {
@@ -30,7 +29,7 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
   // Preferred flow (direct upload): the rider app already uploaded the
   // photo straight to Cloudinary with signed params and passes the URL.
   // Legacy fallback: multipart `file` → server-side upload via the
-  // shared signer (older clients keep working, no utils-service hop).
+  // shared signer (older clients keep working).
   const imageUrl = req.body?.imageUrl as string | undefined;
   if (!file && !imageUrl) {
     return res.status(400).json({
@@ -77,23 +76,22 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const existingRider = await Rider.findOne({ userId: user._id });
-
+  const existingRider = await getRiderByUserId(String(user._id));
   if (existingRider) {
     return res.status(400).json({
       message: "Rider already exists",
     });
   }
 
-  const rider = await Rider.create({
+  const rider = await createRider({
     phoneNumber,
     addharNumber,
     drivingLicenseNumber,
     location: {
       type: "Point",
-      coordinates: [longitude, latitude],
+      coordinates: [Number(longitude), Number(latitude)],
     },
-    userId: user._id,
+    userId: String(user._id),
     picture: pictureUrl,
   });
 
@@ -112,8 +110,7 @@ export const fetchMyProfile = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const rider = await Rider.findOne({ userId: user._id });
-
+  const rider = await getRiderByUserId(String(user._id));
   if (!rider) {
     return res.status(404).json({
       message: "Rider not found",
@@ -150,8 +147,7 @@ export const toogleRiderAvailablity = tryCatch(
       });
     }
 
-    const rider = await Rider.findOne({ userId: user._id });
-
+    const rider = await getRiderByUserId(String(user._id));
     if (!rider) {
       return res.status(404).json({
         message: "Rider not found",
@@ -166,11 +162,9 @@ export const toogleRiderAvailablity = tryCatch(
 
     // A rider carrying an active delivery cannot go back online —
     // finish the delivery (or have the seller cancel the order) first.
-    // Direct read over the shared schema (was an HTTP round-trip to the
-    // restaurant service).
     if (isAvailable) {
       try {
-        const order = await findMyCurrentOrder(rider._id.toString());
+        const order = await findCurrentOrderForRider(rider.id);
         if (order) {
           return res.status(400).json({
             message: "Finish your active delivery before going online",
@@ -183,24 +177,22 @@ export const toogleRiderAvailablity = tryCatch(
       }
     }
 
-    rider.isAvailable = isAvailable;
-    rider.location = {
-      type: "Point",
-      coordinates: [longitude, latitude],
-    };
-    rider.lastActive = new Date();
-    await rider.save();
+    const updated = await setRiderAvailability(
+      String(user._id),
+      isAvailable,
+      [Number(longitude), Number(latitude)],
+    );
 
     return res.status(200).json({
       message: "Rider availablity toggled",
-      rider,
+      rider: updated,
     });
   },
 );
 
 export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
   const riderUserId = req.user?._id;
-  const { orderId } = req.params;
+  const orderId = req.params.orderId as string;
 
   if (!riderUserId) {
     return res.status(401).json({
@@ -216,17 +208,8 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
 
   // ─── Atomic local claim (the only synchronous work) ────────
   // Flipping availability first makes double-clicks impossible at the
-  // rider level. The claim also stamps currentOrderId so every later
-  // release is a conditional update keyed to THIS order — a stale
-  // compensation can never free a rider who already claimed another one.
-  // If the order turns out to be gone, the restaurant service's failed
-  // assignment publishes rider.order_rejected and the rider event
-  // consumer frees this rider again (saga compensation).
-  const rider = await Rider.findOneAndUpdate(
-    { userId: riderUserId, isAvailable: true },
-    { isAvailable: false, lastActive: new Date(), currentOrderId: orderId },
-    { new: true },
-  );
+  // rider level; currentOrderId makes every later release conditional.
+  const rider = await claimRiderForOrder(String(riderUserId), orderId);
 
   if (!rider) {
     return res.status(404).json({
@@ -235,36 +218,30 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
   }
 
   // ─── Publish — with rollback on failure ────────────────────
-  // Assignment happens asynchronously: the restaurant service consumes
-  // this event, performs the atomic order assignment, and pushes socket
-  // updates. But the event MUST reach the broker — if it doesn't, no
-  // compensation exists (restaurant never learns of the claim), so we
-  // undo the claim right here instead of stranding the rider offline.
+  // The event MUST reach the bus: if it doesn't, no compensation exists
+  // (restaurant never learns of the claim), so we undo the claim right
+  // here instead of stranding the rider offline.
   const published = await publishRiderEvent("rider.order_accepted", {
     orderId,
-    riderId: rider._id,
+    riderId: rider.id,
     riderUserId: rider.userId,
-    // Real name from the auth JWT (picture URL was stored here before —
-    // customers don't want a URL as their rider's name).
+    // Real name from the auth JWT (picture URL was stored here before).
     riderName:
       (req.user as any)?.name ||
       (req.user as any)?.user?.name ||
       "Delivery Partner",
     riderPhone: rider.phoneNumber,
-    // Photo travels separately so the customer app can show an avatar
     riderPicture: rider.picture,
   });
 
   if (!published) {
     // Conditional rollback: only flips back if this claim still owns the
     // rider (a concurrent release could already have re-enabled them).
-    await Rider.findOneAndUpdate(
-      {
-        _id: rider._id,
-        isAvailable: false,
-        currentOrderId: orderId,
-      },
-      { isAvailable: true, currentOrderId: null, lastActive: new Date() },
+    await releaseRiderFromOrder(
+      rider.id,
+      orderId,
+      { orderId: null, status: "cancelled" },
+      async () => {},
     );
     return res.status(503).json({
       message: "Could not reach order service — try again",
@@ -283,18 +260,15 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const rider = await Rider.findOne({ userId: riderUserId, isVerified: true });
-
+  const rider = await getRiderByUserId(String(riderUserId));
   if (!rider) {
     return res.status(404).json({
       message: "Rider not found",
     });
   }
 
-  // Direct read over the shared schema (was an HTTP round-trip to the
-  // restaurant service).
   try {
-    const order = await findMyCurrentOrder(rider._id.toString());
+    const order = await findCurrentOrderForRider(rider.id);
 
     return res.status(200).json({
       message: "Current order fetched",
@@ -316,22 +290,15 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
     });
   }
 
-  const rider = await Rider.findOne({ userId: riderUserId });
-
+  const rider = await getRiderByUserId(String(riderUserId));
   if (!rider) {
     return res.status(404).json({
       message: "Rider not found",
     });
   }
 
-  // Direct read over the shared schema (was an HTTP round-trip to the
-  // restaurant service). Single-use query — inlined here.
   try {
-    const orders = await Order.find({
-      riderId: rider._id.toString(),
-      status: "delivered",
-      paymentStatus: "paid",
-    }).sort({ createdAt: -1 });
+    const orders = await listDeliveredOrdersByRider(rider.id);
 
     return res.status(200).json({
       message: "Delivery history fetched",
@@ -346,10 +313,8 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
   }
 });
 
-// Available orders for the rider dashboard — paid orders marked
-// ready_for_rider at restaurants within 10km of the rider's last known
-// location. Lets a rider who logs in / refreshes *after* the socket
-// "order:available" broadcast still see (and accept) the offer.
+// Available orders for the rider dashboard — paid, ready_for_rider
+// orders at restaurants within 10km of the rider's last known location.
 export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
   const riderUserId = req.user?._id;
 
@@ -359,8 +324,7 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const rider = await Rider.findOne({ userId: riderUserId });
-
+  const rider = await getRiderByUserId(String(riderUserId));
   if (!rider) {
     return res.status(404).json({
       message: "Rider not found",
@@ -369,25 +333,18 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
 
   const [longitude, latitude] = rider.location.coordinates;
 
-  // Direct read over the shared schemas (was an HTTP round-trip to the
-  // restaurant service). Single-use query — inlined here.
   try {
-    const nearbyRestaurants = await Restaurant.find({
-      autoLocation: {
-        $near: {
-          $geometry: { type: "Point", coordinates: [longitude, latitude] },
-          $maxDistance: 10000, // 10km in meters — same radius as the matcher
-        },
-      },
-    });
+    // Nearby restaurants (geo bounding box + haversine), then filter the
+    // ready-for-rider board to those restaurants — the $near + $in pair.
+    const nearbyRestaurants = await listRestaurantsNear(
+      latitude,
+      longitude,
+      10_000,
+    );
+    const nearbyIds = new Set(nearbyRestaurants.map((r) => r.id));
 
-    const orders = await Order.find({
-      status: "ready_for_rider",
-      paymentStatus: "paid",
-      restaurantId: {
-        $in: nearbyRestaurants.map((r) => r._id.toString()),
-      },
-    }).sort({ createdAt: 1 });
+    const readyOrders = await listReadyOrders(200);
+    const orders = readyOrders.filter((o) => nearbyIds.has(o.restaurantId));
 
     return res.status(200).json({
       message: "Available orders fetched",
@@ -411,15 +368,14 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const rider = await Rider.findOne({ userId: riderUserId });
-
+  const rider = await getRiderByUserId(String(riderUserId));
   if (!rider) {
     return res.status(404).json({
       message: "Rider not found",
     });
   }
 
-  const orderId = req.body?.orderId || req.params?.orderId;
+  const orderId = (req.body?.orderId || req.params?.orderId) as string;
 
   if (!orderId) {
     return res.status(400).json({
@@ -428,17 +384,13 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   }
 
   // ─── Publish the intent; the order owner applies the transition ──
-  // Riders live on flaky mobile networks — an HTTP round-trip through
-  // two services turned every elevator ride into "update failed, try
-  // again". The event carries the rider id so the owner's consumer can
-  // bind the transition to THIS rider, making stale/replayed events
-  // harmless. Publish failure (broker hard-down) returns 503 so the
-  // app can retry — the rider's claim is NOT rolled back here; the
-  // rider.order_rejected compensation doesn't apply (nothing was
-  // rejected) and the delivery is still real.
+  // Riders live on flaky mobile networks — the event carries the rider
+  // id so the owner's consumer binds the transition to THIS rider.
+  // Publish failure returns 503 so the app can retry; the claim is NOT
+  // rolled back (nothing was rejected; the delivery is still real).
   const published = await publishRiderEvent("rider.order_status_changed", {
     orderId,
-    riderId: rider._id,
+    riderId: rider.id,
   });
 
   if (!published) {
@@ -452,8 +404,3 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     orderId,
   });
 });
-
-// [REMOVED] PUT /release/internal (releaseRiderInternal) — cancellation
-// releases now arrive as order.cancelled events on the fanout exchange
-// (see config/riderEvent.consumer.ts); the rider service owns rider
-// state and nothing else writes it.

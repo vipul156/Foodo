@@ -30,6 +30,14 @@
     "./files": {
       "types": "./dist/files/index.d.ts",
       "default": "./dist/files/index.js"
+    },
+    "./aws": {
+      "types": "./dist/aws/index.d.ts",
+      "default": "./dist/aws/index.js"
+    },
+    "./dynamo": {
+      "types": "./dist/dynamo/index.d.ts",
+      "default": "./dist/dynamo/index.js"
     }
   },
   "scripts": {
@@ -39,7 +47,11 @@
   },
   "dependencies": {
     "@foodo/types": "workspace:*",
-    "datauri": "catalog:"
+    "datauri": "catalog:",
+    "@aws-sdk/client-dynamodb": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "@aws-sdk/client-sns": "catalog:",
+    "@aws-sdk/client-sqs": "catalog:"
   },
   "peerDependencies": {
     "amqplib": "^2.0.1",
@@ -50,6 +62,7 @@
     "multer": "^2.0.0"
   },
   "devDependencies": {
+    "@types/aws-lambda": "catalog:",
     "@types/amqplib": "catalog:",
     "@types/bcrypt": "catalog:",
     "@types/express": "catalog:",

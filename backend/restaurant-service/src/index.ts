@@ -2,20 +2,18 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import connectDB from "@foodo/backend-common/db";
 import cookieSession from "cookie-session";
+import serverlessHttp from "serverless-http";
+import type { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda";
+
 import { restaurantRouter } from "./routes/restaurant.js";
-
-
 import { menuItemRouter } from "./routes/menu-item.js";
 import { cartRouter } from "./routes/cart.js";
 import { orderRouter } from "./routes/order.js";
-import { connectRabbitMQ } from "./config/rabbitmq.js";
-import { startPaymentConsumer } from "./config/payment.consumer.js";
-import { startRiderEventConsumer } from "./config/riderEvent.consumer.js";
 import { addressRoute } from "./routes/address.js";
-import { seedDemoRestaurant } from "./seed/demo-restaurant.js";
+import { paymentQueueHandler, riderEventsHandler } from "./config/consumers.js";
 
+// ─── Express app (route surface unchanged, Lambda-mounted) ──
 const app = express();
 
 app.use(
@@ -27,12 +25,9 @@ app.use(
 );
 
 // ─── Body limits: restrictive default, scoped headroom ─────
-// 1mb covers every JSON API (orders, carts, status updates). The only
-// oversized bodies are base64 image data-URIs forwarded to the upload
-// service from the menu-item + restaurant create/update routes, so only
-// those get headroom. The scoped parsers MUST come before the global one
-// — Express matches middleware in order and the global parser would 413
-// an oversized upload before the scoped parser sees it.
+// 1mb covers every JSON API. Only the base64 image data-URI paths
+// forwarded to Cloudinary from menu-item + restaurant create/update get
+// headroom. Scoped parsers MUST come before the global one.
 app.use(
   ["/api/menu-item/new", "/api/restaurant/new", "/api/restaurant/update"],
   express.json({ limit: "10mb" }),
@@ -41,33 +36,41 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
-app.use("/api/restaurant", restaurantRouter)
-app.use("/api/menu-item", menuItemRouter)
-app.use("/api/cart", cartRouter)
-app.use("/api/order", orderRouter)
-app.use("/api/address", addressRoute)
+app.use("/api/restaurant", restaurantRouter);
+app.use("/api/menu-item", menuItemRouter);
+app.use("/api/cart", cartRouter);
+app.use("/api/order", orderRouter);
+app.use("/api/address", addressRoute);
 
-
-app.get('/health', (req, res) => {
+app.get("/health", (_req, res) => {
   res.status(200).json({
-    status: 'UP',
-    uptime: process.uptime(),
-    timestamp: Date.now()
+    status: "UP",
+    timestamp: Date.now(),
   });
 });
 
-// NOTE: `PORT` was referenced but never defined (pre-existing build break;
-// declared so `tsc` passes). Default matches web's dev proxy expectation.
-const PORT = process.env.PORT ?? "3003";
+// ─── Lambda entrypoints (the ONLY entrypoints) ──────────────
+// One deployment artifact, three handlers:
+//   handler         — API Gateway HTTP API (serverless-http)
+//   paymentConsumer — SQS PAYMENT_QUEUE_URL (payment success work queue)
+//   riderEvents     — SQS RIDER_EVENTS_QUEUE_URL (SNS-filtered events)
+//
+// No app.listen, no PORT, no dev mode: this service exists only as
+// Lambda. Local testing runs through `sam local` / `serverless-offline`
+// style emulation of these same handlers, never a listening server.
 
-app.listen(PORT, () => {
-  console.log("Server is running on port ", PORT);
-  connectDB().then(() => seedDemoRestaurant());
+const serverlessApp = serverlessHttp(app);
 
-  // RabbitMQ connects in the background — the API boots and serves even
-  // while the broker is down. The manager retries with exponential
-  // backoff and re-attaches the consumers once the connection returns.
-  connectRabbitMQ();
-  startPaymentConsumer();
-  startRiderEventConsumer();
-});
+export const handler = async (
+  event: APIGatewayProxyEvent,
+  context: Context,
+): Promise<APIGatewayProxyResult> => {
+  context.callbackWaitsForEmptyEventLoop = false;
+  // No connectDB(): DynamoDB needs no connection setup — the SDK's
+  // reused client (warm container) resolves the endpoint per call.
+  return serverlessApp(event, context) as unknown as APIGatewayProxyResult;
+};
+
+export const paymentConsumer = paymentQueueHandler;
+
+export const riderEvents = riderEventsHandler;

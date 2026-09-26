@@ -1,25 +1,26 @@
 import { Request, Response } from "express";
-import { claimOrderViaBreaker, runProvider } from "../config/http.js";
+import { runProvider } from "../config/http.js";
 import razorpay from "../config/razorpay.js";
 import crypto from "crypto";
 import {
   publishPaymentSuccess,
   publishPaymentIntentCreated,
-} from "../config/payment.producer.js";
+} from "../config/events.js";
 import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
-
-// Internal auth header for the one remaining sync call to the order
-// owner (the payment claim).
-const getInternalHeaders = () => ({
-  "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
-});
+import {
+  claimOrderForPayment,
+  isValidOrderId,
+} from "@foodo/backend-common/dynamo";
 
 // ─── Order-owner claim/attach helpers ───────────────────────
-// The restaurant service owns orders: it atomically claims the order for
-// payment (rejecting paid/cancelled/expired) and hands back the trusted
-// amount + any previously attached provider id so client retries re-issue
-// the SAME intent. The attach itself now travels as an event (see below).
+// Orders live in the SHARED DynamoDB orders table now — the claim is a
+// direct conditional UpdateItem via the shared repository (no HTTP call
+// to restaurant-service, no circuit breaker needed: DynamoDB IS the
+// consistency point). It atomically rejects paid/cancelled/expired
+// orders and hands back the trusted amount + any previously attached
+// provider id so client retries re-issue the SAME intent. The attach
+// itself travels as an SNS event (see below).
 interface OrderPaymentClaim {
   orderId: string;
   amount: number;
@@ -31,17 +32,29 @@ const claimOrderPayment = async (
   orderId: string,
   provider: "razorpay" | "stripe",
 ): Promise<OrderPaymentClaim> => {
-  // Critical pool + breaker: a dead order service trips the circuit and
-  // checkout fails fast instead of piling up sockets.
-  return claimOrderViaBreaker<OrderPaymentClaim>(
-    `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/claim/${orderId}`,
-    provider,
-    { headers: getInternalHeaders() },
-  );
+  if (!isValidOrderId(orderId)) {
+    throw Object.assign(new Error("Order not claimable"), { status: 409 });
+  }
+
+  const claim = await claimOrderForPayment(orderId, provider);
+  if (!claim) {
+    // Conditional update matched nothing: paid, cancelled, or TTL-swept.
+    throw Object.assign(
+      new Error("Order not claimable (paid, cancelled, or expired)"),
+      { status: 409 },
+    );
+  }
+
+  return {
+    orderId: claim.order.id,
+    amount: claim.order.totalAmount,
+    currency: "INR",
+    attachedProviderOrderId: claim.attachedProviderOrderId,
+  };
 };
 
 // The attach no longer round-trips over HTTP: the intent-created event is
-// published on the fanout exchange and the order owner's consumer stamps
+// published on the SNS topic and the order owner's consumer stamps
 // paymentIntent.providerOrderId. Fire-and-forget is safe here — a dropped
 // publish costs one orphan provider intent (the reconciliation job flags
 // it), never a wrong charge; the claim path's idempotent re-issue keeps
@@ -108,11 +121,11 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
             key: process.env.RAZORPAY_KEY_ID,
         });
     } catch (error: any) {
-        // Claim conflicts (paid/cancelled/expired) surface as 409 from the owner
-        if (error?.response?.status === 409) {
+        // Claim conflicts (paid/cancelled/expired) surface as 409
+        if (error?.status === 409) {
             return res
                 .status(409)
-                .json({ message: error.response.data?.message ?? "Order not payable" });
+                .json({ message: error.message });
         }
         console.error("Razorpay create order error:", error?.response?.data || error?.message);
         res.status(500).json({
@@ -158,7 +171,10 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
         }
 
         const eventId = req.headers["x-razorpay-event-id"];
-        if (typeof eventId === "string" && isDuplicateEvent(eventId)) {
+        if (
+            typeof eventId === "string" &&
+            (await isDuplicateEvent(eventId))
+        ) {
             return res.status(200).json({ message: "Duplicate event" });
         }
 
@@ -221,7 +237,7 @@ export const stripeWebhook = async (req: Request, res: Response) => {
             return res.status(200).json({ message: "Event ignored" });
         }
 
-        if (isDuplicateEvent(event.id)) {
+        if (await isDuplicateEvent(event.id)) {
             return res.status(200).json({ message: "Duplicate event" });
         }
 
@@ -326,10 +342,10 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
             url: stripePaymentIntent.url,
         });
     } catch (error: any) {
-        if (error?.response?.status === 409) {
+        if (error?.status === 409) {
             return res
                 .status(409)
-                .json({ message: error.response.data?.message ?? "Order not payable" });
+                .json({ message: error.message });
         }
         console.error("Stripe create session error:", error?.response?.data || error?.message);
         res.status(500).json({

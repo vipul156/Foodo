@@ -1,20 +1,28 @@
-import { Order } from "@foodo/backend-common/models";
+import {
+  ScanCommand,
+  QueryCommand,
+} from "@aws-sdk/lib-dynamodb";
+import { docClient, TABLE } from "@foodo/backend-common/aws";
 import razorpay from "./razorpay.js";
 import stripe from "./stripe.js";
-import { publishPaymentSuccess } from "./payment.producer.js";
+import { publishPaymentSuccess } from "./events.js";
 
-// ─── Payment Reconciliation Job ─────────────────────────────
-// Safety net for missed/dropped webhooks: the order owner reports pending
-// orders with an initiated payment intent; this job asks the provider for
-// the truth.
+// ─── Payment Reconciliation (EventBridge-triggered Lambda) ───
+// Safety net for missed/dropped webhooks: the order table reports
+// pending orders with an initiated payment intent; this job asks the
+// provider for the truth.
 //   - Money captured on the provider → republish payment success through
-//     the SAME queue webhooks use (the consumer's conditional update keeps
-//     it idempotent — this heals the order exactly like a webhook would).
-//   - Created-but-never-paid intents → flagged as orphans for manual review.
-// Runs hourly by default; override with PAYMENT_RECONCILE_INTERVAL_MS.
+//     the SAME queue webhooks use (the consumer's conditional update
+//     keeps it idempotent — heals the order exactly like a webhook).
+//   - Created-but-never-paid intents → flagged as orphans for review.
+//
+// Scheduling: an EventBridge Scheduler rule invokes the exported
+// `reconcile` handler on a rate(1 hour) cron (IaC wires the target
+// later). The setInterval/timeout boot code is gone — Lambda has no
+// background timers.
 
 interface ReconciliationCandidate {
-  _id: string;
+  orderId: string;
   paymentIntent?: {
     provider?: string;
     providerOrderId?: string;
@@ -24,22 +32,32 @@ interface ReconciliationCandidate {
 const fetchCandidates = async (
   olderThanMinutes: number,
 ): Promise<ReconciliationCandidate[]> => {
-  // Direct read over the shared Order schema (was an HTTP round-trip to
-  // the order owner). Single-use query — inlined here. The RMQ
-  // payment-success heal is unchanged: writes still flow through the
-  // idempotent queue path.
-  const since = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+  // Direct read over the orders table. Payment-status queries ride the
+  // payment-status GSI (paymentStatus + initiatedAt) so this stays a
+  // targeted query, not a table scan.
+  const since = new Date(Date.now() - olderThanMinutes * 60 * 1000)
+    .toISOString();
 
-  const candidates = await Order.find({
-    paymentStatus: "pending",
-    "paymentIntent.providerOrderId": { $exists: true, $ne: null },
-    "paymentIntent.initiatedAt": { $lte: since },
-  })
-    .limit(100)
-    .select("_id paymentIntent paymentStatus totalAmount")
-    .lean();
+  const out = await docClient().send(
+    new QueryCommand({
+      TableName: TABLE.orders(),
+      IndexName: "payment-status",
+      KeyConditionExpression:
+        "paymentStatus = :pending AND paymentIntentInitiatedAt <= :since",
+      ExpressionAttributeValues: {
+        ":pending": "pending",
+        ":since": since,
+      },
+      Limit: 100,
+    }),
+  );
 
-  return candidates as unknown as ReconciliationCandidate[];
+  return ((out.Items ?? []) as any[])
+    .map((o) => ({
+      orderId: o.id as string,
+      paymentIntent: o.paymentIntent,
+    }))
+    .filter((c) => c.orderId);
 };
 
 const reconcileRazorpay = async (
@@ -89,18 +107,20 @@ const reconcileStripe = async (
   return "still pending on provider";
 };
 
-export const runPaymentReconciliation = async (): Promise<void> => {
+export const runPaymentReconciliation = async (): Promise<{
+  audited: number;
+}> => {
   const olderThanMinutes = 20; // matches the 15-min unpaid-order window
   const candidates = await fetchCandidates(olderThanMinutes);
 
   if (candidates.length === 0) {
-    return;
+    return { audited: 0 };
   }
 
   console.log(`[RECONCILE] auditing ${candidates.length} pending payment(s)`);
 
   for (const candidate of candidates) {
-    const { _id: orderId } = candidate;
+    const { orderId } = candidate;
     const { provider, providerOrderId } = candidate.paymentIntent ?? {};
 
     if (!providerOrderId || (provider !== "razorpay" && provider !== "stripe")) {
@@ -118,7 +138,9 @@ export const runPaymentReconciliation = async (): Promise<void> => {
           `[ALERT][RECONCILE] ${provider} ${providerOrderId} for order ${orderId}: ${outcome} — MANUAL INSPECTION REQUIRED`,
         );
       } else {
-        console.log(`[RECONCILE] ${provider} ${providerOrderId} (${orderId}): ${outcome}`);
+        console.log(
+          `[RECONCILE] ${provider} ${providerOrderId} (${orderId}): ${outcome}`,
+        );
       }
     } catch (err: any) {
       // Provider hiccup on one candidate must not abort the audit
@@ -128,27 +150,17 @@ export const runPaymentReconciliation = async (): Promise<void> => {
       );
     }
   }
+
+  return { audited: candidates.length };
 };
 
-export const startPaymentReconciliation = () => {
-  const interval =
-    Number(process.env.PAYMENT_RECONCILE_INTERVAL_MS) || 60 * 60 * 1000;
-
-  // First pass shortly after boot, then on the interval
-  setTimeout(() => {
-    runPaymentReconciliation().catch((err) =>
-      console.error("[ALERT][RECONCILE] job failed:", err?.message),
-    );
-    setInterval(
-      () =>
-        runPaymentReconciliation().catch((err) =>
-          console.error("[ALERT][RECONCILE] job failed:", err?.message),
-        ),
-      interval,
-    );
-  }, 30_000);
-
-  console.log(
-    `Payment reconciliation scheduled every ${Math.round(interval / 1000)}s`,
-  );
+// EventBridge Scheduler target — every Lambda invocation is one audit
+// pass. CloudWatch collects the [RECONCILE] logs; alarm on
+// "[ALERT][RECONCILE]" for orphan/capture anomalies.
+export const reconcile = async () => {
+  const result = await runPaymentReconciliation();
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ audited: result.audited }),
+  };
 };

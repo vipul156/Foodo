@@ -1,25 +1,19 @@
 import rateLimit, { Options } from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
-import { Redis } from "ioredis";
 
-// ─── Rate limiting: Redis-backed across pods, memory fallback ──
-const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
-
-if (!redis) {
-  console.warn(
-    "[RateLimit] REDIS_URL not set — using in-memory store. Limits are per-process only; set REDIS_URL in multi-pod deployments.",
-  );
-}
-
-// Helper to create a store instance with a unique prefix per limiter
-const createStore = (prefix: string) => {
-  if (!redis) return undefined;
-  return new RedisStore({
-    sendCommand: (cmd: string, ...args: string[]) =>
-      redis.call(cmd, ...args) as Promise<any>,
-    prefix: `rl:${prefix}:`,
-  });
-};
+// ─── Rate limiting on Lambda ─────────────────────────────────
+// The old Redis-backed store is gone: each Lambda container is a
+// short-lived isolated process, so a shared external counter would be
+// the only correct store — and that now belongs at the edge, not in
+// app code. Two layers cover it:
+//
+//   1. In-memory express-rate-limit here: per-warm-container, still
+//      blunts bursts that land on the same container (webhook
+//      redelivery storms included).
+//   2. API Gateway per-client usage plans / throttling (IaC): the real
+//      per-IP enforcement point for a serverless deployment.
+//
+// The 15-min in-memory brute-force counter in auth-service follows the
+// same reasoning and stays as-is.
 
 const base: Partial<Options> = {
   standardHeaders: true,
@@ -27,21 +21,17 @@ const base: Partial<Options> = {
 };
 
 // Payment-create endpoints: tight — money-adjacent, abuse-prone
-const paymentStore = createStore("payment-create");
 export const paymentCreateLimiter = rateLimit({
   ...base,
   windowMs: 60_000,
   limit: 10,
   message: { message: "Too many payment attempts — slow down" },
-  ...(paymentStore ? { store: paymentStore } : {}),
 });
 
 // Webhooks: provider-originated and signature-verified
-const webhookStore = createStore("webhook");
 export const webhookLimiter = rateLimit({
   ...base,
   windowMs: 60_000,
   limit: 300,
   message: { message: "Webhook rate exceeded" },
-  ...(webhookStore ? { store: webhookStore } : {}),
 });

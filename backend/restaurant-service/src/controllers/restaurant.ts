@@ -2,7 +2,19 @@ import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 import { dataUri } from "@foodo/backend-common/files";
 import { AuthRequest } from "@foodo/backend-common";
 import { tryCatch } from "@foodo/backend-common";
-import { Restaurant } from "@foodo/backend-common/models";
+import {
+  createRestaurant,
+  getRestaurantById,
+  getRestaurantByOwner,
+  listVerifiedRestaurants,
+  listRestaurantsNear,
+  setRestaurantOpen,
+  updateRestaurantByOwner,
+} from "@foodo/backend-common/dynamo";
+import {
+  setCacheablePublic,
+  setCacheablePrivate,
+} from "@foodo/backend-common/aws";
 import jwt from "jsonwebtoken";
 
 export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
@@ -10,9 +22,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
   if (!user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  const existingRestaurant = await Restaurant.findOne({
-    ownerId: user._id,
-  });
+  const existingRestaurant = await getRestaurantByOwner(String(user._id));
 
   if (existingRestaurant) {
     return res.status(400).json({
@@ -42,7 +52,6 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
   let resolvedImageUrl: string | undefined =
     typeof imageUrl === "string" && imageUrl ? imageUrl : undefined;
   if (!resolvedImageUrl && file) {
-    // file can be a base64 data URI string (from JSON body) or a multer File object
     const buffer = typeof file === "string" ? file : dataUri(file)?.content;
     if (!buffer) {
       return res.status(500).json({
@@ -57,12 +66,12 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const restaurant = await Restaurant.create({
+  const restaurant = await createRestaurant({
     name,
     description,
     phone,
     ...(resolvedImageUrl && { image: resolvedImageUrl }),
-    ownerId: user._id,
+    ownerId: String(user._id),
     autoLocation: {
       type: "Point",
       coordinates: [Number(longitude), Number(latitude)],
@@ -79,16 +88,17 @@ export const getMyRestaurant = tryCatch(async (req: AuthRequest, res) => {
   if (!user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  const restaurant = await Restaurant.findOne({
-    ownerId: user._id,
-  });
+  const restaurant = await getRestaurantByOwner(String(user._id));
   if (!restaurant) {
     return res.status(404).json({ message: "Restaurant not found" });
   }
 
+  // Owner-scoped read: private, never shared at the edge.
+  setCacheablePrivate(res, 5);
+
   if (!user.restaurantId) {
     const token = jwt.sign(
-      { user: { ...user, restaurantId: restaurant._id } } as any,
+      { user: { ...user, restaurantId: restaurant.id } } as any,
       process.env.JWT_SECRET!,
       { expiresIn: "7d" },
     );
@@ -115,11 +125,7 @@ export const updateRestaurantStatus = tryCatch(
       });
     }
 
-    const restaurant = await Restaurant.findOneAndUpdate(
-      { ownerId: user._id },
-      { isOpen: status },
-      { new: true },
-    );
+    const restaurant = await setRestaurantOpen(String(user._id), status);
     if (!restaurant) {
       return res.status(404).json({ message: "Restaurant not found" });
     }
@@ -144,9 +150,6 @@ export const updateRestaurantDetails = tryCatch(
     if (description !== undefined) updateFields.description = description;
     if (phone !== undefined) updateFields.phone = phone;
 
-    // Preferred flow (direct upload): client passes the Cloudinary URL of
-    // the image it already uploaded. Legacy fallback: base64/multipart
-    // `file` → server-side upload via the shared signer.
     if (typeof imageUrl === "string" && imageUrl) {
       updateFields.image = imageUrl;
     } else if (file) {
@@ -160,10 +163,9 @@ export const updateRestaurantDetails = tryCatch(
       }
     }
 
-    const restaurant = await Restaurant.findOneAndUpdate(
-      { ownerId: user._id },
+    const restaurant = await updateRestaurantByOwner(
+      String(user._id),
       updateFields,
-      { new: true },
     );
     if (!restaurant) {
       return res.status(404).json({ message: "Restaurant not found" });
@@ -178,7 +180,11 @@ export const updateRestaurantDetails = tryCatch(
 // ─── Public: Get All Restaurants ────────────────────────────
 
 export const getAllRestaurants = tryCatch(async (req, res) => {
-  const restaurants = await Restaurant.find({ isVerified: true });
+  const restaurants = await listVerifiedRestaurants();
+
+  // Hot public catalog — the CloudFront tier serves most reads.
+  setCacheablePublic(res, 120, 60, 600);
+
   res.status(200).json({
     success: true,
     count: restaurants.length,
@@ -188,12 +194,13 @@ export const getAllRestaurants = tryCatch(async (req, res) => {
 
 // ─── Public: Get Restaurant By ID ────────────────────────────
 
-export const getRestaurantById = tryCatch(async (req, res) => {
-  const { id } = req.params;
-  const restaurant = await Restaurant.findById(id);
+export const getRestaurantByIdController = tryCatch(async (req, res) => {
+  const id = req.params.id as string;
+  const restaurant = await getRestaurantById(id);
   if (!restaurant) {
     return res.status(404).json({ message: "Restaurant not found" });
   }
+  setCacheablePublic(res, 120, 60, 600);
   res.status(200).json({ success: true, data: restaurant });
 });
 
@@ -203,8 +210,8 @@ export const getNearbyRestaurants = tryCatch(async (req, res) => {
   const { longitude, latitude, maxDistance } = req.query;
 
   if (!longitude || !latitude) {
-    // If no location provided, return all verified restaurants
-    const restaurants = await Restaurant.find({ isVerified: true });
+    const restaurants = await listVerifiedRestaurants();
+    setCacheablePublic(res, 120, 60, 600);
     return res.status(200).json({
       success: true,
       count: restaurants.length,
@@ -212,18 +219,14 @@ export const getNearbyRestaurants = tryCatch(async (req, res) => {
     });
   }
 
-  const restaurants = await Restaurant.find({
-    isVerified: true,
-    autoLocation: {
-      $near: {
-        $geometry: {
-          type: "Point",
-          coordinates: [Number(longitude), Number(latitude)],
-        },
-        $maxDistance: Number(maxDistance) || 50000, // default 50km
-      },
-    },
-  });
+  // Bounding-box + haversine (DynamoDB $near replacement), cached per
+  // geohash-free query string at the edge — same URL → same result set.
+  const restaurants = await listRestaurantsNear(
+    Number(latitude),
+    Number(longitude),
+    Number(maxDistance) || 50_000,
+  );
+  setCacheablePublic(res, 60, 30, 300);
 
   res.status(200).json({
     success: true,

@@ -1,10 +1,15 @@
-import { User } from "@foodo/backend-common/models";
+import bcrypt from "bcrypt";
+import {
+  createUser,
+  getUserByEmail,
+} from "@foodo/backend-common/dynamo";
 
-// ─── Demo Accounts ───────────────────────────────────────────
-// Created automatically on first boot so the frontend "Demo Login"
-// quick-login buttons always have real, working credentials.
-// Profiles include photos; the seller/rider records themselves are
-// seeded by their own services (restaurant + rider seeders).
+// ─── Demo Accounts (DynamoDB) ────────────────────────────────
+// Idempotent one-time seeder — run via a Lambda invoke, a script, or a
+// custom resource on deploy; Lambda containers must not seed on boot.
+// Creates the demo customer/seller/rider users so the frontend "Demo
+// Login" quick-login buttons always have real, working credentials.
+// Profiles (restaurant/rider records) are seeded by their own services.
 
 const DEMO_USERS = [
   {
@@ -36,18 +41,16 @@ const DEMO_USERS = [
 export const seedDemoUsers = async (): Promise<void> => {
   for (const demo of DEMO_USERS) {
     try {
-      const existing = await User.findOne({ email: demo.email });
-      if (existing) {
-        // Keep the profile photo in sync with the seed definition
-        if (existing.image !== demo.image) {
-          existing.image = demo.image;
-          await existing.save();
-        }
-        continue;
-      }
+      const existing = await getUserByEmail(demo.email);
+      if (existing) continue; // idempotent — never duplicate demo users
 
-      // Password is hashed by the pre-save hook on the User model
-      await User.create(demo);
+      await createUser({
+        name: demo.name,
+        email: demo.email,
+        password: await bcrypt.hash(demo.password, 10),
+        role: demo.role,
+        image: demo.image,
+      });
       console.log(`[seed] Demo ${demo.role} account ready: ${demo.email}`);
     } catch (error) {
       console.error(`[seed] Failed to seed ${demo.email}:`, error);

@@ -2,15 +2,16 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import connectDB from "@foodo/backend-common/db";
 import cookieSession from "cookie-session";
-import { connectRabbitMQ } from "./config/rabbitmq.js";
+import serverlessHttp from "serverless-http";
+import type {
+  APIGatewayProxyEvent,
+  APIGatewayProxyResult,
+  Context,
+} from "aws-lambda";
+
 import { riderRouter } from "./routes/rider.js";
-import { startOrderReadyConsumer } from "./config/orderReady.consumer.js";
-import { startRiderEventConsumer } from "./config/riderEvent.consumer.js";
-import { seedDemoRider } from "./seed/demo-rider.js";
-
-
+import { orderReadyHandler, riderEventsHandler } from "./config/consumers.js";
 
 const app = express();
 
@@ -39,24 +40,30 @@ app.use("/api/rider", riderRouter);
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'UP',
-    uptime: process.uptime(),
     timestamp: Date.now()
   });
 });
 
+// ─── Lambda entrypoints (the ONLY entrypoints) ──────────────
+// One deployment artifact, three handlers:
+//   handler      — API Gateway HTTP API (serverless-http)
+//   orderReady   — SQS ORDER_QUEUE_URL (rider matcher work queue)
+//   riderEvents  — SQS RIDER_EVENTS_QUEUE_URL (SNS-filtered events)
+//
+// No app.listen, no PORT, no dev mode: this service exists only as
+// Lambda. The DynamoDB client is created lazily per warm container —
+// no connection setup on the hot path.
 
-// NOTE: `PORT` was referenced but never defined (pre-existing build break;
-// declared so `tsc` passes). Default matches web's dev proxy expectation.
-const PORT = process.env.PORT ?? "3004";
+const serverlessApp = serverlessHttp(app);
 
-app.listen(PORT, () => {
-    console.log("Server running on port ", PORT);
-    connectDB().then(() => seedDemoRider());
+export const handler = async (
+  event: APIGatewayProxyEvent,
+  context: Context,
+): Promise<APIGatewayProxyResult> => {
+  context.callbackWaitsForEmptyEventLoop = false;
+  return serverlessApp(event, context) as unknown as APIGatewayProxyResult;
+};
 
-    // RabbitMQ connects in the background — the API boots and serves even
-    // while the broker is down. The manager retries with exponential
-    // backoff and re-attaches the consumers once the connection returns.
-    connectRabbitMQ();
-    startOrderReadyConsumer();
-    startRiderEventConsumer();
-});
+export const orderReady = orderReadyHandler;
+
+export const riderEvents = riderEventsHandler;

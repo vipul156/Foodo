@@ -1,27 +1,26 @@
 {
   "name": "@foodo/restaurant-service",
   "version": "1.0.0",
-  "description": "Foodo restaurant/menu/order service.",
+  "description": "Foodo restaurant/menu/order service (serverless Lambda — API Gateway HTTP + SQS consumers).",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx --watch src/index.ts",
     "lint": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
-    "amqplib": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
     "cookie-session": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
     "jsonwebtoken": "catalog:",
-    "mongoose": "catalog:"
+    "serverless-http": "catalog:"
   },
   "devDependencies": {
-    "@types/amqplib": "catalog:",
+    "@types/aws-lambda": "catalog:",
     "@types/cookie-session": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",

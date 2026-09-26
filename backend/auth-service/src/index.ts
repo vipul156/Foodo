@@ -3,14 +3,12 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cookieSession from "cookie-session";
 import serverlessHttp from "serverless-http";
+import type { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda";
 
-import connectDB from "@foodo/backend-common/db";
 import { authRoute } from "./routes/auth.js";
 import { cookieSessionOptions } from "./lib/tokens.js";
 
 dotenv.config();
-
-
 
 const app = express();
 
@@ -31,8 +29,12 @@ app.get("/health", (req, res) => {
 
 const serverlessApp = serverlessHttp(app);
 
-export const handler = async (event: any, context: any) => {
+// Lambda-only entrypoint: no connectDB() — the DynamoDB client is
+// created lazily per warm container, nothing to wire up per request.
+export const handler = async (
+  event: APIGatewayProxyEvent,
+  context: Context,
+): Promise<APIGatewayProxyResult> => {
   context.callbackWaitsForEmptyEventLoop = false;
-  await connectDB();
-  return serverlessApp(event, context);
+  return serverlessApp(event, context) as unknown as APIGatewayProxyResult;
 };

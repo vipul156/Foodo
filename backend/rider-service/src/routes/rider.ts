@@ -2,7 +2,7 @@ import { Router } from "express";
 import { isAuth, isRider } from "@foodo/backend-common";
 import {
     acceptOrder,
-  createRider,
+  createRiderController,
   fetchAvailableOrders,
   fetchMyCurrentOrder,
   fetchMyDeliveryHistory,
@@ -24,7 +24,7 @@ router.use(isAuth, isRider);
 // straight to Cloudinary. Auth-checked; folder is fixed server-side.
 router.get("/upload-signature", getRiderImageSignature);
 
-router.post("/new", uploadFile, createRider);
+router.post("/new", uploadFile, createRiderController);
 
 router.get("/myprofile", fetchMyProfile);
 router.patch("/toggle", toogleRiderAvailablity);

@@ -1,13 +1,16 @@
 import express from "express";
 import dotenv from "dotenv";
 import cookieSession from "cookie-session";
-import { adminRoutes } from "./routes/admin.js";
 import serverlessHttp from "serverless-http";
-import connectDB from "@foodo/backend-common/db";
+import type {
+  APIGatewayProxyEvent,
+  APIGatewayProxyResult,
+  Context,
+} from "aws-lambda";
+
+import { adminRoutes } from "./routes/admin.js";
 
 dotenv.config();
-
-
 
 const app = express();
 
@@ -28,27 +31,20 @@ app.use("/api/admin", adminRoutes);
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'UP',
-    uptime: process.uptime(),
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 });
 
 const serverlessApp = serverlessHttp(app);
 
-export const handler = async (event: any, context: any) => {
+// ─── Lambda-only entrypoint ─────────────────────────────────
+// No connectDB() — DynamoDB needs no connection setup; the SDK's reused
+// client (warm container) resolves the endpoint per call. No dev-mode
+// app.listen block: this service exists only as Lambda.
+export const handler = async (
+  event: APIGatewayProxyEvent,
+  context: Context,
+): Promise<APIGatewayProxyResult> => {
   context.callbackWaitsForEmptyEventLoop = false;
-  await connectDB();
-  return serverlessApp(event, context);
+  return serverlessApp(event, context) as unknown as APIGatewayProxyResult;
 };
-
-// ─── Local dev server (tsx --watch) ─────────────────────────
-// `pnpm dev` runs this file directly; on Lambda the handler above is
-// the entrypoint and this block never executes.
-if (process.env.NODE_ENV !== "production" && process.env.AWS_LAMBDA_FUNCTION_NAME === undefined) {
-  connectDB().then(() => {
-    const PORT = process.env.PORT ?? 3001;
-    app.listen(PORT, () => {
-      console.log("Admin service (dev) listening on port", PORT);
-    });
-  });
-}

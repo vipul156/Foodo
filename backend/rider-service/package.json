@@ -1,27 +1,25 @@
 {
   "name": "@foodo/rider-service",
   "version": "1.0.0",
-  "description": "Foodo rider service.",
+  "description": "Foodo rider service (serverless Lambda — API Gateway HTTP + SQS consumers).",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx --watch src/index.ts",
     "lint": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
-    "amqplib": "catalog:",
     "cookie-session": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
-    "mongoose": "catalog:",
-    "multer": "catalog:"
+    "multer": "catalog:",
+    "serverless-http": "catalog:"
   },
   "devDependencies": {
-    "@types/amqplib": "catalog:",
+    "@types/aws-lambda": "catalog:",
     "@types/cookie-session": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",

@@ -7,14 +7,25 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
+
+    "deploy:core": "serverless deploy --stage ${STAGE:-dev}",
+    "deploy:services": "serverless deploy --stage ${STAGE:-dev}",
+    "deploy": "pnpm run deploy:core && pnpm run deploy:services",
+    "remove:services": "serverless remove --stage ${STAGE:-dev}",
+    "remove:core": "serverless remove --stage ${STAGE:-dev}",
+    "logs:payment": "serverless logs --function paymentConsumer --tail --stage ${STAGE:-dev}",
+    "logs:reconcile": "serverless logs --function reconcile --tail --stage ${STAGE:-dev}"
   },
   "devDependencies": {
     "prettier": "^3.6.2",
+    "serverless": "catalog:",
+    "serverless-esbuild": "catalog:",
+    "serverless-prune-plugin": "catalog:",
+    "esbuild": "catalog:",
     "turbo": "^2.5.8",
     "typescript": "^5.9.3"
   }

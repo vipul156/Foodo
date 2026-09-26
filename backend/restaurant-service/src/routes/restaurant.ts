@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { isAuth, isSeller } from "@foodo/backend-common";
-import { addRestaurant, getMyRestaurant, updateRestaurantDetails, updateRestaurantStatus, getAllRestaurants, getNearbyRestaurants, getRestaurantById } from "../controllers/restaurant.js";
+import { addRestaurant, getMyRestaurant, updateRestaurantDetails, updateRestaurantStatus, getAllRestaurants, getNearbyRestaurants, getRestaurantByIdController } from "../controllers/restaurant.js";
 import { getRestaurantImageSignature } from "../controllers/upload.js";
 
 const router = Router()
@@ -17,7 +17,7 @@ router.get('/my', isAuth, isSeller, getMyRestaurant)
 router.get('/upload-signature', isAuth, isSeller, getRestaurantImageSignature)
 
 // ── Public wildcard (last to avoid catching /my, /all, etc.) ─
-router.get('/:id', getRestaurantById)
+router.get('/:id', getRestaurantByIdController)
 
 // ── Seller-only Routes ─────────────────────────────────────
 router.use(isAuth, isSeller);
