@@ -1,0 +1,40 @@
+{
+  "name": "@foodo/rider-service",
+  "version": "1.0.0",
+  "description": "Foodo rider service.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx --watch src/index.ts"
+  },
+  "dependencies": {
+    "@foodo/backend-common": "workspace:*",
+    "@foodo/types": "workspace:*",
+    "amqplib": "^2.0.1",
+    "axios": "^1.18.1",
+    "cookie-session": "^2.1.1",
+    "cors": "^2.8.6",
+    "datauri": "^4.1.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.7.4",
+    "multer": "^2.2.0",
+    "opossum": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/cookie-session": "catalog:",
+    "@types/cors": "catalog:",
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "catalog:",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "catalog:",
+    "@types/opossum": "^8.1.9",
+    "tsx": "^4.23.1",
+    "typescript": "catalog:"
+  }
+}

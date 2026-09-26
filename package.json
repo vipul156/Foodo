@@ -1,10 +1,21 @@
 {
-  "name": "foodo-root",
+  "name": "foodo",
   "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "concurrently --names \"auth,admin,rest,rider,real,utils\" --prefix-colors \"blue,green,magenta,yellow,cyan,red\" \"npm --prefix auth run dev\" \"npm --prefix admin run dev\" \"npm --prefix restaurant run dev\" \"npm --prefix rider run dev\" \"npm --prefix realtime run dev\" \"npm --prefix utils run dev\""
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\""
   },
   "devDependencies": {
-    "concurrently": "^8.0.0"
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.3"
   }
 }
