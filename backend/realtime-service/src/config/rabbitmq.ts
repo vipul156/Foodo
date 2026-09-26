@@ -1,48 +1,55 @@
-import amqp from "amqplib";
+import {
+  createAmqpManager,
+  startFanoutConsumer,
+  type EventHandler,
+} from "@foodo/backend-common/queue";
 import { getIo } from "../socket.js";
 
-let channel: amqp.Channel | undefined;
+// ─── RabbitMQ wiring (realtime-service) ─────────────────────
+// Connection lifecycle lives in the shared createAmqpManager factory.
+// This service owns the fanout exchange: producers (order service, rider
+// service, utils) publish and forget — they never call realtime over
+// HTTP, so a realtime outage or restart can never degrade the order API.
+// The fanout shape also means any other consumer (analytics, push
+// notifications) can bind its own queue to the same exchange without the
+// publisher changing at all.
+//
+// Migrated from a one-shot connect (a broker restart previously killed
+// socket broadcasts until the whole service restarted) to the shared
+// resilient manager: auto-reconnect + consumer re-attachment.
+const manager = createAmqpManager({
+  exchangeEnvVar: "REALTIME_EXCHANGE",
+  defaultExchange: "order.status_changed",
+});
 
-// ─── Realtime event consumer (fanout) ───────────────────────
-// This service OWNS the fanout exchange: producers (order service) publish
-// and forget — they never call realtime over HTTP, so a realtime outage or
-// restart can never degrade the order API. The fanout shape also means any
-// other consumer (analytics, push notifications) can bind its own queue to
-// the same exchange without the publisher changing at all.
-export const connectRealtimeEvents = async () => {
-  try {
-    const exchange = process.env.REALTIME_EXCHANGE || "order.status_changed";
-    const queue = process.env.REALTIME_QUEUE || "realtime.emit";
+export const connectRealtimeEvents = () => {
+  manager.connectRabbitMQ();
 
-    const connection = await amqp.connect(process.env.RABBITMQ_URL!);
-    channel = await connection.createChannel();
-
-    await channel.assertExchange(exchange, "fanout", { durable: true });
-    await channel.assertQueue(queue, { durable: true });
-    await channel.bindQueue(queue, exchange, "");
-
-    channel.consume(queue, (msg) => {
-      if (!msg) return;
-
-      try {
-        const { event, room, payload } = JSON.parse(msg.content.toString());
-
-        if (event && room) {
-          // Same semantics the HTTP /emit endpoint had — one broadcast per
-          // message. Emit failures are best-effort UI updates, so the
-          // message is always acked (no requeue loops).
+  startFanoutConsumer(manager, {
+    queueEnvVar: "REALTIME_QUEUE",
+    defaultQueue: "realtime.emit",
+    handlers: {
+      // catch-all is used instead — realtime emits every event it receives
+    },
+    onUnhandled: (({
+      event,
+      room,
+      payload,
+    }) => {
+      if (event && room) {
+        // One broadcast per message. Emit failures are best-effort UI
+        // updates — swallowed here so the shared builder always acks
+        // (retrying a socket emit would just requeue-loop).
+        try {
           getIo().to(room).emit(event, payload ?? {});
+        } catch (err) {
+          console.error("Socket emit failed:", err);
         }
-      } catch (err) {
-        // Malformed/poison message — drop it rather than requeue-looping
-        console.error("Dropped malformed realtime event:", err);
       }
+    }) as EventHandler,
+  });
 
-      channel?.ack(msg);
-    });
-
-    console.log(`Realtime consuming events from exchange "${exchange}"`);
-  } catch (error) {
-    console.error("Error connecting to RabbitMQ:", error);
-  }
+  console.log(
+    `Realtime consuming events from exchange "${manager.exchangeName()}"`,
+  );
 };

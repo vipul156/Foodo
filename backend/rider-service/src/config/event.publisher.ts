@@ -1,42 +1,23 @@
-import { getChannel, getChannelAsync } from "./rabbitmq.js";
+import { makeDomainEventPublisher } from "@foodo/backend-common/queue";
+import { getChannelAsync, manager } from "./rabbitmq.js";
 
 // ─── Rider domain event publisher (fanout) ──────────────────
-// Published onto the order-events fanout exchange. The accept hot path
-// never waits on the restaurant or realtime SERVICES — but it MUST know
-// the event reached the BROKER. If the publish fails (broker down), the
-// caller rolls the rider claim back; a fire-and-forget drop here would
-// strand the rider offline forever with no order and no compensation.
-// Each interested service (restaurant assignment, realtime sockets)
-// consumes via its own queue bound to the exchange.
+// The accept hot path never waits on the restaurant or realtime
+// SERVICES — but it MUST know the event reached the BROKER. If the
+// publish fails (broker down), the caller rolls the rider claim back;
+// a fire-and-forget drop here would strand the rider offline forever
+// with no order and no compensation. Built on the shared bounded-wait
+// domain-event publisher.
 // Wire shape matches the realtime envelope: { event, room, payload }.
-export const publishRiderEvent = async (
-  event: string,
-  payload: unknown,
-  room?: string,
-  timeoutMs = 5000,
-): Promise<boolean> => {
-  let channel;
-  try {
-    // Bounded wait rides out an in-flight reconnect instead of failing
-    // the accept for a transient broker blip.
-    channel = await getChannelAsync(timeoutMs);
-  } catch {
-    console.error(`Rider publish failed (${event}): RabbitMQ not connected`);
-    return false;
-  }
+export const publishRiderEvent = makeDomainEventPublisher(manager);
 
-  try {
-    return channel.publish(
-      process.env.REALTIME_EXCHANGE || "order.status_changed",
-      "",
-      Buffer.from(JSON.stringify({ event, room, payload })),
-      { persistent: true },
+// Order-flow events travel to the ORDER_QUEUE work queue ({ type, data }
+// envelope) — kept for the few callers that use the queue directly.
+export const publishEvent = async (type: string, data: unknown) => {
+    const channel = await getChannelAsync();
+    channel.sendToQueue(
+        process.env.ORDER_QUEUE!,
+        Buffer.from(JSON.stringify({ type, data })),
+        { persistent: true },
     );
-  } catch (error) {
-    console.error(
-      `Rider publish failed (${event}):`,
-      error instanceof Error ? error.message : error,
-    );
-    return false;
-  }
 };

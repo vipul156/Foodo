@@ -51,7 +51,11 @@ const attachProviderOrder = async (
   provider: "razorpay" | "stripe",
   providerOrderId: string,
 ) => {
-  await publishPaymentIntentCreated({ orderId, provider, providerOrderId });
+  await publishPaymentIntentCreated("payment.intent.created", {
+    orderId,
+    provider,
+    providerOrderId,
+  });
 };
 
 export const createRazorpayOrder = async (req: Request, res: Response) => {

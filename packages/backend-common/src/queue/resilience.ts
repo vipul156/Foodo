@@ -32,6 +32,13 @@ export const declareResilienceQueues = async (
   await channel.assertQueue(`${mainQueue}.dlq`, { durable: true });
 };
 
+export type EventHandler = (payload: {
+  event: string;
+  room?: string;
+  payload: any;
+  msg: ConsumeMessage;
+}) => Promise<void> | void;
+
 export const handleConsumeFailure = (
   channel: Channel,
   msg: ConsumeMessage,

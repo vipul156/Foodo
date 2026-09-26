@@ -1,5 +1,14 @@
-import { getChannelAsync } from "./rabbitmq.js";
+import {
+  makeDomainEventPublisher,
+} from "@foodo/backend-common/queue";
+import { manager, getChannelAsync } from "./rabbitmq.js";
 
+// ─── Publishers (utils-service) ─────────────────────────────
+
+// Payment success travels on the PAYMENT_QUEUE work queue ({ type, data }
+// envelope) — the restaurant-service consumer applies it idempotently.
+// A persistent outage surfaces as an exception the webhook handler turns
+// into a 5xx, so the provider redelivers (webhook dedupe keeps it safe).
 export const publishPaymentSuccess = async (paymentData: {
   orderId: string;
   paymentId: string;
@@ -14,7 +23,7 @@ export const publishPaymentSuccess = async (paymentData: {
         data: paymentData
       })
     ),
-    {persistent: true}
+    { persistent: true },
   );
 };
 
@@ -24,25 +33,5 @@ export const publishPaymentSuccess = async (paymentData: {
 // PUT to the restaurant service). Best-effort: a dropped publish costs
 // one orphan provider intent (reconciliation flags it), never a wrong
 // charge — the claim path's idempotent re-issue protects client retries.
-export const publishPaymentIntentCreated = async (data: {
-  orderId: string;
-  provider: "razorpay" | "stripe";
-  providerOrderId: string;
-}): Promise<void> => {
-  try {
-    const channel = await getChannelAsync(5000);
-
-    channel.publish(
-      process.env.REALTIME_EXCHANGE || "order.status_changed",
-      "",
-      Buffer.from(JSON.stringify({ event: "payment.intent.created", room: undefined, payload: data })),
-      { persistent: true },
-    );
-  } catch (error) {
-    // Non-fatal by design — see the caller's comment.
-    console.error(
-      "payment.intent.created publish failed:",
-      error instanceof Error ? error.message : error,
-    );
-  }
-};
+// Built on the shared bounded-wait domain-event publisher.
+export const publishPaymentIntentCreated = makeDomainEventPublisher(manager);

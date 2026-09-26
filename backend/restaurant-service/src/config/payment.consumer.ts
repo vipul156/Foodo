@@ -1,96 +1,76 @@
-import type { Channel, ConsumeMessage } from "amqplib";
-import { onChannelReady } from "./rabbitmq.js";
-import {
-  declareResilienceQueues,
-  handleConsumeFailure,
-} from "@foodo/backend-common/queue";
+import { startQueueConsumer } from "@foodo/backend-common/queue";
+import { manager } from "./rabbitmq.js";
 import { publishRealtimeEvent } from "./realtime.publisher.js";
-import { Order } from "@foodo/backend-common/models";
-import { Restaurant } from "@foodo/backend-common/models";
+import { Order, Restaurant } from "@foodo/backend-common/models";
 import { Cart } from "../models/Cart.js";
 
-const onPaymentMessage =
-  (channel: Channel) =>
-  async (msg: ConsumeMessage | null): Promise<void> => {
-    if (!msg) {
-      return;
-    }
+// ─── Payment success consumer ────────────────────────────────
+// Queue attach, { type, data } envelope parsing, ack policy, retry+DLQ
+// and reconnect re-attachment live in the shared startQueueConsumer
+// builder — this file only provides the business logic.
+//
+// The gateway (utils-service) publishes PAYMENT_SUCCESS on this queue
+// after signature-verified webhook processing. The update is idempotent
+// (paymentStatus: { $ne: "paid" }) so provider/webhook redeliveries and
+// retries never double-apply.
+const onPaymentSuccess = async (data: { orderId: string }) => {
+  const { orderId } = data;
 
-    try {
-      const event = JSON.parse(msg.content.toString());
-
-      const { orderId } = event.data;
-
-      const order = await Order.findOneAndUpdate(
-        { _id: orderId, paymentStatus: { $ne: "paid" } },
-        {
-          $set: {
-            paymentStatus: "paid",
-            status: "placed",
-          },
-          $unset: {
-            expiresAt: 1,
-          },
-        },
-        {
-          new: true,
-        },
-      );
-
-      if (!order) {
-        channel.ack(msg);
-        return;
-      }
-
-      console.log("Order updated:", order);
-
-      // Payment is confirmed by the gateway — clear the cart BEFORE
-      // notifying anyone. Any cart refetch triggered by the socket events
-      // below must see the empty cart, not a stale one.
-      // Abandoned checkouts keep their cart for the next attempt.
-      await Cart.deleteMany({ userId: order.userId });
-
-      // Realtime notifications go over the RabbitMQ fanout exchange —
-      // fire-and-forget, never over HTTP to the socket tier.
-
-      // Notify the restaurant board
-      publishRealtimeEvent("order:new", `restaurant:${order.restaurantId}`, {
-        orderId: order._id,
-      });
-
-      // Seller sockets only join user:{id} rooms (auth JWT has no
-      // restaurantId) — dual-emit to the owner so the board updates live.
-      const restaurant = await Restaurant.findById(order.restaurantId);
-      if (restaurant) {
-        publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
-          orderId: order._id,
-        });
-      }
-
-      // Customer's "My Orders" fills in the moment payment succeeds
-      publishRealtimeEvent("order:update", `user:${order.userId}`, {
-        orderId: order._id,
+  const order = await Order.findOneAndUpdate(
+    { _id: orderId, paymentStatus: { $ne: "paid" } },
+    {
+      $set: {
+        paymentStatus: "paid",
         status: "placed",
-      });
+      },
+      $unset: {
+        expiresAt: 1,
+      },
+    },
+    {
+      new: true,
+    },
+  );
 
-      channel.ack(msg);
-    } catch (error) {
-      // Never swallow a failure: retry with backoff, then DLQ + alert.
-      // Previously the error was only logged — the message sat unacked
-      // forever and money taken left the order stuck in pending.
-      handleConsumeFailure(channel, msg, process.env.PAYMENT_QUEUE!, error);
-    }
-  };
+  if (!order) {
+    return;
+  }
 
-export const startPaymentConsumer = () => {
-  // Registered once; re-runs on EVERY fresh channel — consume
-  // registrations die with the channel, so after a RabbitMQ restart the
-  // consumer re-attaches automatically.
-  onChannelReady(async (channel) => {
-    // Retry parking lot + DLQ for this queue
-    await declareResilienceQueues(channel, process.env.PAYMENT_QUEUE!);
+  console.log("Order updated:", order);
 
-    channel.consume(process.env.PAYMENT_QUEUE!, onPaymentMessage(channel));
-    console.log("Payment consumer attached");
+  // Payment is confirmed by the gateway — clear the cart BEFORE
+  // notifying anyone. Any cart refetch triggered by the socket events
+  // below must see the empty cart, not a stale one.
+  // Abandoned checkouts keep their cart for the next attempt.
+  await Cart.deleteMany({ userId: order.userId });
+
+  // Realtime notifications go over the RabbitMQ fanout exchange —
+  // fire-and-forget, never over HTTP to the socket tier.
+
+  // Notify the restaurant board
+  publishRealtimeEvent("order:new", `restaurant:${order.restaurantId}`, {
+    orderId: order._id,
+  });
+
+  // Seller sockets only join user:{id} rooms (auth JWT has no
+  // restaurantId) — dual-emit to the owner so the board updates live.
+  const restaurant = await Restaurant.findById(order.restaurantId);
+  if (restaurant) {
+    publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
+      orderId: order._id,
+    });
+  }
+
+  // Customer's "My Orders" fills in the moment payment succeeds
+  publishRealtimeEvent("order:update", `user:${order.userId}`, {
+    orderId: order._id,
+    status: "placed",
   });
 };
+
+export const startPaymentConsumer = () =>
+  startQueueConsumer(manager, {
+    queueEnvVar: "PAYMENT_QUEUE",
+    defaultQueue: "payment.events",
+    onMessage: onPaymentSuccess,
+  });

@@ -1,25 +1,24 @@
-import type { Channel, ConsumeMessage } from "amqplib";
-import { onChannelReady } from "./rabbitmq.js";
-import {
-  declareResilienceQueues,
-  handleConsumeFailure,
-} from "@foodo/backend-common/queue";
+import { startQueueConsumer } from "@foodo/backend-common/queue";
+import { manager } from "./rabbitmq.js";
 import { Rider } from "@foodo/backend-common/models";
 
-const onOrderReady =
-  (channel: Channel) =>
-  async (msg: ConsumeMessage | null): Promise<void> => {
-    if (!msg) return;
-
-    try {
-      const event = JSON.parse(msg.content.toString());
-
-      if (event.type !== "order:ready_for_rider") {
-        channel.ack(msg);
+// ─── Order-ready consumer (rider matching) ──────────────────
+// Queue attach, { type, data } envelope parsing, ack policy, retry+DLQ
+// and reconnect re-attachment live in the shared startQueueConsumer
+// builder — this file only provides the matching/notification logic.
+export const startOrderReadyConsumer = () =>
+  startQueueConsumer(manager, {
+    queueEnvVar: "ORDER_QUEUE",
+    defaultQueue: "order.events",
+    onMessage: async (data: {
+      type: string;
+      data: { orderId: string; restaurantId: string; location: unknown };
+    }) => {
+      if (data?.type !== "order:ready_for_rider") {
         return;
       }
 
-      const { orderId, restaurantId, location } = event.data;
+      const { orderId, restaurantId, location } = data.data;
 
       // Find available riders within 10km of the restaurant
       const riders = await Rider.find({
@@ -39,7 +38,6 @@ const onOrderReady =
 
       if (riders.length === 0) {
         console.log("No riders available for order:", orderId);
-        channel.ack(msg);
         return;
       }
 
@@ -47,6 +45,13 @@ const onOrderReady =
       // One publish per rider (same envelope realtime consumes), no
       // HTTP hop to the socket tier. Realtime ignores messages without
       // a room, so restaurant's queue is unaffected by these events.
+      const channel = manager.getChannel();
+      if (!channel) {
+        console.error(
+          "order:available notify skipped — RabbitMQ not connected",
+        );
+        return;
+      }
       for (const rider of riders) {
         try {
           channel.sendToQueue(
@@ -64,24 +69,5 @@ const onOrderReady =
           console.error("Error notifying rider:", rider.userId, error?.message);
         }
       }
-      channel.ack(msg);
-    } catch (error) {
-      // Never ack a failure: retry with backoff, then DLQ + alert.
-      // Previously the message was acked here, confirming deletion of
-      // an event that never got processed.
-      handleConsumeFailure(channel, msg, process.env.ORDER_QUEUE!, error);
-    }
-  };
-
-export const startOrderReadyConsumer = () => {
-  // Registered once; re-runs on EVERY fresh channel — consume
-  // registrations die with the channel, so after a RabbitMQ restart the
-  // consumer re-attaches automatically.
-  onChannelReady(async (channel) => {
-    // Retry parking lot + DLQ for this queue
-    await declareResilienceQueues(channel, process.env.ORDER_QUEUE!);
-
-    channel.consume(process.env.ORDER_QUEUE!, onOrderReady(channel));
-    console.log("Order ready consumer attached");
+    },
   });
-};
