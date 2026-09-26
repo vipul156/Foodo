@@ -4,7 +4,7 @@ import {
   newRefreshTokenRaw,
   hashRefreshToken,
   REFRESH_TTL_MS,
-} from "../models/User.js";
+} from "@foodo/backend-common/models";
 
 // ─── Access token (JWT) ─────────────────────────────────────
 // Minimal claims only: `sub` + `role`. Name/email/profile live in the

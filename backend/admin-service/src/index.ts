@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
 import cookieSession from "cookie-session";
 import { adminRoutes } from "./routes/admin.js";

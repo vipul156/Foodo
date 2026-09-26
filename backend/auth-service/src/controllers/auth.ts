@@ -1,5 +1,5 @@
 import type { Response } from "express";
-import { User } from "../models/User.js";
+import { User } from "@foodo/backend-common/models";
 import { tryCatch } from "@foodo/backend-common";
 import bcrypt from "bcrypt";
 import {
@@ -9,7 +9,7 @@ import {
   refreshCookieOptions,
   type IssuedRefresh,
 } from "../lib/tokens.js";
-import { hashRefreshToken } from "../models/User.js";
+import { hashRefreshToken } from "@foodo/backend-common/models";
 import type { AuthRequest, AccessClaims } from "../middlewares/isAuth.js";
 import {
   recordAuthFailure,

@@ -16,7 +16,6 @@
     "axios": "catalog:",
     "bcrypt": "catalog:",
     "cookie-session": "catalog:",
-    "cors": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
     "jsonwebtoken": "catalog:",
