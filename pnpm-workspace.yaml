@@ -9,10 +9,69 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
 
-# Single source of truth for versions shared across all workspace packages.
+# ─────────────────────────────────────────────────────────────
+# Single source of truth for ALL dependency versions.
+# Every workspace package references these via "catalog:" — bump a version
+# here once and it applies everywhere. Do NOT pin versions in package.json.
+#
+# Known exception: `express` / `@types/express` — realtime-service still
+# runs Express 4 and pins its own version locally. Migrate it to Express 5,
+# then move these two into the catalog and delete the local pins.
+# ─────────────────────────────────────────────────────────────
 catalog:
+  # Tooling
   typescript: ^5.9.3
+  tsx: ^4.23.1
+  tsup: ^8.5.1
+
+  # Type definitions
   "@types/node": ^20
   "@types/express": ^5.0.6
-  "@types/cookie-session": ^2.0.49
   "@types/cors": ^2.8.19
+  "@types/cookie-session": ^2.0.49
+  "@types/dotenv": ^6.1.1
+  "@types/jsonwebtoken": ^9.0.10
+  "@types/amqplib": ^0.10.8
+  "@types/multer": ^2.2.0
+  "@types/opossum": ^8.1.9
+  "@types/bcrypt": ^6.0.0
+  "@types/cookie-parser": ^1.4.10
+
+  # Shared runtime dependencies
+  express: ^5.2.1
+  jsonwebtoken: ^9.0.3
+  cookie-session: ^2.1.1
+  cors: ^2.8.6
+  dotenv: ^17.4.2
+  amqplib: ^2.0.1
+  axios: ^1.18.1
+  multer: ^2.2.0
+  opossum: ^5.0.1
+  datauri: ^4.1.0
+  mongoose: ^9.7.4
+  cookie-parser: ^1.4.7
+  bcrypt: ^6.0.0
+  googleapis: ^173.0.0
+  express-rate-limit: ^8.7.0
+  serverless-http: ^4.0.0
+  ioredis: ^6.0.0
+  socket.io: ^4.8.3
+  "@socket.io/redis-adapter": ^8.3.0
+
+  # Single-consumer runtime dependencies (cataloged for consistency)
+  cloudinary: ^2.10.0
+  razorpay: ^2.9.6
+  stripe: ^22.3.1
+  rate-limit-redis: ^6.0.1
+  "@aws-sdk/client-lambda": ^3.1141.0
+
+# @types/multer still depends on the Express-4 type packages internally,
+# which drags a second Express type universe into every consumer and breaks
+# interface identity (RequestHandler not assignable across universes).
+# Override ONLY within @types/multer's subtree so realtime-service's
+# legitimate Express-4 runtime types are untouched.
+overrides:
+  "@types/multer>@types/express": ^5.0.6
+  "@types/multer>@types/express-serve-static-core": ^5.1.3
+  "@types/cookie-session>@types/express": ^5.0.6
+  "@types/cookie-session>@types/express-serve-static-core": ^5.1.3

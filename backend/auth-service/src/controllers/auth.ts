@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import { User } from "../models/User.js";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { tryCatch } from "@foodo/backend-common";
 import bcrypt from "bcrypt";
 import {
   signAccessToken,

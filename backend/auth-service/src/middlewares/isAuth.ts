@@ -1,17 +1,20 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import type { AccessClaims } from "@foodo/types";
 
-// ─── Minimal JWT claims (issued by lib/tokens.ts) ───────────
+// Re-export the canonical claims shape so internal imports
+// (`../middlewares/isAuth.js`) keep working unchanged.
+export type { AccessClaims };
+
+// ─── Minimal JWT claims (shape defined in @foodo/types) ─────
 // Only `sub` + `role` — name/email/profile stay in the DB and come
 // from /me. Smaller cookie, smaller tamper surface, no PII in the
 // token payload.
-export interface AccessClaims {
-  sub: string;
-  role: string;
-  typ: "access";
-  iat?: number;
-  exp?: number;
-}
+//
+// IMPORTANT: this service's isAuth is deliberately STRICTER than the
+// shared permissive one in @foodo/backend-common — it REJECTS legacy
+// full-user tokens and any non-access typ. Do not swap it for the
+// shared implementation.
 
 export interface AuthRequest extends Request {
   user?: AccessClaims;

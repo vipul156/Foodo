@@ -10,11 +10,10 @@ import {
 // Minimal claims only: `sub` + `role`. Name/email/profile live in the
 // database and are fetched on /me — they change, and every byte in the
 // cookie JWT is tamper surface + transport cost.
-export interface AccessClaims {
-  sub: string;
-  role: string;
-  typ: "access";
-}
+//
+// The AccessClaims shape now lives in @foodo/types (the universal,
+// zero-dependency package shared with the web app) and is re-exported
+// from src/middlewares/isAuth.ts for internal imports.
 
 export const ACCESS_TTL_SEC = 15 * 60; // 15 minutes
 

@@ -1,5 +1,5 @@
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
-import { tryCatch } from "../lib/trycatch.js";
+import { tryCatch } from "@foodo/backend-common";
 
 const lambda = new LambdaClient({ region: process.env.AWS_REGION || "ap-south-1" });
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isAuth, isSeller } from "../middlewares/isAuth.js";
+import { isAuth, isSeller } from "@foodo/backend-common";
 import { addRestaurant, getMyRestaurant, updateRestaurantDetails, updateRestaurantStatus, getAllRestaurants, getNearbyRestaurants, getRestaurantById } from "../controllers/restaurant.js";
 
 const router = Router()

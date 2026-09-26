@@ -1,6 +1,8 @@
 import express from "express";
 import { registerUser, loginUser, refreshUser, getUser, logoutUser } from "../controllers/auth.js";
 import { getSocketToken } from "../controllers/socket-token.js";
+// STRICT service-local isAuth — rejects legacy tokens; intentionally NOT
+// the shared permissive variant from @foodo/backend-common.
 import { isAuth } from "../middlewares/isAuth.js";
 import {
   authFloodLimiter,

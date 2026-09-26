@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import type { Request, Response } from "express";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { tryCatch } from "@foodo/backend-common";
 import { Rider } from "../model/Rider.js";
 
 // ─── Internal: List Riders (admin) ──────────────────────────

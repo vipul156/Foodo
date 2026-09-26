@@ -1,7 +1,7 @@
 import { uploadViaBreaker } from "../config/http.js";
 import { dataUri } from "../config/dataUri.js";
-import { AuthRequest } from "../middlewares/isAuth.js";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { AuthRequest } from "@foodo/backend-common";
+import { tryCatch } from "@foodo/backend-common";
 import { Restaurant } from "../models/Restaurant.js";
 import jwt from "jsonwebtoken";
 

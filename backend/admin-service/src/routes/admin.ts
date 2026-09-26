@@ -9,7 +9,7 @@ import {
   verifyRider,
   getPlatformStats,
 } from "../controllers/admin.js";
-import { isAuth, isAdmin } from "../middlewares/isAuth.js";
+import { isAuth, isAdmin } from "@foodo/backend-common";
 
 const router = Router();
 

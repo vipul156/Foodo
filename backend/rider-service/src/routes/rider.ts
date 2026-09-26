@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isAuth, isRider } from "../middlewares/isAuth.js";
+import { isAuth, isRider } from "@foodo/backend-common";
 import {
     acceptOrder,
   createRider,
@@ -11,7 +11,7 @@ import {
   toogleRiderAvailablity,
   updateOrderStatus,
 } from "../controller/rider.js";
-import uploadFile from "../middlewares/multer.js";
+import { uploadFile } from "@foodo/backend-common";
 
 const router = Router();
 

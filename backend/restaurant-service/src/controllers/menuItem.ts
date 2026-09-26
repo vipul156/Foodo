@@ -1,6 +1,6 @@
 import { MenuItem } from "../models/MenuItem.js";
-import { tryCatch } from "../middlewares/trycatch.js";
-import { AuthRequest } from "../middlewares/isAuth.js";
+import { tryCatch } from "@foodo/backend-common";
+import { AuthRequest } from "@foodo/backend-common";
 import { Restaurant } from "../models/Restaurant.js";
 import { dataUri } from "../config/dataUri.js";
 import { uploadViaBreaker } from "../config/http.js";

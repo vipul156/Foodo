@@ -1,4 +1,9 @@
 import { Schema, Document, model, Types } from "mongoose";
+import type {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from "@foodo/types";
 
 export interface IOrder extends Document {
   userId: string;
@@ -37,18 +42,10 @@ export interface IOrder extends Document {
     longitude: number;
   };
 
-  status:
-    | "placed"
-    | "accepted"
-    | "preparing"
-    | "ready_for_rider"
-    | "rider_assigned"
-    | "picked_up"
-    | "delivered"
-    | "cancelled";
+  status: OrderStatus;
 
-  paymentMethod: "razorpay" | "stripe" | "cod";
-  paymentStatus: "pending" | "paid" | "failed";
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
 
   // Payment initiation bookkeeping (set via the internal claim endpoint).
   // Enables idempotent re-issue of the SAME provider intent on client

@@ -18,7 +18,7 @@ import {
   updateOrderStatusRider,
   cancelOrder,
 } from "../controllers/order.js";
-import { isAuth, isSeller } from "../middlewares/isAuth.js";
+import { isAuth, isSeller } from "@foodo/backend-common";
 
 const router = Router();
 

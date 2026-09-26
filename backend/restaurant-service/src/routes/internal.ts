@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isInternal } from "../middlewares/internal.js";
+import { isInternal } from "@foodo/backend-common";
 import {
   listRestaurants,
   verifyRestaurant,

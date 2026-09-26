@@ -3,10 +3,20 @@
 // Rules for this package:
 //   1. NEVER import from apps/web or any browser-targeted code. Nothing here
 //      may end up in a browser bundle.
-//   2. Node-specific runtime dependencies (mongoose, ioredis, amqplib, etc.)
-//      go in peerDependencies as services adopt shared code from here, so the
-//      consuming service controls the actual version.
-//   3. Prefer re-exporting the *service's own* choices — this package holds
-//      only code that is genuinely identical across services.
+//   2. Node-specific runtime dependencies (jsonwebtoken, multer, express)
+//      are peerDependencies — the consuming service controls the version.
+//   3. This package holds only code that is genuinely identical across
+//      services. auth-service's STRICT isAuth is intentionally NOT here.
 
+// ─── Middlewares ─────────────────────────────────────────────
+// Permissive JWT middleware + role guards (restaurant/rider/admin/utils).
+export * from "./middlewares/isAuth.js";
+
+// tryCatch (plain) + tryCatchStatus (admin's status-preserving variant)
 export * from "./middlewares/trycatch.js";
+
+// Service-to-service INTERNAL_SERVICE_KEY header check
+export * from "./middlewares/internal.js";
+
+// Memory-storage single-file upload (multer .single("file"))
+export * from "./middlewares/multer.js";

@@ -7,7 +7,7 @@
     "moduleResolution": "nodenext",
     "target": "ES2020",
     "lib": ["ES2020"],
-    "types": ["node"],
+    "types": ["node", "multer"],
     "sourceMap": false,
     "declaration": false,
     "declarationMap": false

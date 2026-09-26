@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { getMenuItems } from "../controllers/menuItem.js";
 import { createMenuItem } from "../controllers/menuItem.js";
-import { isAuth, isSeller } from "../middlewares/isAuth.js";
+import { isAuth, isSeller } from "@foodo/backend-common";
 import { deleteMenuItem } from "../controllers/menuItem.js";
 import { toogleMenuItemAvailability } from "../controllers/menuItem.js";
-import uploadFile from "../middlewares/multer.js";
+import { uploadFile } from "@foodo/backend-common";
 
 const router = Router();
 

@@ -1,17 +1,31 @@
-// Shared domain types live here. Start by promoting types that are duplicated
-// across apps/web (src/types) and the backend services (e.g. JWT claim shapes,
-// order status unions, API response envelopes).
-//
-// Example shape (uncomment and adapt when promoting real types):
-//
-// export type UserRole = "customer" | "seller" | "rider" | "admin";
-//
-// export interface AccessClaims {
-//   sub: string;
-//   role: UserRole;
-//   typ: "access";
-//   iat?: number;
-//   exp?: number;
-// }
+// ─── Auth ─────────────────────────────────────────────────────
+// Roles used across auth-service, guards, and the web app.
+export type UserRole = "customer" | "seller" | "rider" | "admin";
 
-export {};
+// Minimal JWT access-token claims (issued by auth-service lib/tokens.ts).
+// Only `sub` + `role` — name/email/profile stay in the DB and come from
+// /me. Smaller cookie, smaller tamper surface, no PII in the token payload.
+export interface AccessClaims {
+  sub: string;
+  role: string;
+  typ: "access";
+  iat?: number;
+  exp?: number;
+}
+
+// ─── Orders ──────────────────────────────────────────────────
+// Canonical lifecycle of an order (restaurant-service Order model,
+// web/src/types OrderStatus, and every socket payload).
+export type OrderStatus =
+  | "placed"
+  | "accepted"
+  | "preparing"
+  | "ready_for_rider"
+  | "rider_assigned"
+  | "picked_up"
+  | "delivered"
+  | "cancelled";
+
+export type PaymentMethod = "razorpay" | "stripe" | "cod";
+
+export type PaymentStatus = "pending" | "paid" | "failed";

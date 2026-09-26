@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import type { Request, Response } from "express";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { tryCatch } from "@foodo/backend-common";
 import { Restaurant } from "../models/Restaurant.js";
 import { Order } from "../models/Order.js";
 

@@ -1,5 +1,5 @@
-import { AuthRequest } from "../middlewares/isAuth.js";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { AuthRequest } from "@foodo/backend-common";
+import { tryCatch } from "@foodo/backend-common";
 import mongoose from "mongoose";
 import { Cart } from "../models/Cart.js";
 

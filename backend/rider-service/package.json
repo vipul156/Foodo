@@ -7,34 +7,35 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx --watch src/index.ts"
+    "dev": "tsx --watch src/index.ts",
+    "lint": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
-    "amqplib": "^2.0.1",
-    "axios": "^1.18.1",
-    "cookie-session": "^2.1.1",
-    "cors": "^2.8.6",
-    "datauri": "^4.1.0",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.7.4",
-    "multer": "^2.2.0",
-    "opossum": "^5.0.1"
+    "amqplib": "catalog:",
+    "axios": "catalog:",
+    "cookie-session": "catalog:",
+    "cors": "catalog:",
+    "datauri": "catalog:",
+    "dotenv": "catalog:",
+    "express": "catalog:",
+    "jsonwebtoken": "catalog:",
+    "mongoose": "catalog:",
+    "multer": "catalog:",
+    "opossum": "catalog:"
   },
   "devDependencies": {
-    "@types/amqplib": "^0.10.8",
-    "@types/cookie-session": "catalog:",
+    "@types/amqplib": "catalog:",
     "@types/cors": "catalog:",
-    "@types/dotenv": "^6.1.1",
+    "@types/cookie-session": "catalog:",
+    "@types/dotenv": "catalog:",
     "@types/express": "catalog:",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/multer": "^2.2.0",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/multer": "catalog:",
     "@types/node": "catalog:",
-    "@types/opossum": "^8.1.9",
-    "tsx": "^4.23.1",
+    "@types/opossum": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:"
   }
 }

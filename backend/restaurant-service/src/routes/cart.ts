@@ -1,6 +1,6 @@
 import express from "express";
 import { addToCart, getCart, clearCart, icreamentQuantity, decrementQuantity, removeItem } from "../controllers/cart.js";
-import { isAuth } from "../middlewares/isAuth.js";
+import { isAuth } from "@foodo/backend-common";
 
 const router = express.Router();
 

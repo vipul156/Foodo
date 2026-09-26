@@ -1,6 +1,6 @@
 import { dataUri } from "../config/dataUri.js";
-import { AuthRequest } from "../middlewares/isAuth.js";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { AuthRequest } from "@foodo/backend-common";
+import { tryCatch } from "@foodo/backend-common";
 import { Rider } from "../model/Rider.js";
 import { criticalPut, readGet, readPost } from "../config/http.js";
 import { publishRiderEvent } from "../config/event.publisher.js";

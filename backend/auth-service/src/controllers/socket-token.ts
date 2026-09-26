@@ -1,5 +1,5 @@
 import type { Response } from "express";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { tryCatch } from "@foodo/backend-common";
 import { signAccessToken } from "../lib/tokens.js";
 import type { AuthRequest, AccessClaims } from "../middlewares/isAuth.js";
 

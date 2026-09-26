@@ -3,9 +3,24 @@
 // Generated from backend microservice models
 // ============================================================
 
-// ─── Auth ────────────────────────────────────────────────────
+// Canonical shared types now live in @foodo/types (workspace package).
+// Imported into scope for local use below, then re-exported so existing
+// `@/types` imports keep working unchanged.
+import type {
+  UserRole,
+  AccessClaims,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from "@foodo/types";
 
-export type UserRole = "customer" | "seller" | "rider" | "admin";
+export type {
+  UserRole,
+  AccessClaims,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+};
 
 export interface IUser {
   _id: string;
@@ -131,18 +146,8 @@ export interface ICreateAddressPayload {
 
 // ─── Order ───────────────────────────────────────────────────
 
-export type OrderStatus =
-  | "placed"
-  | "accepted"
-  | "preparing"
-  | "ready_for_rider"
-  | "rider_assigned"
-  | "picked_up"
-  | "delivered"
-  | "cancelled";
-
-export type PaymentMethod = "razorpay" | "stripe" | "cod";
-export type PaymentStatus = "pending" | "paid" | "failed";
+// OrderStatus, PaymentMethod, and PaymentStatus are re-exported above
+// from @foodo/types — the canonical definitions shared with the services.
 
 export interface IOrderItem {
   itemId: string;

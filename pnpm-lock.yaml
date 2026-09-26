@@ -6,21 +6,126 @@ settings:
 
 catalogs:
   default:
+    '@aws-sdk/client-lambda':
+      specifier: ^3.1141.0
+      version: 3.1141.0
+    '@socket.io/redis-adapter':
+      specifier: ^8.3.0
+      version: 8.3.0
+    '@types/amqplib':
+      specifier: ^0.10.8
+      version: 0.10.8
+    '@types/bcrypt':
+      specifier: ^6.0.0
+      version: 6.0.0
+    '@types/cookie-parser':
+      specifier: ^1.4.10
+      version: 1.4.10
     '@types/cookie-session':
       specifier: ^2.0.49
       version: 2.0.49
     '@types/cors':
       specifier: ^2.8.19
       version: 2.8.19
+    '@types/dotenv':
+      specifier: ^6.1.1
+      version: 6.1.1
     '@types/express':
       specifier: ^5.0.6
       version: 5.0.6
+    '@types/jsonwebtoken':
+      specifier: ^9.0.10
+      version: 9.0.10
+    '@types/multer':
+      specifier: ^2.2.0
+      version: 2.2.0
     '@types/node':
       specifier: ^20
       version: 20.19.43
+    '@types/opossum':
+      specifier: ^8.1.9
+      version: 8.1.9
+    amqplib:
+      specifier: ^2.0.1
+      version: 2.0.1
+    axios:
+      specifier: ^1.18.1
+      version: 1.20.0
+    bcrypt:
+      specifier: ^6.0.0
+      version: 6.0.0
+    cloudinary:
+      specifier: ^2.10.0
+      version: 2.11.0
+    cookie-parser:
+      specifier: ^1.4.7
+      version: 1.4.7
+    cookie-session:
+      specifier: ^2.1.1
+      version: 2.1.1
+    cors:
+      specifier: ^2.8.6
+      version: 2.8.6
+    datauri:
+      specifier: ^4.1.0
+      version: 4.1.0
+    dotenv:
+      specifier: ^17.4.2
+      version: 17.4.2
+    express:
+      specifier: ^5.2.1
+      version: 5.2.1
+    express-rate-limit:
+      specifier: ^8.7.0
+      version: 8.7.0
+    googleapis:
+      specifier: ^173.0.0
+      version: 173.0.0
+    ioredis:
+      specifier: ^6.0.0
+      version: 6.0.0
+    jsonwebtoken:
+      specifier: ^9.0.3
+      version: 9.0.3
+    mongoose:
+      specifier: ^9.7.4
+      version: 9.10.2
+    multer:
+      specifier: ^2.2.0
+      version: 2.4.0
+    opossum:
+      specifier: ^5.0.1
+      version: 5.1.3
+    rate-limit-redis:
+      specifier: ^6.0.1
+      version: 6.0.1
+    razorpay:
+      specifier: ^2.9.6
+      version: 2.9.8
+    serverless-http:
+      specifier: ^4.0.0
+      version: 4.0.0
+    socket.io:
+      specifier: ^4.8.3
+      version: 4.8.4
+    stripe:
+      specifier: ^22.3.1
+      version: 22.6.2
+    tsup:
+      specifier: ^8.5.1
+      version: 8.5.1
+    tsx:
+      specifier: ^4.23.1
+      version: 4.23.15
     typescript:
       specifier: ^5.9.3
       version: 5.9.3
+
+overrides:
+  '@types/multer>@types/express': ^5.0.6
+  '@types/multer>@types/express-serve-static-core': ^5.1.3
+  '@types/cookie-session>@types/express': ^5.0.6
+  '@types/cookie-session>@types/express-serve-static-core': ^5.1.3
 
 importers:
 
@@ -166,7 +271,7 @@ importers:
   backend/admin-service:
     dependencies:
       '@aws-sdk/client-lambda':
-        specifier: ^3.1141.0
+        specifier: 'catalog:'
         version: 3.1141.0
       '@foodo/backend-common':
         specifier: workspace:*
@@ -175,50 +280,47 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       axios:
-        specifier: ^1.18.1
+        specifier: 'catalog:'
         version: 1.20.0
       cookie-session:
-        specifier: ^2.1.1
+        specifier: 'catalog:'
         version: 2.1.1
       cors:
-        specifier: ^2.8.6
+        specifier: 'catalog:'
         version: 2.8.6
       dotenv:
-        specifier: ^17.4.2
+        specifier: 'catalog:'
         version: 17.4.2
       express:
-        specifier: ^5.2.1
+        specifier: 'catalog:'
         version: 5.2.1
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: 'catalog:'
         version: 9.0.3
       serverless-http:
-        specifier: ^4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
     devDependencies:
       '@types/cookie-session':
-        specifier: ^2.0.49
-        version: 2.0.49
-      '@types/cors':
         specifier: 'catalog:'
-        version: 2.8.19
+        version: 2.0.49
       '@types/dotenv':
-        specifier: ^6.1.1
+        specifier: 'catalog:'
         version: 6.1.1
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
       '@types/jsonwebtoken':
-        specifier: ^9.0.10
+        specifier: 'catalog:'
         version: 9.0.10
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       tsup:
-        specifier: ^8.5.1
+        specifier: 'catalog:'
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.28)(tsx@4.23.15)(typescript@5.9.3)
       tsx:
-        specifier: ^4.23.1
+        specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
@@ -233,68 +335,68 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       axios:
-        specifier: ^1.18.1
+        specifier: 'catalog:'
         version: 1.20.0
       bcrypt:
-        specifier: ^6.0.0
+        specifier: 'catalog:'
         version: 6.0.0
       cookie-parser:
-        specifier: ^1.4.7
+        specifier: 'catalog:'
         version: 1.4.7
       cookie-session:
-        specifier: ^2.1.1
+        specifier: 'catalog:'
         version: 2.1.1
       cors:
-        specifier: ^2.8.6
+        specifier: 'catalog:'
         version: 2.8.6
       dotenv:
-        specifier: ^17.4.2
+        specifier: 'catalog:'
         version: 17.4.2
       express:
-        specifier: ^5.2.1
+        specifier: 'catalog:'
         version: 5.2.1
       express-rate-limit:
-        specifier: ^8.7.0
+        specifier: 'catalog:'
         version: 8.7.0(express@5.2.1)
       googleapis:
-        specifier: ^173.0.0
+        specifier: 'catalog:'
         version: 173.0.0
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: 'catalog:'
         version: 9.0.3
       mongoose:
-        specifier: ^9.7.3
+        specifier: 'catalog:'
         version: 9.10.2(socks@2.8.10)
       serverless-http:
-        specifier: ^4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
     devDependencies:
+      '@types/bcrypt':
+        specifier: 'catalog:'
+        version: 6.0.0
       '@types/cookie-parser':
-        specifier: ^1.4.10
+        specifier: 'catalog:'
         version: 1.4.10(@types/express@5.0.6)
       '@types/cookie-session':
-        specifier: ^2.0.49
-        version: 2.0.49
-      '@types/cors':
         specifier: 'catalog:'
-        version: 2.8.19
+        version: 2.0.49
       '@types/dotenv':
-        specifier: ^6.1.1
+        specifier: 'catalog:'
         version: 6.1.1
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
       '@types/jsonwebtoken':
-        specifier: ^9.0.10
+        specifier: 'catalog:'
         version: 9.0.10
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       tsup:
-        specifier: ^8.5.1
+        specifier: 'catalog:'
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.28)(tsx@4.23.15)(typescript@5.9.3)
       tsx:
-        specifier: ^4.23.1
+        specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
@@ -309,38 +411,38 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       '@socket.io/redis-adapter':
-        specifier: ^8.3.0
+        specifier: 'catalog:'
         version: 8.3.0(socket.io-adapter@2.5.8)
       amqplib:
-        specifier: ^2.0.1
+        specifier: 'catalog:'
         version: 2.0.1
       cookie-session:
-        specifier: ^2.1.1
+        specifier: 'catalog:'
         version: 2.1.1
       cors:
-        specifier: ^2.8.6
+        specifier: 'catalog:'
         version: 2.8.6
       dotenv:
-        specifier: ^17.4.2
+        specifier: 'catalog:'
         version: 17.4.2
       express:
         specifier: ^4.21.0
         version: 4.22.3
       ioredis:
-        specifier: ^6.0.0
+        specifier: 'catalog:'
         version: 6.0.0
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: 'catalog:'
         version: 9.0.3
       serverless-http:
-        specifier: ^4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
       socket.io:
-        specifier: ^4.8.3
+        specifier: 'catalog:'
         version: 4.8.4
     devDependencies:
       '@types/amqplib':
-        specifier: ^0.10.8
+        specifier: 'catalog:'
         version: 0.10.8
       '@types/cookie-session':
         specifier: 'catalog:'
@@ -349,19 +451,19 @@ importers:
         specifier: 'catalog:'
         version: 2.8.19
       '@types/dotenv':
-        specifier: ^6.1.1
+        specifier: 'catalog:'
         version: 6.1.1
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
       '@types/jsonwebtoken':
-        specifier: ^9.0.10
+        specifier: 'catalog:'
         version: 9.0.10
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       tsx:
-        specifier: ^4.23.1
+        specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
@@ -376,41 +478,41 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       amqplib:
-        specifier: ^2.0.1
+        specifier: 'catalog:'
         version: 2.0.1
       axios:
-        specifier: ^1.18.1
+        specifier: 'catalog:'
         version: 1.20.0
       cookie-session:
-        specifier: ^2.1.1
+        specifier: 'catalog:'
         version: 2.1.1
       cors:
-        specifier: ^2.8.6
+        specifier: 'catalog:'
         version: 2.8.6
       datauri:
-        specifier: ^4.1.0
+        specifier: 'catalog:'
         version: 4.1.0
       dotenv:
-        specifier: ^17.4.2
+        specifier: 'catalog:'
         version: 17.4.2
       express:
-        specifier: ^5.2.1
+        specifier: 'catalog:'
         version: 5.2.1
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: 'catalog:'
         version: 9.0.3
       mongoose:
-        specifier: ^9.7.3
+        specifier: 'catalog:'
         version: 9.10.2(socks@2.8.10)
       multer:
-        specifier: ^2.2.0
+        specifier: 'catalog:'
         version: 2.4.0
       opossum:
-        specifier: ^5.0.1
+        specifier: 'catalog:'
         version: 5.1.3
     devDependencies:
       '@types/amqplib':
-        specifier: ^0.10.8
+        specifier: 'catalog:'
         version: 0.10.8
       '@types/cookie-session':
         specifier: 'catalog:'
@@ -419,25 +521,25 @@ importers:
         specifier: 'catalog:'
         version: 2.8.19
       '@types/dotenv':
-        specifier: ^6.1.1
+        specifier: 'catalog:'
         version: 6.1.1
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
       '@types/jsonwebtoken':
-        specifier: ^9.0.10
+        specifier: 'catalog:'
         version: 9.0.10
       '@types/multer':
-        specifier: ^2.2.0
+        specifier: 'catalog:'
         version: 2.2.0
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       '@types/opossum':
-        specifier: ^8.1.9
+        specifier: 'catalog:'
         version: 8.1.9
       tsx:
-        specifier: ^4.23.1
+        specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
@@ -452,41 +554,41 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       amqplib:
-        specifier: ^2.0.1
+        specifier: 'catalog:'
         version: 2.0.1
       axios:
-        specifier: ^1.18.1
+        specifier: 'catalog:'
         version: 1.20.0
       cookie-session:
-        specifier: ^2.1.1
+        specifier: 'catalog:'
         version: 2.1.1
       cors:
-        specifier: ^2.8.6
+        specifier: 'catalog:'
         version: 2.8.6
       datauri:
-        specifier: ^4.1.0
+        specifier: 'catalog:'
         version: 4.1.0
       dotenv:
-        specifier: ^17.4.2
+        specifier: 'catalog:'
         version: 17.4.2
       express:
-        specifier: ^5.2.1
+        specifier: 'catalog:'
         version: 5.2.1
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: 'catalog:'
         version: 9.0.3
       mongoose:
-        specifier: ^9.7.4
+        specifier: 'catalog:'
         version: 9.10.2(socks@2.8.10)
       multer:
-        specifier: ^2.2.0
+        specifier: 'catalog:'
         version: 2.4.0
       opossum:
-        specifier: ^5.0.1
+        specifier: 'catalog:'
         version: 5.1.3
     devDependencies:
       '@types/amqplib':
-        specifier: ^0.10.8
+        specifier: 'catalog:'
         version: 0.10.8
       '@types/cookie-session':
         specifier: 'catalog:'
@@ -495,25 +597,25 @@ importers:
         specifier: 'catalog:'
         version: 2.8.19
       '@types/dotenv':
-        specifier: ^6.1.1
+        specifier: 'catalog:'
         version: 6.1.1
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
       '@types/jsonwebtoken':
-        specifier: ^9.0.10
+        specifier: 'catalog:'
         version: 9.0.10
       '@types/multer':
-        specifier: ^2.2.0
+        specifier: 'catalog:'
         version: 2.2.0
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       '@types/opossum':
-        specifier: ^8.1.9
+        specifier: 'catalog:'
         version: 8.1.9
       tsx:
-        specifier: ^4.23.1
+        specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
@@ -528,77 +630,74 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       amqplib:
-        specifier: ^2.0.1
+        specifier: 'catalog:'
         version: 2.0.1
       axios:
-        specifier: ^1.18.1
+        specifier: 'catalog:'
         version: 1.20.0
       cloudinary:
-        specifier: ^2.10.0
+        specifier: 'catalog:'
         version: 2.11.0
       dotenv:
-        specifier: ^17.4.2
+        specifier: 'catalog:'
         version: 17.4.2
       express:
-        specifier: ^5.2.1
+        specifier: 'catalog:'
         version: 5.2.1
       express-rate-limit:
-        specifier: ^8.7.0
+        specifier: 'catalog:'
         version: 8.7.0(express@5.2.1)
       ioredis:
-        specifier: ^6.0.0
+        specifier: 'catalog:'
         version: 6.0.0
       jsonwebtoken:
-        specifier: ^9.0.3
+        specifier: 'catalog:'
         version: 9.0.3
       multer:
-        specifier: ^2.2.0
+        specifier: 'catalog:'
         version: 2.4.0
       opossum:
-        specifier: ^5.0.1
+        specifier: 'catalog:'
         version: 5.1.3
       rate-limit-redis:
-        specifier: ^6.0.1
+        specifier: 'catalog:'
         version: 6.0.1(express-rate-limit@8.7.0(express@5.2.1))
       razorpay:
-        specifier: ^2.9.6
+        specifier: 'catalog:'
         version: 2.9.8
       serverless-http:
-        specifier: ^4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
       stripe:
-        specifier: ^22.3.1
+        specifier: 'catalog:'
         version: 22.6.2(@types/node@20.19.43)
     devDependencies:
       '@types/amqplib':
-        specifier: ^0.10.8
-        version: 0.10.8
-      '@types/cors':
         specifier: 'catalog:'
-        version: 2.8.19
+        version: 0.10.8
       '@types/dotenv':
-        specifier: ^6.1.1
+        specifier: 'catalog:'
         version: 6.1.1
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
       '@types/jsonwebtoken':
-        specifier: ^9.0.10
+        specifier: 'catalog:'
         version: 9.0.10
       '@types/multer':
-        specifier: ^2.2.0
+        specifier: 'catalog:'
         version: 2.2.0
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       '@types/opossum':
-        specifier: ^8.1.9
+        specifier: 'catalog:'
         version: 8.1.9
       tsup:
-        specifier: ^8.5.1
+        specifier: 'catalog:'
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.28)(tsx@4.23.15)(typescript@5.9.3)
       tsx:
-        specifier: ^4.23.1
+        specifier: 'catalog:'
         version: 4.23.15
       typescript:
         specifier: 'catalog:'
@@ -612,10 +711,22 @@ importers:
       express:
         specifier: ^4.0.0 || ^5.0.0
         version: 5.2.1
+      jsonwebtoken:
+        specifier: ^9.0.0
+        version: 9.0.3
+      multer:
+        specifier: ^2.0.0
+        version: 2.4.0
     devDependencies:
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
+      '@types/jsonwebtoken':
+        specifier: 'catalog:'
+        version: 9.0.10
+      '@types/multer':
+        specifier: 'catalog:'
+        version: 2.2.0
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
@@ -2402,6 +2513,9 @@ packages:
 
   '@types/amqplib@0.10.8':
     resolution: {integrity: sha512-vtDp8Pk1wsE/AuQ8/Rgtm6KUZYqcnTgNvEHwzCkX8rL7AGsC6zqAfKAAJhUZXFhM/Pp++tbnUHiam/8vVpPztA==}
+
+  '@types/bcrypt@6.0.0':
+    resolution: {integrity: sha512-/oJGukuH3D2+D+3H4JWLaAsJ/ji86dhRidzZ/Od7H/i8g+aCmvkeCc6Ni/f9uxGLSQVCRZkX2/lqEFG2BvWtlQ==}
 
   '@types/body-parser@1.19.6':
     resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
@@ -7249,6 +7363,10 @@ snapshots:
     dependencies:
       '@types/node': 20.19.43
 
+  '@types/bcrypt@6.0.0':
+    dependencies:
+      '@types/node': 20.19.43
+
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
@@ -8875,7 +8993,7 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
-      gaxios: 7.1.3
+      gaxios: 7.3.1
       gcp-metadata: 8.1.4
       google-logging-utils: 1.1.3
       gtoken: 8.0.0
@@ -8920,7 +9038,7 @@ snapshots:
 
   gtoken@8.0.0:
     dependencies:
-      gaxios: 7.1.3
+      gaxios: 7.3.1
       jws: 4.0.1
     transitivePeerDependencies:
       - supports-color

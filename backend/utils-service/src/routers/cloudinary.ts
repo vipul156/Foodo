@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { tryCatch } from "@foodo/backend-common";
 import { v2 } from "cloudinary";
 
 const router = Router();

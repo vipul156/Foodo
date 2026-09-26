@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import { AuthRequest } from "../middlewares/isAuth.js";
-import { tryCatch } from "../middlewares/trycatch.js";
+import { AuthRequest } from "@foodo/backend-common";
+import { tryCatch } from "@foodo/backend-common";
 import { Address } from "../models/Address.js";
 
 export const createAddress = tryCatch(async (req: AuthRequest, res) => {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isInternal } from "../middlewares/internal.js";
+import { isInternal } from "@foodo/backend-common";
 import { listUsers, getUserStats } from "../controllers/internal.js";
 
 // Internal contract for other services (currently the admin panel).
