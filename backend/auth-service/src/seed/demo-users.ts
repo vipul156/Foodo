@@ -1,4 +1,4 @@
-import { User } from "../models/User.js";
+import { User } from "@foodo/backend-common/models";
 
 // ─── Demo Accounts ───────────────────────────────────────────
 // Created automatically on first boot so the frontend "Demo Login"

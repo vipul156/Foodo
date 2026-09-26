@@ -5,8 +5,8 @@ import {
   handleConsumeFailure,
 } from "@foodo/backend-common/queue";
 import { publishRealtimeEvent } from "./realtime.publisher.js";
-import { Order } from "../models/Order.js";
-import { Restaurant } from "../models/Restaurant.js";
+import { Order } from "@foodo/backend-common/models";
+import { Restaurant } from "@foodo/backend-common/models";
 import { Cart } from "../models/Cart.js";
 
 const onPaymentMessage =

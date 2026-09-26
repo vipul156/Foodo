@@ -7,7 +7,6 @@ import {
   fetchMyCurrentOrder,
   fetchMyDeliveryHistory,
   fetchMyProfile,
-  releaseRiderInternal,
   toogleRiderAvailablity,
   updateOrderStatus,
 } from "../controller/rider.js";
@@ -16,9 +15,8 @@ import { getRiderImageSignature } from "../controller/upload.js";
 
 const router = Router();
 
-// Internal: called by restaurant service when an assigned order is cancelled.
-// Must be registered before isAuth — it authenticates via x-internal-key.
-router.put("/release/internal", releaseRiderInternal)
+// [REMOVED] PUT /release/internal — cancellation releases now arrive as
+// order.cancelled events on the fanout exchange (see riderEvent.consumer).
 
 router.use(isAuth, isRider);
 

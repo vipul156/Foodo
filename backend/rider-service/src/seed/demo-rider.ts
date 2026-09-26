@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { Rider } from "../model/Rider.js";
+import { Rider } from "@foodo/backend-common/models";
 
 // ─── Demo Rider Profile ──────────────────────────────────────
 // Runs on rider-service startup. Creates a fully onboarded rider

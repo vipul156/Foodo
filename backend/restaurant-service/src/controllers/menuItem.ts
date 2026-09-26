@@ -1,7 +1,7 @@
 import { MenuItem } from "../models/MenuItem.js";
 import { tryCatch } from "@foodo/backend-common";
 import { AuthRequest } from "@foodo/backend-common";
-import { Restaurant } from "../models/Restaurant.js";
+import { Restaurant } from "@foodo/backend-common/models";
 import { dataUri } from "@foodo/backend-common/files";
 import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 

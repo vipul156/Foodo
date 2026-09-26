@@ -121,7 +121,7 @@ export function useUpdateOrderStatus() {
     mutationFn: async (data: { orderId: string }) => {
       const res = await riderApi.put<{
         message: string;
-        order: IOrder;
+        orderId: string;
       }>("/order/update", data);
       return res;
     },

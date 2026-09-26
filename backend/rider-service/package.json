@@ -14,27 +14,19 @@
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
     "amqplib": "catalog:",
-    "axios": "catalog:",
     "cookie-session": "catalog:",
-    "cors": "catalog:",
-    "datauri": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
-    "jsonwebtoken": "catalog:",
     "mongoose": "catalog:",
-    "multer": "catalog:",
-    "opossum": "catalog:"
+    "multer": "catalog:"
   },
   "devDependencies": {
     "@types/amqplib": "catalog:",
-    "@types/cors": "catalog:",
     "@types/cookie-session": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",
-    "@types/jsonwebtoken": "catalog:",
     "@types/multer": "catalog:",
     "@types/node": "catalog:",
-    "@types/opossum": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:"
   }

@@ -2,17 +2,10 @@ import { AuthRequest, tryCatch } from "@foodo/backend-common";
 import { dataUri } from "@foodo/backend-common/files";
 import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 import { Order, Restaurant } from "@foodo/backend-common/models";
-import { Rider } from "../model/Rider.js";
-import { criticalPut } from "../config/http.js";
+import { Rider } from "@foodo/backend-common/models";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
-// Shared internal auth header (evaluated at request time) — used by the
-// one remaining WRITE call to the restaurant service (status update).
-const getInternalHeaders = () => ({
-  "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
-});
-
-// ─── Local order read (2 call sites in this file) ────────────
+// ─── Local order read (2 call sites in this file) ───────────
 // Direct read over the shared Order schema. Lived behind a
 // restaurant-service HTTP endpoint once; with the shared schemas it
 // runs in-process. The single-use history/available queries are
@@ -434,89 +427,33 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  try {
-    // WRITE — stays HTTP via the critical pool + breaker: rider payouts
-    // flow from status updates; the order owner performs the state
-    // transition and pushes the socket updates.
-    const data = await criticalPut<{
-      order?: { status?: string };
-    }>(
-      `${process.env.RESTAURANT_SERVICE_URL}/api/order/update/status/rider`,
-      { orderId },
-      { headers: getInternalHeaders() },
-    );
+  // ─── Publish the intent; the order owner applies the transition ──
+  // Riders live on flaky mobile networks — an HTTP round-trip through
+  // two services turned every elevator ride into "update failed, try
+  // again". The event carries the rider id so the owner's consumer can
+  // bind the transition to THIS rider, making stale/replayed events
+  // harmless. Publish failure (broker hard-down) returns 503 so the
+  // app can retry — the rider's claim is NOT rolled back here; the
+  // rider.order_rejected compensation doesn't apply (nothing was
+  // rejected) and the delivery is still real.
+  const published = await publishRiderEvent("rider.order_status_changed", {
+    orderId,
+    riderId: rider._id,
+  });
 
-    // Delivered → the rider is automatically available again and shows
-    // Online. Until then they stay Offline with the delivery in progress.
-    // Conditional + clears the claim marker atomically.
-    let updatedRider = null;
-    if (data.order?.status === "delivered") {
-      updatedRider = await Rider.findOneAndUpdate(
-        { userId: riderUserId, isAvailable: false, currentOrderId: orderId },
-        { isAvailable: true, currentOrderId: null, lastActive: new Date() },
-        { new: true },
-      );
-    }
-
-    return res.status(200).json({
-      message: "Order status updated",
-      order: data.order,
-      rider: updatedRider || rider,
-    });
-  } catch (error: any) {
-    console.error("Error updating order status:", error?.response?.data || error?.message);
-    return res.status(500).json({
-      message: "Error updating current order",
-    });
-  }
-});
-
-// Called by the restaurant service when an assigned order is cancelled —
-// frees the rider so they can go online again.
-export const releaseRiderInternal = tryCatch(async (req, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    return res.status(403).json({ message: "Forbidden" });
-  }
-
-  const { riderId, orderId } = req.body;
-
-  if (!riderId) {
-    return res.status(400).json({ message: "riderId is required" });
-  }
-
-  // Conditional release: flips the rider back ONLY if they are still
-  // claimed by this order. A stale call (rider already released and
-  // re-claimed by another order) matches nothing and is a no-op — it can
-  // never free a rider who moved on. All current callers send orderId;
-  // the bare-riderId branch only exists as a legacy fallback and keeps
-  // the old free-any-offline-rider semantics.
-  const rider = await Rider.findOneAndUpdate(
-    orderId
-      ? { _id: riderId, isAvailable: false, currentOrderId: orderId }
-      : { _id: riderId, isAvailable: false },
-    { isAvailable: true, currentOrderId: null, lastActive: new Date() },
-    { new: true },
-  );
-
-  if (!rider) {
-    // No match: either the rider doesn't exist, or this release is stale.
-    // Both are fine for the caller (idempotent) — report success.
-    return res.status(200).json({
-      success: true,
-      message: "Rider already released or claimed by another order",
+  if (!published) {
+    return res.status(503).json({
+      message: "Could not reach order service — try again",
     });
   }
 
-  // Rider dashboard learns the assignment fell through — over the fanout
-  // exchange, never over HTTP.
-  await publishRiderEvent(
-    "order:update",
-    { orderId: null, status: "cancelled" },
-    `user:${rider.userId}`,
-  );
-
-  return res.status(200).json({
-    success: true,
-    message: "Rider released",
+  return res.status(202).json({
+    message: "Order status update queued",
+    orderId,
   });
 });
+
+// [REMOVED] PUT /release/internal (releaseRiderInternal) — cancellation
+// releases now arrive as order.cancelled events on the fanout exchange
+// (see config/riderEvent.consumer.ts); the rider service owns rider
+// state and nothing else writes it.

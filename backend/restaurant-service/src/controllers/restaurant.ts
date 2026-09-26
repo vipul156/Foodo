@@ -2,7 +2,7 @@ import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 import { dataUri } from "@foodo/backend-common/files";
 import { AuthRequest } from "@foodo/backend-common";
 import { tryCatch } from "@foodo/backend-common";
-import { Restaurant } from "../models/Restaurant.js";
+import { Restaurant } from "@foodo/backend-common/models";
 import jwt from "jsonwebtoken";
 
 export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {

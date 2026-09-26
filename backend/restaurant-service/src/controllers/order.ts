@@ -6,8 +6,10 @@ import { Order } from "@foodo/backend-common/models";
 import { Cart } from "../models/Cart.js";
 import { Restaurant } from "@foodo/backend-common/models";
 import { MenuItem, IMenuItem } from "../models/MenuItem.js";
-import { releaseRiderViaBreaker } from "../config/http.js";
-import { publishEvent } from "../config/order.publisher.js";
+import {
+  publishEvent,
+  publishOrderEvent,
+} from "../config/order.publisher.js";
 import { publishRealtimeEvent } from "../config/realtime.publisher.js";
 import { deliveryDistanceKm } from "../lib/distance.js";
 
@@ -21,20 +23,20 @@ function notifyRealtime(event: string, room: string, payload: unknown) {
 
 // Fire-and-forget rider release — frees the rider when their claimed or
 // assigned order is cancelled so they can go online and take new orders
-// again. orderId travels along so the rider side can make the release
-// conditional ("free me ONLY if still claimed by THIS order").
+// again. Published as an order.cancelled event onto the fanout exchange
+// (was an HTTP PUT to the rider service): the rider service's consumer
+// performs the conditional release keyed to orderId, and a broker blip
+// only delays the release (persistent message) instead of failing it.
+// orderId travels along so the release is conditional ("free me ONLY if
+// still claimed by THIS order").
 function releaseRider(riderId: unknown, orderId?: unknown) {
   if (!riderId) return;
-  // Critical pool + breaker — this compensation must go through even
-  // when the upload pool is saturated or the rider service is struggling;
-  // the breaker fails fast instead of stacking sockets.
-  releaseRiderViaBreaker(
-    `${process.env.RIDER_SERVICE_URL}/api/rider/release/internal`,
-    { riderId, orderId: orderId ?? null },
-    { headers: { "x-internal-key": process.env.INTERNAL_SERVICE_KEY } },
-  ).catch((err) =>
+  publishOrderEvent("order.cancelled", {
+    riderId,
+    orderId: orderId ?? null,
+  }).catch((err) =>
     console.error(
-      "Rider release failed:",
+      "Rider release publish failed:",
       err instanceof Error ? err.message : err,
     ),
   );
@@ -845,86 +847,11 @@ export const assignRiderToOrder = async (payload: {
 // findDeliveryHistoryForRider, findReadyOrdersNearRider,
 // findReconciliationCandidates) — no HTTP hop, identical logic.
 
-export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    return res.status(403).json({ message: "Forbidden" });
-  }
-
-  const { orderId } = req.body;
-
-  if (!orderId) {
-    return res.status(400).json({ message: "Order ID is required" });
-  }
-
-  const order = await Order.findById(orderId);
-
-  if (!order) {
-    return res.status(404).json({ message: "No order found" });
-  }
-
-  if (order.status === "rider_assigned") {
-    order.status = "picked_up";
-    await order.save();
-
-    // Customer sees "picked up"; seller sees the board move to In Delivery
-    notifyRealtime("order:update", `user:${order.userId}`, {
-      orderId: order._id,
-      status: order.status,
-    });
-    notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
-      orderId: order._id,
-      status: order.status,
-    });
-    const pickedUpRestaurant = await Restaurant.findById(order.restaurantId);
-    if (pickedUpRestaurant) {
-      notifyRealtime("order:update", `user:${pickedUpRestaurant.ownerId}`, {
-        orderId: order._id,
-        status: order.status,
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Order status updated successfully",
-      order,
-    });
-  }
-
-  if (order.status === "picked_up") {
-    order.status = "delivered";
-    await order.save();
-
-    // Customer + seller both learn the delivery is complete
-    notifyRealtime("order:delivered", `user:${order.userId}`, order);
-    notifyRealtime("order:update", `user:${order.userId}`, {
-      orderId: order._id,
-      status: order.status,
-    });
-    notifyRealtime("order:update", `restaurant:${order.restaurantId}`, {
-      orderId: order._id,
-      status: order.status,
-    });
-    const deliveredRestaurant = await Restaurant.findById(order.restaurantId);
-    if (deliveredRestaurant) {
-      notifyRealtime("order:update", `user:${deliveredRestaurant.ownerId}`, {
-        orderId: order._id,
-        status: order.status,
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Order status updated successfully",
-      order,
-    });
-  }
-
-  return res.json({
-    success: true,
-    message: "Order status unchanged",
-    order,
-  });
-});
+// [REMOVED] PUT /update/status/rider (updateOrderStatusRider) — the
+// picked_up / delivered transitions now arrive as rider.order_status_changed
+// events on the fanout exchange (see config/riderEvent.consumer.ts): the
+// rider app no longer blocks on an HTTP round-trip through two services,
+// and the $ne-style status guards make the transition idempotent.
 
 // ─── Internal: Claim an Order for Payment Initiation ────────
 // utils calls this BEFORE creating a provider payment intent. Atomic and
@@ -985,46 +912,10 @@ export const claimOrderForPayment = tryCatch(async (req, res) => {
   });
 });
 
-// ─── Internal: Attach the Provider Order Id ─────────────────
-// utils calls back right after creating the provider intent so every
-// future claim re-issues the same one.
-export const attachProviderOrder = tryCatch(async (req, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
-
-  const orderId = req.params.orderId || req.params.id;
-  const { provider, providerOrderId } = req.body ?? {};
-
-  if (!orderId || !providerOrderId) {
-    return res
-      .status(400)
-      .json({ message: "Order ID and providerOrderId are required" });
-  }
-
-  if (provider !== "razorpay" && provider !== "stripe") {
-    return res.status(400).json({ message: "Valid provider is required" });
-  }
-
-  const order = await Order.findOneAndUpdate(
-    { _id: orderId, paymentStatus: { $ne: "paid" } },
-    {
-      $set: {
-        "paymentIntent.provider": provider,
-        "paymentIntent.providerOrderId": providerOrderId,
-        "paymentIntent.initiatedAt": new Date(),
-      },
-    },
-    { new: true },
-  ).select("_id paymentIntent");
-
-  if (!order) {
-    return res
-      .status(409)
-      .json({ message: "Order not attachable (paid or expired)" });
-  }
-
-  return res.status(200).json({ success: true });
-});
+// [REMOVED] PUT /payment/attached/:id (attachProviderOrder) — utils now
+// publishes payment.intent.created on the fanout exchange and THIS
+// service's rider-event consumer stamps the provider order id (see
+// config/riderEvent.consumer.ts). Idempotent by construction: the stamp
+// is a $set of the same value, so redeliveries are no-ops.
 
 

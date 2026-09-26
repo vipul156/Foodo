@@ -2,11 +2,12 @@ import axios, { AxiosRequestConfig } from "axios";
 import CircuitBreaker from "opossum";
 
 // ─── Bulkhead pools + circuit breakers ──────────────────────
-// POOL A (critical) — payment claim/attach against the order owner.
+// POOL A (critical) — payment claim against the order owner.
 //                     Checkout latency depends on this pool only.
 //
-// (The reconciliation job's order-owner fetch now reads in-process over
-// the shared schemas in @foodo/backend-common/models — no HTTP client.)
+// (The attach moved to the payment.intent.created fanout event, and the
+// reconciliation job reads in-process over the shared schemas — no HTTP
+// client needed for either.)
 //
 // Every dependency gets its own opossum breaker: repeated failures trip
 // the circuit OPEN (fail fast, no socket pile-up on a dead downstream);
@@ -67,28 +68,6 @@ export const claimOrderViaBreaker = async <T>(
     data: T;
   };
   return data;
-};
-
-interface AttachArgs {
-  url: string;
-  body: unknown;
-  config: AxiosRequestConfig;
-}
-
-const attachBreaker = breakerWrap<[AttachArgs], void>(
-  "order-attach",
-  INTERNAL_TIMEOUT_MS,
-  async ({ url, body, config }) => {
-    await criticalClient.put(url, body, config);
-  },
-);
-
-export const attachOrderViaBreaker = async (
-  url: string,
-  body: unknown,
-  config: AxiosRequestConfig,
-): Promise<void> => {
-  await attachBreaker.fire({ url, body, config });
 };
 
 // ─── Payment provider calls (external, 8s leeway) ───────────

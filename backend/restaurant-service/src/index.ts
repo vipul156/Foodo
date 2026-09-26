@@ -4,7 +4,6 @@ dotenv.config();
 import express from "express";
 import connectDB from "@foodo/backend-common/db";
 import cookieSession from "cookie-session";
-import cors from 'cors';
 import { restaurantRouter } from "./routes/restaurant.js";
 
 

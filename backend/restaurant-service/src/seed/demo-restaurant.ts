@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { Restaurant } from "../models/Restaurant.js";
+import { Restaurant } from "@foodo/backend-common/models";
 import { MenuItem } from "../models/MenuItem.js";
 
 // ─── Demo Restaurant + Menu ──────────────────────────────────

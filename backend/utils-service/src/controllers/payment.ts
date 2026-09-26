@@ -1,24 +1,25 @@
 import { Request, Response } from "express";
-import {
-  claimOrderViaBreaker,
-  attachOrderViaBreaker,
-  runProvider,
-} from "../config/http.js";
+import { claimOrderViaBreaker, runProvider } from "../config/http.js";
 import razorpay from "../config/razorpay.js";
 import crypto from "crypto";
-import { publishPaymentSuccess } from "../config/payment.producer.js";
+import {
+  publishPaymentSuccess,
+  publishPaymentIntentCreated,
+} from "../config/payment.producer.js";
 import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
 
-// Internal auth header shared by every order-owner call
+// Internal auth header for the one remaining sync call to the order
+// owner (the payment claim).
 const getInternalHeaders = () => ({
   "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
 });
 
 // ─── Order-owner claim/attach helpers ───────────────────────
 // The restaurant service owns orders: it atomically claims the order for
-// payment (rejecting paid/cancelled/expired) and remembers the created
-// provider intent so client retries re-issue the SAME one.
+// payment (rejecting paid/cancelled/expired) and hands back the trusted
+// amount + any previously attached provider id so client retries re-issue
+// the SAME intent. The attach itself now travels as an event (see below).
 interface OrderPaymentClaim {
   orderId: string;
   amount: number;
@@ -39,16 +40,18 @@ const claimOrderPayment = async (
   );
 };
 
+// The attach no longer round-trips over HTTP: the intent-created event is
+// published on the fanout exchange and the order owner's consumer stamps
+// paymentIntent.providerOrderId. Fire-and-forget is safe here — a dropped
+// publish costs one orphan provider intent (the reconciliation job flags
+// it), never a wrong charge; the claim path's idempotent re-issue keeps
+// client retries returning the SAME intent.
 const attachProviderOrder = async (
   orderId: string,
   provider: "razorpay" | "stripe",
   providerOrderId: string,
 ) => {
-  await attachOrderViaBreaker(
-    `${process.env.RESTAURANT_SERVICE_URL}/api/order/payment/attached/${orderId}`,
-    { provider, providerOrderId },
-    { headers: getInternalHeaders() },
-  );
+  await publishPaymentIntentCreated({ orderId, provider, providerOrderId });
 };
 
 export const createRazorpayOrder = async (req: Request, res: Response) => {

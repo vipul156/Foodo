@@ -4,7 +4,7 @@ import {
   declareResilienceQueues,
   handleConsumeFailure,
 } from "@foodo/backend-common/queue";
-import { Rider } from "../model/Rider.js";
+import { Rider } from "@foodo/backend-common/models";
 
 const onOrderReady =
   (channel: Channel) =>
