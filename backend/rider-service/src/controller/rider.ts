@@ -1,19 +1,27 @@
-import { dataUri } from "../config/dataUri.js";
 import { AuthRequest, tryCatch } from "@foodo/backend-common";
-import {
-  findCurrentOrderForRider,
-  findDeliveryHistoryForRider,
-  findReadyOrdersNearRider,
-} from "@foodo/backend-common/models";
+import { Order, Restaurant } from "@foodo/backend-common/models";
+import { dataUri } from "../config/dataUri.js";
 import { Rider } from "../model/Rider.js";
 import { criticalPut } from "../config/http.js";
 import { uploadToCloudinary } from "../config/cloudinary-upload.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
-// Shared internal auth header (evaluated at request time)
+// Shared internal auth header (evaluated at request time) — used by the
+// one remaining WRITE call to the restaurant service (status update).
 const getInternalHeaders = () => ({
   "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
 });
+
+// ─── Local order read (2 call sites in this file) ────────────
+// Direct read over the shared Order schema. Lived behind a
+// restaurant-service HTTP endpoint once; with the shared schemas it
+// runs in-process. The single-use history/available queries are
+// inlined at their only caller below.
+const findMyCurrentOrder = (riderId: string) =>
+  Order.findOne({
+    riderId,
+    status: { $ne: "delivered" },
+  }).populate("restaurantId");
 
 export const createRider = tryCatch(async (req: AuthRequest, res) => {
   const user = req.user;
@@ -169,7 +177,7 @@ export const toogleRiderAvailablity = tryCatch(
     // restaurant service).
     if (isAvailable) {
       try {
-        const order = await findCurrentOrderForRider(rider._id.toString());
+        const order = await findMyCurrentOrder(rider._id.toString());
         if (order) {
           return res.status(400).json({
             message: "Finish your active delivery before going online",
@@ -293,7 +301,7 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
   // Direct read over the shared schema (was an HTTP round-trip to the
   // restaurant service).
   try {
-    const order = await findCurrentOrderForRider(rider._id.toString());
+    const order = await findMyCurrentOrder(rider._id.toString());
 
     return res.status(200).json({
       message: "Current order fetched",
@@ -324,15 +332,17 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
   }
 
   // Direct read over the shared schema (was an HTTP round-trip to the
-  // restaurant service).
+  // restaurant service). Single-use query — inlined here.
   try {
-    const { count, orders } = await findDeliveryHistoryForRider(
-      rider._id.toString(),
-    );
+    const orders = await Order.find({
+      riderId: rider._id.toString(),
+      status: "delivered",
+      paymentStatus: "paid",
+    }).sort({ createdAt: -1 });
 
     return res.status(200).json({
       message: "Delivery history fetched",
-      count,
+      count: orders.length,
       orders,
     });
   } catch (error: any) {
@@ -366,14 +376,29 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
 
   const [longitude, latitude] = rider.location.coordinates;
 
-  // Direct read over the shared schema (was an HTTP round-trip to the
-  // restaurant service).
+  // Direct read over the shared schemas (was an HTTP round-trip to the
+  // restaurant service). Single-use query — inlined here.
   try {
-    const { count, orders } = await findReadyOrdersNearRider(latitude, longitude);
+    const nearbyRestaurants = await Restaurant.find({
+      autoLocation: {
+        $near: {
+          $geometry: { type: "Point", coordinates: [longitude, latitude] },
+          $maxDistance: 10000, // 10km in meters — same radius as the matcher
+        },
+      },
+    });
+
+    const orders = await Order.find({
+      status: "ready_for_rider",
+      paymentStatus: "paid",
+      restaurantId: {
+        $in: nearbyRestaurants.map((r) => r._id.toString()),
+      },
+    }).sort({ createdAt: 1 });
 
     return res.status(200).json({
       message: "Available orders fetched",
-      count,
+      count: orders.length,
       orders,
     });
   } catch (error: any) {
@@ -410,8 +435,9 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   }
 
   try {
-    // Critical pool + breaker: rider payouts flow from status updates;
-    // they must never queue behind the non-critical read pool.
+    // WRITE — stays HTTP via the critical pool + breaker: rider payouts
+    // flow from status updates; the order owner performs the state
+    // transition and pushes the socket updates.
     const data = await criticalPut<{
       order?: { status?: string };
     }>(

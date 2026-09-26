@@ -1,4 +1,4 @@
-import { findReconciliationCandidates } from "@foodo/backend-common/models";
+import { Order } from "@foodo/backend-common/models";
 import razorpay from "./razorpay.js";
 import stripe from "./stripe.js";
 import { publishPaymentSuccess } from "./payment.producer.js";
@@ -24,10 +24,21 @@ interface ReconciliationCandidate {
 const fetchCandidates = async (
   olderThanMinutes: number,
 ): Promise<ReconciliationCandidate[]> => {
-  // Direct read over the shared schema (was an HTTP round-trip to the
-  // order owner). The RMQ payment-success heal is unchanged — writes
-  // still flow through the idempotent queue path.
-  const candidates = await findReconciliationCandidates(olderThanMinutes);
+  // Direct read over the shared Order schema (was an HTTP round-trip to
+  // the order owner). Single-use query — inlined here. The RMQ
+  // payment-success heal is unchanged: writes still flow through the
+  // idempotent queue path.
+  const since = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+  const candidates = await Order.find({
+    paymentStatus: "pending",
+    "paymentIntent.providerOrderId": { $exists: true, $ne: null },
+    "paymentIntent.initiatedAt": { $lte: since },
+  })
+    .limit(100)
+    .select("_id paymentIntent paymentStatus totalAmount")
+    .lean();
+
   return candidates as unknown as ReconciliationCandidate[];
 };
 
