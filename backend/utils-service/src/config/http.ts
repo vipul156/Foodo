@@ -2,12 +2,11 @@ import axios, { AxiosRequestConfig } from "axios";
 import CircuitBreaker from "opossum";
 
 // ─── Bulkhead pools + circuit breakers ──────────────────────
-// Two isolated axios clients so a saturated background job can never eat
-// the sockets the checkout path needs:
-//   POOL A (critical)   — payment claim/attach against the order owner.
-//                         Checkout latency depends on this pool only.
-//   POOL B (background) — the reconciliation job's order-owner fetches.
-// If Pool B saturates, Pool A is 100% untouched (isolation by client).
+// POOL A (critical) — payment claim/attach against the order owner.
+//                     Checkout latency depends on this pool only.
+//
+// (The reconciliation job's order-owner fetch now reads in-process over
+// the shared schemas in @foodo/backend-common/models — no HTTP client.)
 //
 // Every dependency gets its own opossum breaker: repeated failures trip
 // the circuit OPEN (fail fast, no socket pile-up on a dead downstream);
@@ -90,35 +89,6 @@ export const attachOrderViaBreaker = async (
   config: AxiosRequestConfig,
 ): Promise<void> => {
   await attachBreaker.fire({ url, body, config });
-};
-
-// ─── Pool B: background reconciliation ──────────────────────
-const backgroundClient = axios.create({
-  timeout: INTERNAL_TIMEOUT_MS,
-});
-
-interface FetchArgs {
-  url: string;
-  config: AxiosRequestConfig;
-}
-
-const backgroundBreaker = breakerWrap<[FetchArgs], { data: { orders?: unknown[] } }>(
-  "reconciliation-fetch",
-  INTERNAL_TIMEOUT_MS,
-  async ({ url, config }) => {
-    const response = await backgroundClient.get(url, config);
-    return { data: response.data };
-  },
-);
-
-export const fetchCandidatesViaBreaker = async <T>(
-  url: string,
-  config: AxiosRequestConfig,
-): Promise<T[]> => {
-  const { data } = (await backgroundBreaker.fire({ url, config })) as {
-    data: { orders?: T[] };
-  };
-  return data?.orders ?? [];
 };
 
 // ─── Payment provider calls (external, 8s leeway) ───────────

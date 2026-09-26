@@ -888,93 +888,13 @@ export const assignOrderToRider = tryCatch(async (req: AuthRequest, res) => {
   });
 });
 
-// ─── Ready Orders Near a Rider (internal) ───────────────────
-// Used by the rider service's "available orders" list. Returns paid
-// orders waiting for a rider at restaurants within 10km of the rider.
-export const getReadyOrdersNearRider = tryCatch(async (req, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
-
-  const latitude = Number(req.query.latitude);
-  const longitude = Number(req.query.longitude);
-
-  if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-    throw new Error("latitude and longitude are required");
-  }
-
-  const nearbyRestaurants = await Restaurant.find({
-    autoLocation: {
-      $near: {
-        $geometry: { type: "Point", coordinates: [longitude, latitude] },
-        $maxDistance: 10000, // 10km in meters — same radius as the matcher
-      },
-    },
-  });
-
-  const orders = await Order.find({
-    status: "ready_for_rider",
-    paymentStatus: "paid",
-    restaurantId: {
-      $in: nearbyRestaurants.map((r) => (r._id as mongoose.Types.ObjectId).toString()),
-    },
-  }).sort({ createdAt: 1 });
-
-  return res.status(200).json({
-    success: true,
-    count: orders.length,
-    orders,
-  });
-});
-
-// ─── Rider Delivery History (internal) ──────────────────────
-// Used by the rider service to power the rider's Earnings + History pages.
-// Returns delivered orders for a rider, newest first.
-export const getRiderDeliveryHistory = tryCatch(async (req, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
-
-  const riderId = req.query.riderId as string;
-
-  if (!riderId) {
-    throw new Error("Rider ID is required");
-  }
-
-  const orders = await Order.find({
-    riderId,
-    status: "delivered",
-    paymentStatus: "paid",
-  }).sort({ createdAt: -1 });
-
-  return res.status(200).json({
-    success: true,
-    count: orders.length,
-    orders,
-  });
-});
-
-export const getCurrentOrdersForRider = tryCatch(async (req: AuthRequest, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
-
-  const riderId = req.query.riderId as string;
-
-  if(!riderId) {
-    throw new Error("Rider ID is required");
-  }
-
-  const order = await Order.findOne({
-    riderId,
-    status: { $ne: "delivered" }
-  }).populate("restaurantId");
-
-  return res.status(200).json({
-    success: true,
-    order,
-  });
-});
+// ─── [MOVED] Rider-facing read endpoints deleted ────────────
+// current/history/ready-order reads for rider dashboards and the
+// payment reconciliation candidates read now run IN-PROCESS in the
+// consuming services via the shared read-only queries in
+// @foodo/backend-common/models (findCurrentOrderForRider,
+// findDeliveryHistoryForRider, findReadyOrdersNearRider,
+// findReconciliationCandidates) — no HTTP hop, identical logic.
 
 export const updateOrderStatusRider = tryCatch(async (req: AuthRequest, res) => {
   if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
@@ -1158,30 +1078,4 @@ export const attachProviderOrder = tryCatch(async (req, res) => {
   return res.status(200).json({ success: true });
 });
 
-// ─── Internal: Reconciliation Candidates ────────────────────
-// Pending orders whose payment intent was initiated longer than the window
-// ago and never became paid. utils audits these against the provider:
-// captured money is republished through the SAME idempotent queue path as
-// webhooks; created-but-never-paid intents are flagged as orphans.
-export const getReconciliationCandidates = tryCatch(async (req, res) => {
-  if (req.headers["x-internal-key"] !== process.env.INTERNAL_SERVICE_KEY) {
-    throw new Error("Forbidden");
-  }
 
-  const olderThanMinutes = Number(req.query.olderThanMinutes) || 20;
-  const since = new Date(Date.now() - olderThanMinutes * 60 * 1000);
-
-  const orders = await Order.find({
-    paymentStatus: "pending",
-    "paymentIntent.providerOrderId": { $exists: true, $ne: null },
-    "paymentIntent.initiatedAt": { $lte: since },
-  })
-    .limit(100)
-    .select("_id paymentIntent paymentStatus totalAmount");
-
-  return res.status(200).json({
-    success: true,
-    count: orders.length,
-    orders,
-  });
-});

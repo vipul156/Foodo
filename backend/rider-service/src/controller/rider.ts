@@ -1,8 +1,12 @@
 import { dataUri } from "../config/dataUri.js";
-import { AuthRequest } from "@foodo/backend-common";
-import { tryCatch } from "@foodo/backend-common";
+import { AuthRequest, tryCatch } from "@foodo/backend-common";
+import {
+  findCurrentOrderForRider,
+  findDeliveryHistoryForRider,
+  findReadyOrdersNearRider,
+} from "@foodo/backend-common/models";
 import { Rider } from "../model/Rider.js";
-import { criticalPut, readGet } from "../config/http.js";
+import { criticalPut } from "../config/http.js";
 import { uploadToCloudinary } from "../config/cloudinary-upload.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
@@ -161,13 +165,12 @@ export const toogleRiderAvailablity = tryCatch(
 
     // A rider carrying an active delivery cannot go back online —
     // finish the delivery (or have the seller cancel the order) first.
+    // Direct read over the shared schema (was an HTTP round-trip to the
+    // restaurant service).
     if (isAvailable) {
       try {
-        const data = await readGet<{ order?: unknown }>(
-          `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
-          { headers: getInternalHeaders() },
-        );
-        if (data?.order) {
+        const order = await findCurrentOrderForRider(rider._id.toString());
+        if (order) {
           return res.status(400).json({
             message: "Finish your active delivery before going online",
           });
@@ -287,15 +290,14 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
+  // Direct read over the shared schema (was an HTTP round-trip to the
+  // restaurant service).
   try {
-    const data = await readGet<{ order?: unknown }>(
-      `${process.env.RESTAURANT_SERVICE_URL}/api/order/current/rider?riderId=${rider._id}`,
-      { headers: getInternalHeaders() },
-    );
+    const order = await findCurrentOrderForRider(rider._id.toString());
 
     return res.status(200).json({
       message: "Current order fetched",
-      order: data.order,
+      order,
     });
   } catch (error) {
     return res.status(500).json({
@@ -321,22 +323,20 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
     });
   }
 
+  // Direct read over the shared schema (was an HTTP round-trip to the
+  // restaurant service).
   try {
-    const data = await readGet<{
-      count?: number;
-      orders?: unknown[];
-    }>(
-      `${process.env.RESTAURANT_SERVICE_URL}/api/order/history/rider?riderId=${rider._id}`,
-      { headers: getInternalHeaders() },
+    const { count, orders } = await findDeliveryHistoryForRider(
+      rider._id.toString(),
     );
 
     return res.status(200).json({
       message: "Delivery history fetched",
-      count: data.count ?? 0,
-      orders: data.orders ?? [],
+      count,
+      orders,
     });
   } catch (error: any) {
-    console.error("Error fetching delivery history:", error?.response?.data || error?.message);
+    console.error("Error fetching delivery history:", error?.message);
     return res.status(500).json({
       message: "Error fetching delivery history",
     });
@@ -366,28 +366,18 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
 
   const [longitude, latitude] = rider.location.coordinates;
 
+  // Direct read over the shared schema (was an HTTP round-trip to the
+  // restaurant service).
   try {
-    const data = await readGet<{
-      count?: number;
-      orders?: unknown[];
-    }>(
-      `${process.env.RESTAURANT_SERVICE_URL}/api/order/ready/rider`,
-      {
-        params: { latitude, longitude },
-        headers: getInternalHeaders(),
-      },
-    );
+    const { count, orders } = await findReadyOrdersNearRider(latitude, longitude);
 
     return res.status(200).json({
       message: "Available orders fetched",
-      count: data.count ?? 0,
-      orders: data.orders ?? [],
+      count,
+      orders,
     });
   } catch (error: any) {
-    console.error(
-      "Error fetching available orders:",
-      error?.response?.data || error?.message,
-    );
+    console.error("Error fetching available orders:", error?.message);
     return res.status(500).json({
       message: "Error fetching available orders",
     });

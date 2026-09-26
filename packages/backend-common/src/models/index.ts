@@ -9,3 +9,8 @@
 // admin-service).
 
 export * from "./schemas.js";
+
+// Read-only cross-service queries (rider dashboards, payment
+// reconciliation) — shared so every consumer executes identical logic
+// in-process instead of querying the owning service over HTTP.
+export * from "./order-queries.js";

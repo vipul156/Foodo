@@ -2,12 +2,12 @@ import axios, { AxiosRequestConfig } from "axios";
 import CircuitBreaker from "opossum";
 
 // ─── Bulkhead pools + circuit breakers ──────────────────────
-//   POOL A (critical)     — order status updates (picked_up / delivered).
-//                           Rider payouts flow from these; they must
-//                           never queue behind a saturated read pool.
-//   POOL B (non-critical) — current-order / history / available reads
-//                           and the Cloudinary upload forward. If this
-//                           pool saturates, Pool A is 100% untouched.
+//   POOL A (critical) — order status updates (picked_up / delivered),
+//                       the one remaining WRITE call to the restaurant
+//                       service. Rider payouts flow from these.
+//
+// (Reads for rider dashboards now run in-process over the shared
+// schemas in @foodo/backend-common/models — no HTTP client needed.)
 //
 // Each pool is breaker-wrapped (opossum): repeated failures trip the
 // circuit OPEN (fail fast, no socket pile-up on a dead downstream);
@@ -60,38 +60,5 @@ export const criticalPut = async <T>(
 ): Promise<T> =>
   (await criticalPutBreaker.fire({ url, body, config })) as T;
 
-// ─── Pool B: non-critical (reads + upload forward) ──────────
-const readClient = axios.create({
-  timeout: INTERNAL_TIMEOUT_MS,
-});
-
-const readGetBreaker = breakerWrap(
-  "rider-read-get",
-  async ({ url, config }) => {
-    const response = await readClient.get(url, config);
-    return response.data;
-  },
-);
-
-export const readGet = async <T>(
-  url: string,
-  config: AxiosRequestConfig,
-): Promise<T> => (await readGetBreaker.fire({ url, config })) as T;
-
-const readPostBreaker = breakerWrap(
-  "rider-read-post",
-  async ({ url, body, config }) => {
-    const response = await readClient.post(url, body, config);
-    return response.data;
-  },
-);
-
-export const readPost = async <T>(
-  url: string,
-  body: unknown,
-  config: AxiosRequestConfig,
-): Promise<T> => (await readPostBreaker.fire({ url, body, config })) as T;
-
-// Raw clients for callers with bespoke needs (still timeout-bounded)
+// Raw client for callers with bespoke needs (still timeout-bounded)
 export const http = criticalClient;
-export const readHttp = readClient;
