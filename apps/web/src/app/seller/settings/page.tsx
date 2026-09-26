@@ -33,20 +33,16 @@ export default function SellerSettingsPage() {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [formattedAddress, setFormattedAddress] = useState("");
-  const [imageFile, setImageFile] = useState<string | null>(null); // base64 data URI
+  const [imageFile, setImageFile] = useState<File | null>(null); // picked file → direct upload
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  // Handle image selection
+  // Handle image selection — keep the File object for the direct
+  // Cloudinary upload; preview via object URL (no base64 round-trip).
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setImageFile(result);
-      setImagePreview(result);
-    };
-    reader.readAsDataURL(file);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   const clearImage = () => {
@@ -75,7 +71,10 @@ export default function SellerSettingsPage() {
         phone: phone ? Number(phone) : undefined,
       };
 
-      if (imageFile) payload.file = imageFile;
+      // File object → hook uploads straight to Cloudinary (signed params)
+      // before hitting the create/update endpoint. base64 strings still
+      // supported for the legacy server-side path.
+      if (imageFile instanceof File) payload.imageFile = imageFile;
 
       if (!restaurant) {
         payload.latitude = latitude;

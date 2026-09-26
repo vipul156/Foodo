@@ -258,7 +258,7 @@
 
 ### 6. Utils Service
 
-**Purpose**: Shared utilities — file uploads (Cloudinary) and payment processing (Razorpay, Stripe).
+**Purpose**: Payment processing (Razorpay, Stripe). File uploads have moved to **signed direct uploads** — each owning service (restaurant/rider) generates Cloudinary signatures locally via `@foodo/backend-common`, and clients upload bytes straight to Cloudinary. The legacy `POST /api/utils/upload` proxy answers `410 Gone` and will be removed.
 
 | Property | Value |
 |----------|-------|
@@ -266,10 +266,9 @@
 | TypeScript | `6.x` |
 | Message Queue | RabbitMQ |
 
-**Dependencies**: `express`, `cloudinary`, `razorpay`, `stripe`, `jsonwebtoken`, `amqplib`
+**Dependencies**: `express`, `razorpay`, `stripe`, `jsonwebtoken`, `amqplib`
 
 **Capabilities**:
-- **Image Uploads**: Proxy uploads to Cloudinary (used by Restaurant & Rider services)
 - **Payment Processing**: Razorpay and Stripe integration
 - **RabbitMQ**: Event-driven payment confirmation → order fulfillment
 
@@ -319,13 +318,23 @@
 │ (Socket.IO)  │       │              │
 └──────────────┘       └──────────────┘
        │                       │
-       │  Socket.IO            │  HTTP (Upload)
+       │  Socket.IO            │  Signed direct upload
        ▼                       ▼
 ┌──────────────┐       ┌──────────────┐
-│   Frontend   │──────▶│ Utils Service│
-│  (Next.js)   │ HTTP  │  (Cloudinary)│
-└──────────────┘       └──────────────┘
+│   Frontend   │──────▶│  Cloudinary  │
+│  (Next.js)   │ HTTPS │  (image bytes│
+└──────────────┘       │  never touch │
+                       │  any Foodo   │
+                       │  service)    │
+                       └──────────────┘
 ```
+
+**Image uploads (signed direct upload, no utils-service hop)**:
+1. Client fetches signed params from the owning service (`GET /api/menu-item/upload-signature`, `GET /api/restaurant/upload-signature`, or `GET /api/rider/upload-signature`)
+2. Client POSTs the `File` straight to `https://api.cloudinary.com/v1_1/<cloud_name>/image/upload` with those params
+3. Client passes the resulting `secure_url` to the create/update endpoint
+
+Signatures are HMAC-SHA1 over sorted params (`packages/backend-common/src/cloudinary.ts`) — purely local, <1ms, and the API secret never leaves the signing service. Multipart `file` uploads to the create/update endpoints still work as a legacy fallback (server-side upload via the same signer).
 
 **Internal Communication**:
 - Services authenticate inter-service calls via `x-internal-key` header matching `INTERNAL_SERVICE_KEY`
@@ -652,6 +661,41 @@ Visit [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
+## 📤 Image Uploads — Signed Direct Upload
+
+Image bytes go **browser → Cloudinary** directly. The backend only signs (no byte proxying, no utils-service).
+
+Minimal client example (any framework — the web app wraps this in `apps/web/src/lib/cloudinary-upload.ts`):
+
+```ts
+// 1) Get signed params from the owning service (auth via session cookie)
+const sig = await fetch("/api/menu-item/upload-signature").then(r => r.json());
+
+// 2) POST the File straight to Cloudinary — <15 lines, no backend hop
+const form = new FormData();
+form.append("file", fileInput.files[0]);
+form.append("api_key", sig.apiKey);
+form.append("timestamp", String(sig.timestamp));
+form.append("folder", sig.folder);       // fixed server-side, e.g. "foodo/menu-items"
+form.append("signature", sig.signature); // valid ONLY for these params
+
+const upload = await fetch(
+  `https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`,
+  { method: "POST", body: form },
+).then(r => r.json());
+
+// 3) Store the URL on the record
+await fetch("/api/menu-item/new", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Paneer", price: 249, imageUrl: upload.secure_url }),
+});
+```
+
+**Security notes**: the `CLOUDINARY_API_SECRET` stays server-side (`packages/backend-common/src/cloudinary.ts` signs locally); clients only ever receive `signature`, `timestamp`, `apiKey`, `cloudName`; the signature is bound to the exact server-chosen folder/params, so it cannot be reused for other uploads.
+
+---
+
 ## 🔐 Environment Variables Reference
 
 | Variable | Services | Description |
@@ -665,7 +709,7 @@ Visit [http://localhost:3000](http://localhost:3000) in your browser.
 | `UTILS_SERVICE_URL` | Restaurant, Rider | URL of the Utils microservice (e.g. `http://localhost:3005`) |
 | `REALTIME_SERVICE_URL` | Restaurant | URL of the Realtime socket service (e.g. `http://localhost:3002`) |
 | `RESTAURANT_SERVICE` | Rider | URL of the Restaurant microservice (e.g. `http://localhost:3001`) |
-| `CLOUDINARY_*` | Utils | Cloudinary API credentials |
+| `CLOUDINARY_*` | Restaurant, Rider | Cloudinary credentials for signed direct uploads (moved from utils) |
 | `RAZORPAY_*` | Utils | Razorpay payment gateway keys |
 | `STRIPE_SECRET_KEY` | Utils | Stripe payment secret |
 

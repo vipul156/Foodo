@@ -1,4 +1,4 @@
-import { uploadViaBreaker } from "../config/http.js";
+import { uploadToCloudinary } from "../config/cloudinary-upload.js";
 import { dataUri } from "../config/dataUri.js";
 import { AuthRequest } from "@foodo/backend-common";
 import { tryCatch } from "@foodo/backend-common";
@@ -28,6 +28,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
     formattedAddress,
     phone,
     file,
+    imageUrl,
   } = req.body;
   if (!name || !latitude || !longitude) {
     return res.status(400).json({
@@ -35,9 +36,12 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  // Upload image if provided (accepts base64 data URI string from JSON body)
-  let imageUrl: string | undefined;
-  if (file) {
+  // Preferred flow (direct upload): client uploaded via signed params and
+  // passes the Cloudinary URL here. Legacy fallback: base64/multipart
+  // `file` → server-side upload via the shared signer.
+  let resolvedImageUrl: string | undefined =
+    typeof imageUrl === "string" && imageUrl ? imageUrl : undefined;
+  if (!resolvedImageUrl && file) {
     // file can be a base64 data URI string (from JSON body) or a multer File object
     const buffer = typeof file === "string" ? file : dataUri(file)?.content;
     if (!buffer) {
@@ -46,18 +50,18 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
       });
     }
 
-    // Non-critical pool + breaker — upload retries are cheap.
-    const data = await uploadViaBreaker<{
-      url: string;
-    }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, { buffer });
-    imageUrl = data.url;
+    resolvedImageUrl = await uploadToCloudinary({
+      fileContent: buffer,
+      folder: "foodo/restaurants",
+      tags: ["foodo", "restaurant"],
+    });
   }
 
   const restaurant = await Restaurant.create({
     name,
     description,
     phone,
-    ...(imageUrl && { image: imageUrl }),
+    ...(resolvedImageUrl && { image: resolvedImageUrl }),
     ownerId: user._id,
     autoLocation: {
       type: "Point",
@@ -133,21 +137,26 @@ export const updateRestaurantDetails = tryCatch(
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { name, description, phone, file } = req.body;
+    const { name, description, phone, file, imageUrl } = req.body;
 
     const updateFields: Record<string, any> = {};
     if (name !== undefined) updateFields.name = name;
     if (description !== undefined) updateFields.description = description;
     if (phone !== undefined) updateFields.phone = phone;
 
-    // Handle image upload if provided
-    if (file) {
+    // Preferred flow (direct upload): client passes the Cloudinary URL of
+    // the image it already uploaded. Legacy fallback: base64/multipart
+    // `file` → server-side upload via the shared signer.
+    if (typeof imageUrl === "string" && imageUrl) {
+      updateFields.image = imageUrl;
+    } else if (file) {
       const buffer = typeof file === "string" ? file : dataUri(file)?.content;
       if (buffer) {
-        const data = await uploadViaBreaker<{
-          url: string;
-        }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, { buffer });
-        updateFields.image = data.url;
+        updateFields.image = await uploadToCloudinary({
+          fileContent: buffer,
+          folder: "foodo/restaurants",
+          tags: ["foodo", "restaurant"],
+        });
       }
     }
 

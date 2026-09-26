@@ -1,47 +1,27 @@
-import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
-import { tryCatch } from "@foodo/backend-common";
+import { tryCatchStatus } from "@foodo/backend-common";
+import {
+  listRestaurants,
+  verifyRestaurantById,
+  listRiders,
+  verifyRiderById,
+  listUsers,
+  getUserStats,
+  getRiderStats,
+  getRestaurantStats,
+  getOrderStats,
+} from "@foodo/backend-common/models";
 
-const lambda = new LambdaClient({ region: process.env.AWS_REGION || "ap-south-1" });
-
-// Function Names from Environment Variables
-const AUTH_LAMBDA = process.env.AUTH_INTERNAL_LAMBDA_NAME || "auth-service-internalWorker";
-const RESTAURANT_LAMBDA = process.env.RESTAURANT_INTERNAL_LAMBDA_NAME || "restaurant-service-internalWorker";
-const RIDER_LAMBDA = process.env.RIDER_INTERNAL_LAMBDA_NAME || "rider-service-internalWorker";
-
-// ─── Generic Lambda Invocation Helper ───────────────────────
-async function invokeLambda<TResponse>(
-  functionName: string,
-  action: string,
-  payload: Record<string, unknown> = {}
-): Promise<TResponse> {
-  const command = new InvokeCommand({
-    FunctionName: functionName,
-    Payload: Buffer.from(JSON.stringify({ action, payload })),
-  });
-
-  const response = await lambda.send(command);
-
-  if (!response.Payload) {
-    throw new Error(`Empty payload returned from Lambda: ${functionName}`);
-  }
-
-  const resultString = Buffer.from(response.Payload).toString("utf-8");
-  const parsed = JSON.parse(resultString);
-
-  // If the target Lambda threw an uncaught error, bubble it up
-  if (response.FunctionError) {
-    throw new Error(parsed.errorMessage || `Lambda invocation failed for ${functionName}`);
-  }
-
-  return parsed as TResponse;
-}
+// ─── Admin controller — direct DB access ─────────────────────
+// Admin reads/writes the shared collections through the same schema +
+// data functions the owning services use (@foodo/backend-common/models).
+// No more Lambda round-trips to auth/restaurant/rider internal workers:
+// fewer hops, no cold-start chains, no cross-Lambda error mangling.
+// Business rules ("pending = isVerified:false") stay defined once in
+// the shared package, so they can't drift from the owning services.
 
 // ─── Pending Restaurants ────────────────────────────────────
-export const getPendingRestaurants = tryCatch(async (req, res) => {
-  const data = await invokeLambda<{
-    count: number;
-    restaurants: unknown[];
-  }>(RESTAURANT_LAMBDA, "LIST_RESTAURANTS", { status: "pending" });
+export const getPendingRestaurants = tryCatchStatus(async (req, res) => {
+  const data = await listRestaurants("pending");
 
   res.json({
     count: data.count,
@@ -50,11 +30,8 @@ export const getPendingRestaurants = tryCatch(async (req, res) => {
 });
 
 // ─── All Restaurants ────────────────────────────────────────
-export const getAllRestaurants = tryCatch(async (req, res) => {
-  const data = await invokeLambda<{
-    count: number;
-    restaurants: unknown[];
-  }>(RESTAURANT_LAMBDA, "LIST_RESTAURANTS");
+export const getAllRestaurants = tryCatchStatus(async (req, res) => {
+  const data = await listRestaurants();
 
   res.json({
     count: data.count,
@@ -63,11 +40,8 @@ export const getAllRestaurants = tryCatch(async (req, res) => {
 });
 
 // ─── Pending Riders ─────────────────────────────────────────
-export const getPendingRiders = tryCatch(async (req, res) => {
-  const data = await invokeLambda<{
-    count: number;
-    riders: unknown[];
-  }>(RIDER_LAMBDA, "LIST_RIDERS", { status: "pending" });
+export const getPendingRiders = tryCatchStatus(async (req, res) => {
+  const data = await listRiders("pending");
 
   res.json({
     count: data.count,
@@ -76,11 +50,8 @@ export const getPendingRiders = tryCatch(async (req, res) => {
 });
 
 // ─── All Riders ─────────────────────────────────────────────
-export const getAllRiders = tryCatch(async (req, res) => {
-  const data = await invokeLambda<{
-    count: number;
-    riders: unknown[];
-  }>(RIDER_LAMBDA, "LIST_RIDERS");
+export const getAllRiders = tryCatchStatus(async (req, res) => {
+  const data = await listRiders();
 
   res.json({
     count: data.count,
@@ -89,13 +60,11 @@ export const getAllRiders = tryCatch(async (req, res) => {
 });
 
 // ─── Users ──────────────────────────────────────────────────
-export const getAllUsers = tryCatch(async (req, res) => {
+export const getAllUsers = tryCatchStatus(async (req, res) => {
   const role = req.query.role as string | undefined;
 
-  const data = await invokeLambda<{
-    count: number;
-    users: unknown[];
-  }>(AUTH_LAMBDA, "LIST_USERS", { role });
+  // exactOptionalPropertyTypes: pass the key only when present
+  const data = await listUsers(role ? { role } : {});
 
   res.json({
     count: data.count,
@@ -104,58 +73,37 @@ export const getAllUsers = tryCatch(async (req, res) => {
 });
 
 // ─── Verification (Writes) ──────────────────────────────────
-export const verifyRestaurant = tryCatch(async (req, res) => {
+export const verifyRestaurant = tryCatchStatus(async (req, res) => {
   const { id } = req.params;
 
   if (typeof id !== "string") {
     throw new Error("Invalid id");
   }
 
-  await invokeLambda(RESTAURANT_LAMBDA, "VERIFY_RESTAURANT", { id });
+  await verifyRestaurantById(id);
 
   res.json({ message: "Restaurant verified" });
 });
 
-export const verifyRider = tryCatch(async (req, res) => {
+export const verifyRider = tryCatchStatus(async (req, res) => {
   const { id } = req.params;
 
   if (typeof id !== "string") {
     throw new Error("Invalid id");
   }
 
-  await invokeLambda(RIDER_LAMBDA, "VERIFY_RIDER", { id });
+  await verifyRiderById(id);
 
   res.json({ message: "Rider verified" });
 });
 
 // ─── Platform Stats (Parallel Aggregation) ──────────────────
-export const getPlatformStats = tryCatch(async (req, res) => {
+export const getPlatformStats = tryCatchStatus(async (req, res) => {
   const [users, restaurants, riders, orders] = await Promise.all([
-    invokeLambda<{ total: number; newThisMonth: number }>(
-      AUTH_LAMBDA,
-      "GET_USER_STATS"
-    ),
-    invokeLambda<{
-      total: number;
-      verified: number;
-      open: number;
-      pending: number;
-    }>(RESTAURANT_LAMBDA, "GET_RESTAURANT_STATS"),
-    invokeLambda<{
-      total: number;
-      verified: number;
-      online: number;
-      pending: number;
-    }>(RIDER_LAMBDA, "GET_RIDER_STATS"),
-    invokeLambda<{
-      total: number;
-      delivered: number;
-      cancelled: number;
-      active: number;
-      revenue: { total: number; thisMonth: number };
-      daily: { date: string; revenue: number; orders: number }[];
-      topRestaurants: { name: string; revenue: number; orders: number }[];
-    }>(RESTAURANT_LAMBDA, "GET_ORDER_STATS"),
+    getUserStats(),
+    getRestaurantStats(),
+    getRiderStats(),
+    getOrderStats(),
   ]);
 
   res.json({

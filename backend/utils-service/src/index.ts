@@ -23,13 +23,9 @@ const app = express();
 // 1) Webhooks: raw bytes only (before any JSON parser)
 app.use("/api/utils/payment/webhooks", express.raw({ type: "application/json" }));
 
-// 2) Upload route: the ONLY path with a raised cap. Internal callers
-//    (restaurant/rider services) forward base64 image data URIs here.
-app.use(
-  "/api/utils/upload",
-  express.json({ limit: "15mb" }),
-  express.urlencoded({ limit: "15mb", extended: true }),
-);
+// 2) [REMOVED] The 15mb upload parser — the /upload proxy is deprecated
+//    (see routers/cloudinary.ts). Signed direct uploads no longer send
+//    image bytes through this service.
 
 // 3) Global default: 1mb is far above any legit JSON body this API
 //    accepts (payments, internal claims). The old 50mb global limit was

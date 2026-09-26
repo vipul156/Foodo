@@ -2,7 +2,8 @@ import { dataUri } from "../config/dataUri.js";
 import { AuthRequest } from "@foodo/backend-common";
 import { tryCatch } from "@foodo/backend-common";
 import { Rider } from "../model/Rider.js";
-import { criticalPut, readGet, readPost } from "../config/http.js";
+import { criticalPut, readGet } from "../config/http.js";
+import { uploadToCloudinary } from "../config/cloudinary-upload.js";
 import { publishRiderEvent } from "../config/event.publisher.js";
 
 // Shared internal auth header (evaluated at request time)
@@ -21,29 +22,35 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
 
   const file = req.file;
 
-  if (!file) {
+  // Preferred flow (direct upload): the rider app already uploaded the
+  // photo straight to Cloudinary with signed params and passes the URL.
+  // Legacy fallback: multipart `file` → server-side upload via the
+  // shared signer (older clients keep working, no utils-service hop).
+  const imageUrl = req.body?.imageUrl as string | undefined;
+  if (!file && !imageUrl) {
     return res.status(400).json({
       message: "File is required",
     });
   }
 
-  const fileBuffer = dataUri(file);
+  let pictureUrl: string;
+  if (imageUrl && typeof imageUrl === "string") {
+    pictureUrl = imageUrl;
+  } else {
+    const fileBuffer = dataUri(file!);
 
-  if (!fileBuffer?.content) {
-    return res.status(400).json({
-      message: "File is not valid",
+    if (!fileBuffer?.content) {
+      return res.status(400).json({
+        message: "File is not valid",
+      });
+    }
+
+    pictureUrl = await uploadToCloudinary({
+      fileContent: fileBuffer.content,
+      folder: "foodo/riders/kyc",
+      tags: ["foodo", "rider", "kyc"],
     });
   }
-
-  // Upload forward rides the non-critical pool — registration can retry;
-  // a saturated upload path must not touch the critical order-update pool.
-  const data = await readPost<{ url: string }>(
-    `${process.env.UTILS_SERVICE_URL}/api/utils/upload`,
-    {
-      buffer: fileBuffer.content,
-    },
-    {},
-  );
 
   const {
     phoneNumber,
@@ -82,7 +89,7 @@ export const createRider = tryCatch(async (req: AuthRequest, res) => {
       coordinates: [longitude, latitude],
     },
     userId: user._id,
-    picture: data.url,
+    picture: pictureUrl,
   });
 
   return res.status(201).json({

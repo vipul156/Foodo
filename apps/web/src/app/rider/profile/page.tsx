@@ -186,17 +186,21 @@ function RiderRegistrationForm({
 
     const { lat, lng } = await getCoords();
 
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("phoneNumber", formData.phoneNumber);
-    fd.append("addharNumber", formData.addharNumber);
-    fd.append("drivingLicenseNumber", formData.drivingLicenseNumber);
-    fd.append("latitude", String(lat));
-    fd.append("longitude", String(lng));
-
-    createRider.mutate(fd, {
-      onSuccess: () => onSuccess(),
-    });
+    // Photo goes browser → Cloudinary directly (signed params fetched
+    // inside the hook); the create call only carries the resulting URL.
+    createRider.mutate(
+      {
+        phoneNumber: formData.phoneNumber,
+        addharNumber: formData.addharNumber,
+        drivingLicenseNumber: formData.drivingLicenseNumber,
+        latitude: lat,
+        longitude: lng,
+        picture: file,
+      },
+      {
+        onSuccess: () => onSuccess(),
+      },
+    );
   };
 
   const updateField = (field: string, value: string) => {

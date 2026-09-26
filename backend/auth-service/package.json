@@ -29,6 +29,7 @@
   "devDependencies": {
     "@types/bcrypt": "catalog:",
     "@types/cookie-parser": "catalog:",
+    "@types/cors": "catalog:",
     "@types/cookie-session": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",

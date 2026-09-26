@@ -52,23 +52,25 @@ export default function SellerMenuPage() {
     setShowForm(false);
   };
 
+  const handleAddItem = async () => {
+    if (!name || !price || !imageFile) return;
+    // Image goes browser → Cloudinary directly (signed params from the
+    // service); the create call only carries the resulting URL.
+    await createItem.mutateAsync({
+      name,
+      description,
+      price,
+      imageFile,
+    });
+    resetForm();
+    refetch();
+  };
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
-  };
-
-  const handleAddItem = async () => {
-    if (!name || !price || !imageFile) return;
-    const formData = new FormData();
-    formData.append("name", name);
-    formData.append("description", description);
-    formData.append("price", price);
-    formData.append("file", imageFile);
-    await createItem.mutateAsync(formData);
-    resetForm();
-    refetch();
   };
 
   const handleToggle = async (itemId: string) => {

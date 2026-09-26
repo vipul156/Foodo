@@ -11,19 +11,21 @@
     "lint": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
-    "@aws-sdk/client-lambda": "catalog:",
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
     "axios": "catalog:",
+    "bcrypt": "catalog:",
     "cookie-session": "catalog:",
     "cors": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
     "jsonwebtoken": "catalog:",
+    "mongoose": "catalog:",
     "serverless-http": "catalog:"
   },
   "devDependencies": {
     "@types/cookie-session": "catalog:",
+    "@types/cors": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",
     "@types/jsonwebtoken": "catalog:",

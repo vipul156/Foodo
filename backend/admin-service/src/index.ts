@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import cookieSession from "cookie-session";
 import { adminRoutes } from "./routes/admin.js";
 import serverlessHttp from "serverless-http";
+import connectDB from "./config/db.js";
 
 dotenv.config();
 
@@ -37,5 +38,18 @@ const serverlessApp = serverlessHttp(app);
 
 export const handler = async (event: any, context: any) => {
   context.callbackWaitsForEmptyEventLoop = false;
+  await connectDB();
   return serverlessApp(event, context);
 };
+
+// ─── Local dev server (tsx --watch) ─────────────────────────
+// `pnpm dev` runs this file directly; on Lambda the handler above is
+// the entrypoint and this block never executes.
+if (process.env.NODE_ENV !== "production" && process.env.AWS_LAMBDA_FUNCTION_NAME === undefined) {
+  connectDB().then(() => {
+    const PORT = process.env.PORT ?? 3001;
+    app.listen(PORT, () => {
+      console.log("Admin service (dev) listening on port", PORT);
+    });
+  });
+}

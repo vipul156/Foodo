@@ -3,7 +3,7 @@ import { tryCatch } from "@foodo/backend-common";
 import { AuthRequest } from "@foodo/backend-common";
 import { Restaurant } from "../models/Restaurant.js";
 import { dataUri } from "../config/dataUri.js";
-import { uploadViaBreaker } from "../config/http.js";
+import { uploadToCloudinary } from "../config/cloudinary-upload.js";
 
 export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) throw new Error("User not found");
@@ -14,30 +14,34 @@ export const createMenuItem = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Name and price are required");
   }
 
-  const file = req.file;
-  if (!file) {
-    throw new Error("Image is required");
-  }
-  const fileBuffer = dataUri(file);
-  if (!fileBuffer) {
-    return res.status(500).json({
-      message: "Internal Server Error",
+  // Preferred flow (direct upload): the client already uploaded the image
+  // straight to Cloudinary with a signed payload and passes the URL here.
+  // Legacy fallback: multipart `file` → server-side upload via the shared
+  // signer (kept so older clients / API users keep working).
+  let imageUrl: string | undefined = req.body?.imageUrl;
+  if (!imageUrl) {
+    const file = req.file;
+    if (!file) {
+      throw new Error("Image is required");
+    }
+    const fileBuffer = dataUri(file);
+    if (!fileBuffer?.content) {
+      return res.status(500).json({
+        message: "Internal Server Error",
+      });
+    }
+    imageUrl = await uploadToCloudinary({
+      fileContent: fileBuffer.content,
+      folder: "foodo/menu-items",
+      tags: ["foodo", "menu-item"],
     });
   }
-
-  // Non-critical pool + breaker — upload retries are cheap; they must
-  // never queue behind (or trip breakers for) the critical release path.
-  const data = await uploadViaBreaker<{
-    url: string;
-  }>(`${process.env.UTILS_SERVICE_URL}/api/utils/upload`, {
-    buffer: fileBuffer.content,
-  });
 
   const menuItem = await MenuItem.create({
     name,
     description,
     price,
-    image: data.url,
+    image: imageUrl,
     restaurantId: restaurant._id,
     isAvailable: true,
   });

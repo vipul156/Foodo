@@ -12,6 +12,7 @@ import {
   updateOrderStatus,
 } from "../controller/rider.js";
 import { uploadFile } from "@foodo/backend-common";
+import { getRiderImageSignature } from "../controller/upload.js";
 
 const router = Router();
 
@@ -20,6 +21,10 @@ const router = Router();
 router.put("/release/internal", releaseRiderInternal)
 
 router.use(isAuth, isRider);
+
+// Signed direct-upload: client fetches params here, then POSTs the photo
+// straight to Cloudinary. Auth-checked; folder is fixed server-side.
+router.get("/upload-signature", getRiderImageSignature);
 
 router.post("/new", uploadFile, createRider);
 

@@ -4,6 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { riderApi } from "@/lib/api-client";
+import { uploadToCloudinary, type CloudinaryUploadParams } from "@/lib/cloudinary-upload";
 import type { IRider, IOrder } from "@/types";
 
 // ─── Get Rider Profile ───────────────────────────────────────
@@ -150,17 +151,38 @@ export function useGetRiderDeliveryHistory() {
 }
 
 // ─── Create Rider Profile ────────────────────────────────────
-// POST /new (multipart) — first-time rider registration
+// POST /new (JSON) — first-time rider registration. The photo is
+// uploaded straight to Cloudinary via signed params first; the create
+// call then carries the resulting URL.
 
 export function useCreateRider() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (formData: FormData) => {
+    mutationFn: async (data: {
+      phoneNumber: string;
+      addharNumber: string;
+      drivingLicenseNumber: string;
+      latitude: number;
+      longitude: number;
+      picture: File;
+    }) => {
+      const sig = await riderApi.get<CloudinaryUploadParams>(
+        "/upload-signature",
+      );
+      const imageUrl = await uploadToCloudinary(data.picture, sig);
+
       const res = await riderApi.post<{
         message: string;
         rider: IRider;
-      }>("/new", formData);
+      }>("/new", {
+        phoneNumber: data.phoneNumber,
+        addharNumber: data.addharNumber,
+        drivingLicenseNumber: data.drivingLicenseNumber,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        imageUrl,
+      });
       return res;
     },
     onSuccess: () => {

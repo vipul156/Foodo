@@ -5,6 +5,7 @@
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { restaurantApi } from "@/lib/api-client";
+import { uploadToCloudinary, type CloudinaryUploadParams } from "@/lib/cloudinary-upload";
 import type {
   IRestaurant,
   IMenuItem,
@@ -87,16 +88,36 @@ export function useGetMyRestaurant() {
 }
 
 // ─── Create Restaurant ───────────────────────────────────────
+// imageFile: picked File → uploaded straight to Cloudinary via signed
+// params (no backend byte-proxying); the resulting URL is stored.
 
 export function useCreateRestaurant() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Partial<IRestaurant>) => {
+    mutationFn: async (
+      data: Partial<IRestaurant> & {
+        imageFile?: File | string | null;
+        /** Legacy server-side upload: base64 data URI */
+        file?: string;
+      },
+    ) => {
+      const { imageFile, ...payload } = data;
+
+      if (imageFile instanceof File) {
+        const sig = await restaurantApi.get<CloudinaryUploadParams>(
+          "/restaurant/upload-signature",
+        );
+        payload.image = await uploadToCloudinary(imageFile, sig);
+      } else if (typeof imageFile === "string" && imageFile) {
+        // Legacy path: base64 data URI (server uploads it)
+        payload.file = imageFile;
+      }
+
       const res = await restaurantApi.post<{
         message: string;
         restaurant: IRestaurant;
-      }>("/restaurant/new", data);
+      }>("/restaurant/new", payload);
       return res;
     },
     onSuccess: () => {
@@ -134,11 +155,28 @@ export function useUpdateRestaurantDetails() {
       name?: string;
       description?: string;
       phone?: number;
+      imageFile?: File | string | null;
+      /** Direct-upload result (Cloudinary secure_url) */
+      image?: string;
+      /** Legacy server-side upload: base64 data URI */
+      file?: string;
     }) => {
+      const { imageFile, ...payload } = data;
+
+      if (imageFile instanceof File) {
+        const sig = await restaurantApi.get<CloudinaryUploadParams>(
+          "/restaurant/upload-signature",
+        );
+        payload.image = await uploadToCloudinary(imageFile, sig);
+      } else if (typeof imageFile === "string" && imageFile) {
+        // Legacy path: base64 data URI (server uploads it)
+        payload.file = imageFile;
+      }
+
       const res = await restaurantApi.put<{
         message: string;
         restaurant: IRestaurant;
-      }>("/restaurant/update", data);
+      }>("/restaurant/update", payload);
       return res;
     },
     onSuccess: () => {
@@ -164,16 +202,34 @@ export function useGetMenuItems(restaurantId: string) {
 }
 
 // ─── Create Menu Item ────────────────────────────────────────
+// data.imageFile: picked File → uploaded straight to Cloudinary via
+// signed params; the JSON create call then carries the URL.
 
 export function useCreateMenuItem() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: FormData) => {
-      const res = await axios.post("/api/menu-item/new", data, {
-        withCredentials: true,
+    mutationFn: async (data: {
+      name: string;
+      description?: string;
+      price: string;
+      imageFile: File;
+    }) => {
+      const sig = await restaurantApi.get<CloudinaryUploadParams>(
+        "/menu-item/upload-signature",
+      );
+      const imageUrl = await uploadToCloudinary(data.imageFile, sig);
+
+      const res = await restaurantApi.post<{
+        message: string;
+        menuItem: IMenuItem;
+      }>("/menu-item/new", {
+        name: data.name,
+        description: data.description,
+        price: data.price,
+        imageUrl,
       });
-      return res.data;
+      return res;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["menu-items"] });
