@@ -1,0 +1,109 @@
+# ─── Foodo utils service stack ───────────────────────────────
+# Payment webhooks are the source of truth for payment success —
+# they authenticate via provider HMAC signatures (Razorpay/Stripe)
+# over raw bodies, NOT user sessions, so the whole /api/utils
+# surface stays public at the gateway. The payment-create
+# endpoints validate order state atomically in-controller.
+#
+#   turbo run deploy --filter=@foodo/utils-service
+
+service: foodo-utils
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 512
+  timeout: 15
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    RAZORPAY_KEY_ID: ${env:RAZORPAY_KEY_ID, ''}
+    RAZORPAY_KEY_SECRET: ${env:RAZORPAY_KEY_SECRET, ''}
+    RAZORPAY_WEBHOOK_SECRET: ${env:RAZORPAY_WEBHOOK_SECRET, ''}
+    STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY, ''}
+    STRIPE_WEBHOOK_SECRET: ${env:STRIPE_WEBHOOK_SECRET, ''}
+    FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
+    ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+    WEBHOOK_DEDUPE_TABLE: ${cf:${self:custom.infra}.WebhookDedupeTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+    PAYMENT_QUEUE_URL: ${cf:${self:custom.infra}.PaymentQueueUrl}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.WebhookDedupeTable}
+        - Effect: Allow
+          Action:
+            - sns:Publish
+            - sqs:SendMessage
+          Resource:
+            - ${cf:${self:custom.infra}.EventsTopicArn}
+            - ${cf:${self:custom.infra}.PaymentQueueUrl}
+
+functions:
+  http:
+    handler: dist/http.handler
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    events:
+      - httpApi:
+          path: /api/utils/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/utils
+          method: get
+
+  reconcile:
+    handler: dist/reconciliation.handler
+    timeout: 120
+    memorySize: 256
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    # EventBridge Scheduler — replaces the old setInterval job
+    events:
+      - schedule: rate(1 hour)
+    environment:
+      RAZORPAY_KEY_ID: ${env:RAZORPAY_KEY_ID, ''}
+      RAZORPAY_KEY_SECRET: ${env:RAZORPAY_KEY_SECRET, ''}
+      STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY, ''}

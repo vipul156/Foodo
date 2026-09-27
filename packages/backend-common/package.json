@@ -2,7 +2,7 @@
   "name": "@foodo/backend-common",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared Node-only backend utilities (auth middleware, guards, upload, mongo connection, queue resilience, shared mongoose models). Never import from browser code.",
+  "description": "Shared Node-only backend utilities (auth middleware, guards, upload signing, DynamoDB repositories, SNS/SQS messaging). Never import from browser code.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,18 +10,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./models": {
-      "types": "./dist/models/index.d.ts",
-      "default": "./dist/models/index.js"
-    },
-    "./db": {
-      "types": "./dist/db.d.ts",
-      "default": "./dist/db.js"
-    },
-    "./queue": {
-      "types": "./dist/queue/index.d.ts",
-      "default": "./dist/queue/index.js"
     },
     "./cloudinary": {
       "types": "./dist/cloudinary/index.d.ts",
@@ -54,24 +42,16 @@
     "@aws-sdk/client-sqs": "catalog:"
   },
   "peerDependencies": {
-    "amqplib": "^2.0.1",
-    "bcrypt": "^6.0.0",
     "express": "^4.0.0 || ^5.0.0",
     "jsonwebtoken": "^9.0.0",
-    "mongoose": "^9.0.0",
     "multer": "^2.0.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "catalog:",
-    "@types/amqplib": "catalog:",
-    "@types/bcrypt": "catalog:",
     "@types/express": "catalog:",
     "@types/jsonwebtoken": "catalog:",
     "@types/multer": "catalog:",
     "@types/node": "catalog:",
-    "amqplib": "catalog:",
-    "bcrypt": "catalog:",
-    "mongoose": "catalog:",
     "typescript": "catalog:"
   }
 }

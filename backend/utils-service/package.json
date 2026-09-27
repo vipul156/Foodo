@@ -8,7 +8,10 @@
     "build": "tsup",
     "start": "node dist/index.cjs",
     "dev": "tsx --watch src/index.ts",
-    "lint": "prettier --check \"src/**/*.ts\""
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
   },
   "dependencies": {
     "@foodo/backend-common": "workspace:*",

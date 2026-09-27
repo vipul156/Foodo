@@ -1,0 +1,211 @@
+# ─── Foodo realtime service stack ────────────────────────────
+# WebSocket push notifications on API Gateway WebSockets:
+#
+#   wsRouter        $connect (JWT handshake, auto room joins) /
+#                   $disconnect (cleanup) / $default (client
+#                   actions: order:track, rider:location)
+#   eventConsumer   consumes EVERY domain event (SNS fan-out via
+#                   this stack's own SQS queue — no filter policy,
+#                   same as the old fanout exchange binding) and
+#                   broadcasts to rooms through the Management API.
+#
+# Owns its ConnectionsTable (ephemeral runtime state — lives with
+# the service that uses it, not in the shared data tier).
+#
+#   turbo run deploy --filter=@foodo/realtime-service
+
+service: foodo-realtime
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 256
+  timeout: 30
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    CONNECTIONS_TABLE_NAME: ${self:service}-${sls:stage}-connections
+    WEBSOCKET_API_ENDPOINT: !Sub
+      - https://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+      - { ApiId: !Ref WebSocketApi, StageName: ${sls:stage} }
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchWriteItem
+          Resource:
+            - Fn::GetAtt: [ConnectionsTable, Arn]
+            - Fn::Sub:
+                - ${TableArn}/index/*
+                - { TableArn: !GetAtt ConnectionsTable.Arn }
+        - Effect: Allow
+          Action: execute-api:PostToConnection
+          Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*
+        - Effect: Allow
+          Action: sqs:SendMessage
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+resources:
+  Resources:
+    # ── Inbound fan-out: realtime consumes EVERY event ──────
+    RealtimeQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-emit
+        VisibilityTimeout: 120
+
+    RealtimeQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref RealtimeQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt RealtimeQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
+
+    RealtimeSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt RealtimeQueue.Arn
+        RawMessageDelivery: true
+
+    # ── Ephemeral connection registry (connectionId + room, TTL'd) ──
+    ConnectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-connections
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: connectionId, KeyType: HASH }
+          - { AttributeName: room, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: connectionId, AttributeType: S }
+          - { AttributeName: room, AttributeType: S }
+        GlobalSecondaryIndexes:
+          - IndexName: room-index
+            KeySchema:
+              - { AttributeName: room, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+    # ── WebSocket API ────────────────────────────────────────
+    WebSocketApi:
+      Type: AWS::ApiGatewayV2::Api
+      Properties:
+        Name: ${self:service}-${sls:stage}
+        ProtocolType: WEBSOCKET
+        RouteSelectionExpression: "$request.body.action"
+
+    WebSocketStage:
+      Type: AWS::ApiGatewayV2::Stage
+      Properties:
+        ApiId: !Ref WebSocketApi
+        StageName: ${sls:stage}
+        AutoDeploy: true
+
+    WsRouterPermission:
+      Type: AWS::Lambda::Permission
+      Properties:
+        FunctionName: !Ref WsRouterLambdaFunction
+        Action: lambda:InvokeFunction
+        Principal: apigateway.amazonaws.com
+        SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*
+
+    WsRouterIntegration:
+      Type: AWS::ApiGatewayV2::Integration
+      Properties:
+        ApiId: !Ref WebSocketApi
+        IntegrationType: AWS_PROXY
+        IntegrationUri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FnArn}/invocations
+          - { FnArn: !GetAtt WsRouterLambdaFunction.Arn }
+
+    WsConnectRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref WebSocketApi
+        RouteKey: $connect
+        Target: !Sub integrations/${WsRouterIntegration}
+
+    WsDisconnectRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref WebSocketApi
+        RouteKey: $disconnect
+        Target: !Sub integrations/${WsRouterIntegration}
+
+    WsDefaultRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref WebSocketApi
+        RouteKey: $default
+        Target: !Sub integrations/${WsRouterIntegration}
+
+  Outputs:
+    WebSocketApiId:
+      Value: !Ref WebSocketApi
+      Export:
+        Name: ${self:service}-${sls:stage}-WebSocketApiId
+
+    WebSocketUrl:
+      Value: !Sub
+        - wss://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+        - { ApiId: !Ref WebSocketApi, StageName: ${sls:stage} }
+      Export:
+        Name: ${self:service}-${sls:stage}-WebSocketUrl
+
+functions:
+  wsRouter:
+    handler: dist/wsRouter.handler
+    memorySize: 256
+    timeout: 10
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+
+  eventConsumer:
+    handler: dist/eventConsumer.handler
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    events:
+      - sqs:
+          arn: !GetAtt RealtimeQueue.Arn
+          batchSize: 5
+          reportBatchItemFailures: true

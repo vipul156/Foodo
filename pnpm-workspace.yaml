@@ -2,6 +2,8 @@ packages:
   - "apps/*"
   - "backend/*"
   - "packages/*"
+  - "infra"
+  - "core"
 
 # pnpm 10 blocks lifecycle scripts by default; these packages need them to build native bindings.
 onlyBuiltDependencies:
@@ -13,10 +15,6 @@ onlyBuiltDependencies:
 # Single source of truth for ALL dependency versions.
 # Every workspace package references these via "catalog:" — bump a version
 # here once and it applies everywhere. Do NOT pin versions in package.json.
-#
-# Known exception: `express` / `@types/express` — realtime-service still
-# runs Express 4 and pins its own version locally. Migrate it to Express 5,
-# then move these two into the catalog and delete the local pins.
 # ─────────────────────────────────────────────────────────────
 catalog:
   # Tooling
@@ -31,7 +29,6 @@ catalog:
   "@types/cookie-session": ^2.0.49
   "@types/dotenv": ^6.1.1
   "@types/jsonwebtoken": ^9.0.10
-  "@types/amqplib": ^0.10.8
   "@types/multer": ^2.2.0
   "@types/opossum": ^8.1.9
   "@types/bcrypt": ^6.0.0
@@ -43,20 +40,15 @@ catalog:
   cookie-session: ^2.1.1
   cors: ^2.8.6
   dotenv: ^17.4.2
-  amqplib: ^2.0.1
   axios: ^1.18.1
   multer: ^2.2.0
   opossum: ^5.0.1
   datauri: ^4.1.0
-  mongoose: ^9.7.4
   cookie-parser: ^1.4.7
   bcrypt: ^6.0.0
   googleapis: ^173.0.0
   express-rate-limit: ^8.7.0
   serverless-http: ^4.0.0
-  ioredis: ^6.0.0
-  socket.io: ^4.8.3
-  "@socket.io/redis-adapter": ^8.3.0
 
   # Single-consumer runtime dependencies (cataloged for consistency)
   cloudinary: ^2.10.0
@@ -87,8 +79,7 @@ catalog:
 # @types/multer still depends on the Express-4 type packages internally,
 # which drags a second Express type universe into every consumer and breaks
 # interface identity (RequestHandler not assignable across universes).
-# Override ONLY within @types/multer's subtree so realtime-service's
-# legitimate Express-4 runtime types are untouched.
+# Override ONLY within @types/multer's subtree.
 overrides:
   "@types/multer>@types/express": ^5.0.6
   "@types/multer>@types/express-serve-static-core": ^5.1.3

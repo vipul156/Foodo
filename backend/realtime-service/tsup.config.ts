@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     "eventConsumer": "src/handlers/eventConsumer.ts",
+    "wsRouter": "src/handlers/wsRouter.ts",
   },
   format: ["cjs"],
   target: "node20",

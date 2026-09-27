@@ -12,16 +12,19 @@
     "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
 
-    "deploy:core": "cd infra/core && serverless deploy",
-    "deploy:services": "cd infra/services && serverless deploy",
-    "deploy": "pnpm run deploy:core && pnpm run deploy:services",
+    "deploy:infra": "turbo run deploy --filter=@foodo/infra",
+    "deploy:core": "turbo run deploy --filter=@foodo/core-api",
+    "deploy:services": "turbo run deploy --filter='./backend/*'",
+    "deploy:all": "pnpm run deploy:infra && pnpm run deploy:core && pnpm run deploy:services",
 
-    "remove:services": "cd infra/services && serverless remove",
-    "remove:core": "cd infra/core && serverless remove",
-    "remove": "pnpm run remove:services && pnpm run remove:core",
+    "remove:services": "turbo run remove --filter='./backend/*'",
+    "remove:core": "turbo run remove --filter=@foodo/core-api",
+    "remove:infra": "turbo run remove --filter=@foodo/infra",
+    "remove:all": "pnpm run remove:services && pnpm run remove:core && pnpm run remove:infra",
 
-    "logs:payment": "cd infra/services && serverless logs --function paymentConsumer --tail",
-    "logs:reconcile": "cd infra/services && serverless logs --function reconcile --tail"
+    "logs:payment": "cd backend/restaurant-service && serverless logs --function paymentConsumer --tail",
+    "logs:reconcile": "cd backend/utils-service && serverless logs --function reconcile --tail",
+    "logs:realtime": "cd backend/realtime-service && serverless logs --function eventConsumer --tail"
   },
 
   "devDependencies": {

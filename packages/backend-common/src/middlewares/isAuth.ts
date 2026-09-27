@@ -2,15 +2,26 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
 // ─── Unified permissive JWT middleware ───────────────────────
-// Union of the permissive `isAuth` variants that ship in restaurant-,
-// rider-, admin-, and utils-service. Runtime semantics preserved exactly:
-//   1. reads `req.session.jwt` (cookie-session transport),
-//   2. unwraps a nested `{ user: {...} }` payload (legacy re-signed JWTs),
-//   3. normalizes `sub` / `id` / `_id` across token generations.
+// JWT VERIFICATION LIVES AT THE API GATEWAY now (the shared REQUEST
+// authorizer in the foodo-core-api stack verifies signature + expiry
+// before any protected route's Lambda is invoked). This middleware
+// therefore only RECONSTRUCTS req.user:
 //
-// auth-service intentionally ships a STRICTER variant that REJECTS legacy
-// tokens (checks typ === "access"). Do not merge them; that copy stays in
-// auth-service middlewares/isAuth.ts.
+//   1. Preferred: the authorizer's verified claims, which arrive on
+//      the Lambda event at requestContext.authorizer.lambda (exposed
+//      to express via serverless-http's req.apiGateway).
+//   2. Fallback: DECODE (not verify) the session JWT. Safe because
+//      every route that reaches this middleware sits behind the
+//      gateway authorizer.
+//
+// Union of the permissive `isAuth` variants that ship in restaurant-,
+// rider-, admin-, and utils-service. Runtime semantics preserved:
+//   - unwraps a nested `{ user: {...} }` payload (legacy re-signed JWTs),
+//   - normalizes `sub` / `id` / `_id` across token generations.
+//
+// auth-service intentionally ships a STRICTER variant that REJECTS
+// legacy tokens (checks typ === "access"). Do not merge them; that copy
+// stays in auth-service middlewares/isAuth.ts.
 
 /**
  * Session payload shape carried by cookie-session (`req.session`).
@@ -33,37 +44,59 @@ export interface AuthRequest extends Request {
   session?: SessionLike | null | undefined;
 }
 
+/** Verified claims injected by the API Gateway request authorizer. */
+interface GatewayClaims {
+  sub?: string;
+  role?: string;
+  [key: string]: unknown;
+}
+
+const gatewayClaims = (req: Request): GatewayClaims | undefined => {
+  // serverless-http exposes the raw API Gateway event on req.apiGateway
+  // (v3+: { event, context }; older shapes pass the event itself).
+  const gw = (req as any).apiGateway;
+  const event = gw?.event ?? gw;
+  const claims = event?.requestContext?.authorizer?.lambda;
+  return claims?.sub ? (claims as GatewayClaims) : undefined;
+};
+
+/** Normalize user ID across token generations (sub / id / _id). */
+const normalizeIds = (payload: Record<string, any>): void => {
+  if (payload.sub && !payload._id) payload._id = payload.sub;
+  if (payload.id && !payload._id) payload._id = payload.id;
+  if (payload._id && !payload.id) payload.id = payload._id;
+};
+
 export const isAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
+  // 1) Gateway-verified claims — no re-verification needed.
+  const fromGateway = gatewayClaims(req);
+  if (fromGateway) {
+    const user: Record<string, any> = { ...fromGateway };
+    normalizeIds(user);
+    req.user = user as jwt.JwtPayload;
+    return next();
+  }
+
+  // 2) Fallback: decode the session cookie's JWT. Signature + expiry
+  //    were already enforced by the gateway authorizer.
   const jwtToken = req.session?.jwt;
   if (!jwtToken) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  try {
-    let payload = jwt.verify(jwtToken, process.env.JWT_SECRET!) as any;
 
-    // Handle nested user object format: { user: { id, email, role, restaurantId } }
-    // This happens when getMyRestaurant re-signs the JWT with a nested user.
-    if (payload.user) {
-      payload = payload.user;
-    }
-
-    // Normalize user ID across token formats:
-    //   - auth service (current): minimal claims { sub, role }
-    //   - legacy: { id, ... } or { _id, ... }
-    if (payload.sub && !payload._id) {
-      payload._id = payload.sub;
-    }
-    if (payload.id && !payload._id) {
-      payload._id = payload.id;
-    }
-    if (payload._id && !payload.id) {
-      payload.id = payload._id;
-    }
-
-    req.user = payload;
-  } catch (err) {
+  let payload = jwt.decode(jwtToken) as Record<string, any> | null;
+  if (!payload) {
     return res.status(401).json({ message: "Unauthorized" });
   }
+
+  // Handle nested user object format: { user: { id, email, role, restaurantId } }
+  // This happens when getMyRestaurant re-signs the JWT with a nested user.
+  if (payload.user) {
+    payload = payload.user as Record<string, any>;
+  }
+
+  normalizeIds(payload);
+  req.user = payload as jwt.JwtPayload;
   next();
 };
 

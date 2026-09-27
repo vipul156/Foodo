@@ -4,7 +4,7 @@ import {
   newRefreshTokenRaw,
   hashRefreshToken,
   REFRESH_TTL_MS,
-} from "@foodo/backend-common/models";
+} from "@foodo/backend-common/dynamo";
 
 // ─── Access token (JWT) ─────────────────────────────────────
 // Minimal claims only: `sub` + `role`. Name/email/profile live in the

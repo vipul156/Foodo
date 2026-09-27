@@ -1,40 +1,30 @@
 {
   "name": "@foodo/realtime-service",
   "version": "1.0.0",
-  "description": "Foodo realtime service (long-running socket.io; events fan in from SNS via SQS).",
+  "description": "Foodo realtime service (API Gateway WebSocket API + SQS-triggered broadcaster Lambda).",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "start": "node dist/index.js",
-    "dev": "tsx --watch src/index.ts",
-    "lint": "prettier --check \"src/**/*.ts\""
+    "dev": "tsx --watch src/handlers/wsRouter.ts",
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
   },
   "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
     "@foodo/backend-common": "workspace:*",
     "@foodo/types": "workspace:*",
-    "@aws-sdk/client-sqs": "catalog:",
-    "@socket.io/redis-adapter": "catalog:",
-    "cookie-session": "catalog:",
-    "cors": "catalog:",
-    "dotenv": "catalog:",
-    "express": "^4.21.0",
-    "ioredis": "catalog:",
-    "jsonwebtoken": "catalog:",
-    "serverless-http": "catalog:",
-    "@aws-sdk/lib-dynamodb": "catalog:"
+    "jsonwebtoken": "catalog:"
   },
   "devDependencies": {
-    "@types/cors": "catalog:",
-    "@types/cookie-session": "catalog:",
-    "@types/dotenv": "catalog:",
-    "@types/express": "catalog:",
+    "@types/aws-lambda": "catalog:",
     "@types/jsonwebtoken": "catalog:",
     "@types/node": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:",
     "tsup": "catalog:",
-    "@types/aws-lambda": "catalog:",
-    "@aws-sdk/client-apigatewaymanagementapi": "catalog:"
+    "typescript": "catalog:"
   }
 }

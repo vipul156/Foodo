@@ -8,8 +8,10 @@
 //   3. This package holds only code that is genuinely identical across
 //      services. auth-service's STRICT isAuth is intentionally NOT here.
 //
-// Mongoose schemas live behind the "./models" subpath — importing them
-// from here would make every consumer (even DB-less ones) load mongoose.
+// Subpath exports: ./dynamo (repositories), ./aws (doc client + SNS/SQS),
+// ./cloudinary, ./files. The old mongoose models/, Mongo connection
+// (db.ts) and RabbitMQ queue/ layers were removed when the platform moved
+// to DynamoDB + SNS/SQS.
 
 // ─── Middlewares ─────────────────────────────────────────────
 // Permissive JWT middleware + role guards (restaurant/rider/admin/utils).

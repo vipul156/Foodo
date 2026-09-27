@@ -13,6 +13,19 @@
     },
     "lint": {
       "dependsOn": ["^build"]
+    },
+    "deploy": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "remove": {
+      "cache": false
+    },
+    "info": {
+      "cache": false
+    },
+    "logs": {
+      "cache": false
     }
   }
 }

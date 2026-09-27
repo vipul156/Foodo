@@ -1,0 +1,173 @@
+# ─── Foodo rider service stack ───────────────────────────────
+# The rider router applies `router.use(isAuth, isRider)` — the
+# ENTIRE /api/rider surface is authenticated, so it gets one
+# protected catch-all at the gateway. (Yes, that includes rider
+# registration — current app semantics, preserved.)
+#
+# Events: orderReadyConsumer consumes the SHARED order work queue
+# (foodo-infra) directly; this stack owns its inbound fan-out
+# queue + SNS filter subscription for saga compensations.
+#
+#   turbo run deploy --filter=@foodo/rider-service
+
+service: foodo-rider
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 512
+  timeout: 15
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}   # signed direct uploads (upload-signature)
+    RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
+    ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+    RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RidersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.RidersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RestaurantsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.RestaurantsTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+resources:
+  Resources:
+    # ── Inbound fan-out: rider-owned queue + DLQ + SNS filter
+    #    subscription (saga compensations).
+    RiderEventsQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-rider-events-dlq
+        MessageRetentionPeriod: 1209600
+
+    RiderEventsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-rider-events
+        VisibilityTimeout: 180
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt RiderEventsQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    RiderEventsQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref RiderEventsQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt RiderEventsQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
+
+    RiderEventsSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt RiderEventsQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          event:
+            - rider.order_rejected
+            - order.cancelled
+            - order.delivered
+
+functions:
+  http:
+    handler: dist/http.handler
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    events:
+      - httpApi:
+          path: /api/rider/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /health/rider
+          method: get
+
+  orderReadyConsumer:
+    handler: dist/orderReadyConsumer.handler
+    timeout: 30
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    events:
+      # Consumes the shared order work queue directly — no
+      # intermediate trigger queue.
+      - sqs:
+          arn: ${cf:${self:custom.infra}.OrderQueueArn}
+          batchSize: 5
+          reportBatchItemFailures: true
+
+  riderEventsConsumer:
+    handler: dist/riderEventsConsumer.handler
+    timeout: 30
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    events:
+      - sqs:
+          arn: !GetAtt RiderEventsQueue.Arn
+          batchSize: 5
+          reportBatchItemFailures: true

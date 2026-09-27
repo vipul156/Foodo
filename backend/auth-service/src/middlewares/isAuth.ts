@@ -15,6 +15,12 @@ export type { AccessClaims };
 // shared permissive one in @foodo/backend-common — it REJECTS legacy
 // full-user tokens and any non-access typ. Do not swap it for the
 // shared implementation.
+//
+// JWT signature + expiry are verified at the API Gateway (shared
+// REQUEST authorizer) before this Lambda is invoked — every route
+// using this middleware is gateway-protected — so this middleware
+// DECODEs the session JWT and only enforces the strict claims
+// contract (typ === "access", sub present).
 
 export interface AuthRequest extends Request {
   user?: AccessClaims;
@@ -28,20 +34,14 @@ export const isAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!jwtToken) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  try {
-    const decode = jwt.verify(jwtToken, process.env.JWT_SECRET!) as
-      | AccessClaims
-      | null
-      | undefined;
 
-    // Reject legacy full-user tokens and any non-access typ
-    if (!decode || decode.typ !== "access" || !decode.sub) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+  const decode = jwt.decode(jwtToken) as AccessClaims | null;
 
-    req.user = decode;
-  } catch (err) {
+  // Reject legacy full-user tokens and any non-access typ
+  if (!decode || decode.typ !== "access" || !decode.sub) {
     return res.status(401).json({ message: "Unauthorized" });
   }
+
+  req.user = decode;
   next();
 };

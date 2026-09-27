@@ -1,0 +1,152 @@
+# ─── Foodo core compute stack (Serverless Framework) ─────────
+# Deploy SECOND (after foodo-infra). Every backend/<service>
+# stack attaches its routes to the shared HTTP API defined here
+# and points its protected routes at the shared JWT authorizer:
+#
+#   pnpm run deploy:core
+#
+# Contents (shared compute tier):
+#   HTTP API   one API Gateway v2 (HTTP) API for the whole
+#              platform — the single base URL the frontend uses
+#              (/api/auth/*, /api/restaurant/*, …). CORS lives
+#              here because service stacks attach to the API by
+#              id and cannot extend it.
+#   Authorizer one Lambda REQUEST authorizer (HS256 JWT via the
+#              session cookie or Bearer header). Protected routes
+#              reject unauthenticated traffic before any service
+#              Lambda is invoked. Role checks stay in-app.
+#
+# Shared layers are intentionally NOT used: every service bundles
+# its own code with tsup (turbo-cached), so a node_modules layer
+# would only add cold-start cost and version skew.
+#
+# Removal order: all service stacks FIRST (they own routes on
+# this API), then this stack.
+
+service: foodo-core-api
+frameworkVersion: "3"
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${opt:region, 'ap-south-1'}
+  stage: ${opt:stage, 'dev'}
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${opt:stage, 'dev'}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+
+functions:
+  jwtAuthorizer:
+    handler: dist/authorizer.handler
+    memorySize: 128
+    timeout: 10
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+
+resources:
+  Resources:
+
+    # ── The shared platform API ────────────────────────────
+    # Hand-rolled (not provider.httpApi) because service stacks
+    # attach by id — CORS must live here, where the API itself
+    # is created.
+    HttpApi:
+      Type: AWS::ApiGatewayV2::Api
+      Properties:
+        Name: ${self:service}-${sls:stage}
+        ProtocolType: HTTP
+        CorsConfiguration:
+          AllowOrigins:
+            - http://localhost:3000
+            - ${env:FRONTEND_URL, 'http://localhost:3000'}
+          AllowHeaders:
+            - content-type
+            - x-internal-key
+          AllowMethods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          AllowCredentials: true
+          MaxAge: 600
+
+    HttpApiAccessLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/http-api/${self:service}-${sls:stage}
+        RetentionInDays: 14
+
+    HttpApiStage:
+      Type: AWS::ApiGatewayV2::Stage
+      Properties:
+        ApiId: !Ref HttpApi
+        StageName: $default
+        AutoDeploy: true
+        AccessLogSettings:
+          DestinationArn: !GetAtt HttpApiAccessLogGroup.Arn
+          Format: >-
+            {"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","authorizerError":"$context.authorizer.error"}
+
+    # ── Authorizer wiring ──────────────────────────────────
+    # Allow the API to invoke the authorizer function for ANY
+    # route/stage on this API (service stacks may register
+    # additional authorizer resources pointing at this function).
+    JwtAuthorizerPermission:
+      Type: AWS::Lambda::Permission
+      Properties:
+        FunctionName: !Ref JwtAuthorizerLambdaFunction
+        Action: lambda:InvokeFunction
+        Principal: apigateway.amazonaws.com
+        SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+    FoodoJwtAuthorizer:
+      Type: AWS::ApiGatewayV2::Authorizer
+      Properties:
+        ApiId: !Ref HttpApi
+        Name: foodo-jwt
+        AuthorizerType: REQUEST
+        AuthorizerPayloadFormatVersion: "2.0"
+        EnableSimpleResponses: true
+        # No result caching: the web app authenticates via cookie,
+        # and caching on a full-Cookie identity source risks both
+        # stale denials and missing-identity-source failures. The
+        # authorizer is a 128MB pure-JWT verify — cheap enough to
+        # run per request.
+        AuthorizerResultTtlInSeconds: 0
+        AuthorizerUri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FnArn}/invocations
+          - FnArn: !GetAtt JwtAuthorizerLambdaFunction.Arn
+
+  Outputs:
+    HttpApiId:
+      Value: !Ref HttpApi
+      Export:
+        Name: ${self:service}-${sls:stage}-HttpApiId
+
+    HttpApiUrl:
+      Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+      Export:
+        Name: ${self:service}-${sls:stage}-HttpApiUrl
+
+    # Service stacks reference this id on protected routes:
+    #   authorizer: { type: request, id: ${cf:<core-api>.AuthorizerId} }
+    AuthorizerId:
+      Value: !Ref FoodoJwtAuthorizer
+      Export:
+        Name: ${self:service}-${sls:stage}-AuthorizerId
+
+    AuthorizerFunctionArn:
+      Value: !GetAtt JwtAuthorizerLambdaFunction.Arn
+      Export:
+        Name: ${self:service}-${sls:stage}-AuthorizerFunctionArn

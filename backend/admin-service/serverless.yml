@@ -1,0 +1,93 @@
+# ─── Foodo admin service stack ───────────────────────────────
+# The admin router applies `router.use(isAuth, isAdmin)` — every
+# route requires an authenticated admin, so one protected
+# catch-all covers the whole surface.
+#
+#   turbo run deploy --filter=@foodo/admin-service
+
+service: foodo-admin
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 512
+  timeout: 15
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    USERS_TABLE: ${cf:${self:custom.infra}.UsersTable}
+    RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}
+    RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
+    ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.UsersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.UsersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RestaurantsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.RestaurantsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RidersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.RidersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+
+functions:
+  http:
+    handler: dist/index.handler
+    package:
+      patterns:
+        - dist/**
+        - "!**"
+    events:
+      - httpApi:
+          path: /api/admin/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /health/admin
+          method: get
