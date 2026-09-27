@@ -17,6 +17,19 @@ const API_GATEWAY_URL = process.env.API_GATEWAY_URL;
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**.amazonaws.com",
+      },
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+      },
+    ],
+  },
 
   turbopack: {
     // Monorepo: pin the workspace root so turbopack detects @foodo/*
