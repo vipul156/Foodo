@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
     "@types/node": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:"
