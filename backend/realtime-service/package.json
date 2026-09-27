@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "start": "node dist/index.js",
     "dev": "tsx --watch src/index.ts",
     "lint": "prettier --check \"src/**/*.ts\""
@@ -22,7 +22,7 @@
     "ioredis": "catalog:",
     "jsonwebtoken": "catalog:",
     "serverless-http": "catalog:",
-    "socket.io": "catalog:"
+    "@aws-sdk/lib-dynamodb": "catalog:"
   },
   "devDependencies": {
     "@types/cors": "catalog:",
@@ -32,6 +32,9 @@
     "@types/jsonwebtoken": "catalog:",
     "@types/node": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "tsup": "catalog:",
+    "@types/aws-lambda": "catalog:",
+    "@aws-sdk/client-apigatewaymanagementapi": "catalog:"
   }
 }

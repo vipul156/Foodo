@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import http from "http";
 import cookieSession from "cookie-session";
 import { initSocket } from "./socket.js";

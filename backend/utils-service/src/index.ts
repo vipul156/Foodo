@@ -2,19 +2,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import serverlessHttp from "serverless-http";
-import type {
-  APIGatewayProxyEvent,
-  APIGatewayProxyResult,
-  Context,
-} from "aws-lambda";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
-import { reconcile as reconciliationHandler } from "./config/reconciliation.js";
 import paymentRouter from "./routers/payment.js";
 
 
 
-const app = express();
+export const app = express();
 
 // ─── Body parser: restrictive default, scoped override ─────
 // ORDER MATTERS. The 15mb upload parser must be registered BEFORE the
@@ -53,18 +46,3 @@ app.get('/health', (req, res) => {
     timestamp: Date.now()
   });
 });
-
-const serverlessApp = serverlessHttp(app);
-
-// ─── Lambda entrypoints (the ONLY entrypoints) ──────────────
-//   handler   — API Gateway HTTP API (payments, webhooks, signatures)
-//   reconcile — EventBridge Scheduler (hourly missed-webhook audit)
-export const handler = async (
-  event: APIGatewayProxyEvent,
-  context: Context,
-): Promise<APIGatewayProxyResult> => {
-  context.callbackWaitsForEmptyEventLoop = false;
-  return serverlessApp(event, context) as unknown as APIGatewayProxyResult;
-};
-
-export const reconcile = reconciliationHandler;

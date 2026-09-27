@@ -18,7 +18,7 @@ export default function PaymentCancelPage() {
         <h1 className="text-xl font-semibold">Payment cancelled</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Your payment was cancelled and you have not been charged. You can
-          retry whenever you're ready.
+          retry whenever you&apos;re ready.
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link
