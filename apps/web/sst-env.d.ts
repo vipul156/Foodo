@@ -25,6 +25,10 @@ export type NextjsArgs = {
   imageOptimization?: {
     memory?: string;
   };
+  transform?: {
+    cdn?: (args: Record<string, any>) => void;
+    [key: string]: unknown;
+  };
 };
 
 export interface NextjsInstance {

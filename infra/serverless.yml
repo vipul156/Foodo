@@ -64,7 +64,8 @@ resources:
         EnableDnsSupport: true
         EnableDnsHostnames: true
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage} }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}
 
     InternetGateway:
       Type: AWS::EC2::InternetGateway
@@ -85,7 +86,8 @@ resources:
         AvailabilityZone: !Select [0, !GetAZs '']
         MapPublicIpOnLaunch: true
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage}-public-a }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-public-a
 
     PublicSubnetB:
       Type: AWS::EC2::Subnet
@@ -95,7 +97,8 @@ resources:
         AvailabilityZone: !Select [1, !GetAZs '']
         MapPublicIpOnLaunch: true
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage}-public-b }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-public-b
 
     PrivateSubnetA:
       Type: AWS::EC2::Subnet
@@ -104,7 +107,8 @@ resources:
         CidrBlock: 10.0.32.0/20
         AvailabilityZone: !Select [0, !GetAZs '']
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage}-private-a }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-private-a
 
     PrivateSubnetB:
       Type: AWS::EC2::Subnet
@@ -113,7 +117,8 @@ resources:
         CidrBlock: 10.0.48.0/20
         AvailabilityZone: !Select [1, !GetAZs '']
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage}-private-b }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-private-b
 
     # ── Routing ────────────────────────────────────────────────
 
@@ -168,7 +173,8 @@ resources:
         SubnetId: !Ref PublicSubnetA
         AllocationId: !GetAtt NatEIPA.AllocationId
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage}-nat-a }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-nat-a
 
     NatEIPB:
       Type: AWS::EC2::EIP
@@ -183,7 +189,8 @@ resources:
         SubnetId: !Ref PublicSubnetB
         AllocationId: !GetAtt NatEIPB.AllocationId
         Tags:
-          - { Key: Name, Value: ${self:service}-${sls:stage}-nat-b }
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-nat-b
 
     PrivateRouteANat:
       Type: AWS::EC2::Route
@@ -255,15 +262,6 @@ resources:
         OwnershipControls:
           Rules:
             - ObjectOwnership: BucketOwnerEnforced
-        CorsConfiguration:
-          CorsRules:
-            - AllowedOrigins:
-                - http://localhost:3000
-                - ${env:FRONTEND_URL, 'http://localhost:3000'}
-              AllowedMethods: [GET, PUT, POST, HEAD]
-              AllowedHeaders: ['*']
-              ExposedHeaders: [ETag]
-              MaxAge: 600
         LifecycleConfiguration:
           Rules:
             - Id: abort-incomplete-multipart-uploads

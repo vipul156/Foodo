@@ -8,6 +8,7 @@ import {
 } from "../config/events.js";
 import { isDuplicateEvent } from "../config/webhookDedupe.js";
 import stripe from "../config/stripe.js";
+import { getFrontendOrigin } from "../config/frontend.js";
 import {
   claimOrderForPayment,
   isValidOrderId,
@@ -298,9 +299,11 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
             // the idempotency key below still guards duplicate creation.
         }
 
+        const frontendBaseUrl = getFrontendOrigin(req);
+
         const stripePaymentIntent = await runProvider(async () =>
           stripe.checkout.sessions.create({
-           payment_method_types: ["card"],
+            payment_method_types: ["card"],
             mode: "payment",
             
             line_items: [
@@ -322,8 +325,8 @@ export const createStripePaymentIntent = async (req: Request, res: Response) => 
 
             // orderId rides in the return URL so the success page can poll
             // the read-only status endpoint while the webhook lands.
-            success_url: `${process.env.FRONTEND_URL}/payment/success?orderId=${orderId}&session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
+            success_url: `${frontendBaseUrl}/payment/success?orderId=${orderId}&session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${frontendBaseUrl}/payment/cancel`,
         },
         // Stripe-native idempotency: retries with this key return the same
         // session instead of creating a new one.

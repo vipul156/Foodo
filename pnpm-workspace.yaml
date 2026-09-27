@@ -65,6 +65,7 @@ catalog:
   "@aws-sdk/client-sns": ^3.1141.0
   "@aws-sdk/client-sqs": ^3.1141.0
   "@aws-sdk/client-apigatewaymanagementapi": ^3.1141.0
+  "@aws-sdk/client-cloudformation": ^3.1141.0
 
   # Lambda event types (APIGatewayProxyEvent, Context…). The `aws-lambda`
   # runtime module itself ships inside the AWS Lambda runtime — never add

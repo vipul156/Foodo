@@ -42,6 +42,9 @@ provider:
     role:
       permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
 
+custom:
+  stage: ${opt:stage, 'dev'}
+
 functions:
   jwtAuthorizer:
     handler: dist/authorizer.handler
@@ -56,30 +59,13 @@ resources:
   Resources:
 
     # ── The shared platform API ────────────────────────────
-    # Hand-rolled (not provider.httpApi) because service stacks
-    # attach by id — CORS must live here, where the API itself
-    # is created.
+    # All client traffic flows same-origin via CloudFront reverse proxy (/api/*).
+    # Cross-origin requests are strictly blocked (no CorsConfiguration).
     HttpApi:
       Type: AWS::ApiGatewayV2::Api
       Properties:
         Name: ${self:service}-${sls:stage}
         ProtocolType: HTTP
-        CorsConfiguration:
-          AllowOrigins:
-            - http://localhost:3000
-            - ${env:FRONTEND_URL, 'http://localhost:3000'}
-          AllowHeaders:
-            - content-type
-            - x-internal-key
-          AllowMethods:
-            - GET
-            - POST
-            - PUT
-            - PATCH
-            - DELETE
-            - OPTIONS
-          AllowCredentials: true
-          MaxAge: 600
 
     HttpApiAccessLogGroup:
       Type: AWS::Logs::LogGroup
