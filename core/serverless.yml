@@ -40,7 +40,10 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
   iam:
     role:
-      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+
+package:
+  individually: true
 
 custom:
   stage: ${opt:stage, 'dev'}
@@ -52,8 +55,8 @@ functions:
     timeout: 10
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
 
 resources:
   Resources:

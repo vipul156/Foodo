@@ -1,35 +1,4 @@
-import "./sst-env.d.ts";
-import process from "node:process";
-import {
-  CloudFormationClient,
-  ListExportsCommand,
-} from "@aws-sdk/client-cloudformation";
-
-/**
- * Dynamically queries CloudFormation exports from Serverless Framework stacks
- * (e.g. foodo-core-api-<stage>-HttpApiUrl, foodo-realtime-<stage>-WebSocketUrl)
- */
-async function getCloudFormationExport(
-  exportName: string,
-  region = "ap-south-1",
-): Promise<string | undefined> {
-  try {
-    const cfn = new CloudFormationClient({ region });
-    let nextToken: string | undefined;
-
-    do {
-      const response = await cfn.send(
-        new ListExportsCommand({ NextToken: nextToken }),
-      );
-      const match = response.Exports?.find((exp) => exp.Name === exportName);
-      if (match?.Value) return match.Value;
-      nextToken = response.NextToken;
-    } while (nextToken);
-  } catch {
-    // Graceful fallback when credentials or stacks aren't available yet
-  }
-  return undefined;
-}
+/// <reference path="./sst-env.d.ts" />
 
 export default $config({
   app(input) {
@@ -47,6 +16,32 @@ export default $config({
   },
   async run() {
     const stage = $app.stage;
+
+    // Helper to query CloudFormation export dynamically
+    async function getCloudFormationExport(
+      exportName: string,
+      region = "ap-south-1",
+    ): Promise<string | undefined> {
+      try {
+        const { CloudFormationClient, ListExportsCommand } = await import(
+          "@aws-sdk/client-cloudformation"
+        );
+        const cfn = new CloudFormationClient({ region });
+        let nextToken: string | undefined;
+
+        do {
+          const response = await cfn.send(
+            new ListExportsCommand({ NextToken: nextToken }),
+          );
+          const match = response.Exports?.find((exp) => exp.Name === exportName);
+          if (match?.Value) return match.Value;
+          nextToken = response.NextToken;
+        } while (nextToken);
+      } catch {
+        // Graceful fallback when credentials or stacks aren't available yet
+      }
+      return undefined;
+    }
 
     // Zero-Cost Reverse Proxy (Single Origin on CloudFront):
     // Next.js runs on https://<id>.cloudfront.net/

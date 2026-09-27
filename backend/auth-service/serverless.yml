@@ -13,6 +13,9 @@ useDotenv: true
 plugins:
   - serverless-prune-plugin
 
+package:
+  individually: true
+
 custom:
   stage: ${opt:stage, 'dev'}
   region: ${opt:region, 'ap-south-1'}
@@ -43,7 +46,7 @@ provider:
     id: ${cf:${self:custom.coreApi}.HttpApiId}
   iam:
     role:
-      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
       statements:
         - Effect: Allow
           Action:
@@ -67,8 +70,8 @@ functions:
     handler: dist/index.handler
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
     events:
       # Token issuance stays PUBLIC at the gateway (login/register/
       # refresh have no access token yet). logout/me/socket-token are

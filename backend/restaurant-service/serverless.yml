@@ -19,6 +19,9 @@ useDotenv: true
 plugins:
   - serverless-prune-plugin
 
+package:
+  individually: true
+
 custom:
   stage: ${opt:stage, 'dev'}
   region: ${opt:region, 'ap-south-1'}
@@ -57,7 +60,7 @@ provider:
     id: ${cf:${self:custom.coreApi}.HttpApiId}
   iam:
     role:
-      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
       statements:
         - Effect: Allow
           Action:
@@ -151,8 +154,8 @@ functions:
     handler: dist/http.handler
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
     events:
       # ── Public: anonymous browsing + internal payment claim ──
       - httpApi:
@@ -226,8 +229,8 @@ functions:
     timeout: 30
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
     events:
       # Consumes the shared payment work queue directly — no
       # intermediate trigger queue.
@@ -241,8 +244,8 @@ functions:
     timeout: 30
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
     events:
       - sqs:
           arn: !GetAtt RiderEventsQueue.Arn

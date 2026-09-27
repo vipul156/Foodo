@@ -21,6 +21,9 @@ useDotenv: true
 plugins:
   - serverless-prune-plugin
 
+package:
+  individually: true
+
 custom:
   stage: ${opt:stage, 'dev'}
   region: ${opt:region, 'ap-south-1'}
@@ -49,7 +52,7 @@ provider:
       - { ApiId: !Ref WebSocketApi, StageName: ${sls:stage} }
   iam:
     role:
-      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, ''}
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
       statements:
         - Effect: Allow
           Action:
@@ -195,15 +198,15 @@ functions:
     timeout: 10
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
 
   eventConsumer:
     handler: dist/eventConsumer.handler
     package:
       patterns:
-        - dist/**
         - "!**"
+        - dist/**
     events:
       - sqs:
           arn: !GetAtt RealtimeQueue.Arn
