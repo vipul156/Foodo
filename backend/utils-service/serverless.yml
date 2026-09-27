@@ -78,7 +78,7 @@ provider:
             - sqs:SendMessage
           Resource:
             - ${cf:${self:custom.infra}.EventsTopicArn}
-            - ${cf:${self:custom.infra}.PaymentQueueUrl}
+            - ${cf:${self:custom.infra}.PaymentQueueArn}
 
 functions:
   http:

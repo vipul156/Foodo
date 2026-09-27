@@ -47,9 +47,11 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     CONNECTIONS_TABLE_NAME: ${self:service}-${sls:stage}-connections
-    WEBSOCKET_API_ENDPOINT: !Sub
-      - https://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
-      - { ApiId: !Ref WebSocketApi, StageName: ${sls:stage} }
+    WEBSOCKET_API_ENDPOINT:
+      Fn::Sub:
+        - "https://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+        - ApiId: !Ref WebSocketApi
+          StageName: ${sls:stage}
   iam:
     role:
       permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
@@ -185,9 +187,11 @@ resources:
         Name: ${self:service}-${sls:stage}-WebSocketApiId
 
     WebSocketUrl:
-      Value: !Sub
-        - wss://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
-        - { ApiId: !Ref WebSocketApi, StageName: ${sls:stage} }
+      Value:
+        Fn::Sub:
+          - "wss://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+          - ApiId: !Ref WebSocketApi
+            StageName: ${sls:stage}
       Export:
         Name: ${self:service}-${sls:stage}-WebSocketUrl
 

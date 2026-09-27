@@ -14,12 +14,12 @@
 
     "deploy:infra": "turbo run deploy --filter=@foodo/infra",
     "deploy:core": "turbo run deploy --filter=@foodo/core-api",
-    "deploy:services": "turbo run deploy --filter='./backend/*'",
+    "deploy:services": "turbo run deploy --filter=\"@foodo/*-service\"",
     "deploy:frontend": "turbo run deploy --filter=web",
     "deploy:all": "pnpm run deploy:infra && pnpm run deploy:core && pnpm run deploy:services && pnpm run deploy:frontend",
 
     "remove:frontend": "turbo run remove --filter=web",
-    "remove:services": "turbo run remove --filter='./backend/*'",
+    "remove:services": "turbo run remove --filter=\"@foodo/*-service\"",
     "remove:core": "turbo run remove --filter=@foodo/core-api",
     "remove:infra": "turbo run remove --filter=@foodo/infra",
     "remove:all": "pnpm run remove:frontend && pnpm run remove:services && pnpm run remove:core && pnpm run remove:infra",

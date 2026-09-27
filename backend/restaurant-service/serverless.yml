@@ -100,7 +100,7 @@ provider:
             - sqs:SendMessage
           Resource:
             - ${cf:${self:custom.infra}.EventsTopicArn}
-            - ${cf:${self:custom.infra}.OrderQueueUrl}
+            - ${cf:${self:custom.infra}.OrderQueueArn}
 
 resources:
   Resources:
