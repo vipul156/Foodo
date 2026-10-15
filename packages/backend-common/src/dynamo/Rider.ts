@@ -48,6 +48,14 @@ export const RIDER_SK = "PROFILE";
 
 // ─── Reads ───────────────────────────────────────────────────
 
+const toRider = (item: Record<string, unknown> | undefined): DynamoRider | null => {
+  if (!item) return null;
+  return {
+    ...item,
+    isVerified: Boolean(item.isVerified),
+  } as DynamoRider;
+};
+
 export async function getRiderById(id: string): Promise<DynamoRider | null> {
   const out = await docClient().send(
     new GetCommand({
@@ -55,7 +63,7 @@ export async function getRiderById(id: string): Promise<DynamoRider | null> {
       Key: { pk: riderPk(id), sk: RIDER_SK },
     }),
   );
-  return (out.Item as DynamoRider | undefined) ?? null;
+  return toRider(out.Item as Record<string, unknown> | undefined);
 }
 
 export async function getRiderByUserId(
@@ -70,7 +78,7 @@ export async function getRiderByUserId(
       Limit: 1,
     }),
   );
-  return (out.Items?.[0] as DynamoRider | undefined) ?? null;
+  return toRider(out.Items?.[0] as Record<string, unknown> | undefined);
 }
 
 export async function listPendingRiders(): Promise<DynamoRider[]> {
@@ -79,21 +87,23 @@ export async function listPendingRiders(): Promise<DynamoRider[]> {
       TableName: TABLE.riders(),
       IndexName: "verified-index",
       KeyConditionExpression: "isVerified = :v",
-      ExpressionAttributeValues: { ":v": false },
+      ExpressionAttributeValues: { ":v": 0 },
     }),
   );
-  return (out.Items as DynamoRider[]) ?? [];
+  return ((out.Items as Record<string, unknown>[]) ?? []).map((i) => toRider(i)!);
 }
 
 export async function listAllRiders(): Promise<DynamoRider[]> {
   const out = await docClient().send(
     new ScanCommand({ TableName: TABLE.riders() }),
   );
-  return ((out.Items as DynamoRider[]) ?? []).sort(
-    (a, b) =>
-      Number(b.isAvailable) - Number(a.isAvailable) ||
-      Number(b.isVerified) - Number(a.isVerified),
-  );
+  return ((out.Items as Record<string, unknown>[]) ?? [])
+    .map((i) => toRider(i)!)
+    .sort(
+      (a, b) =>
+        Number(b.isAvailable) - Number(a.isAvailable) ||
+        Number(b.isVerified) - Number(a.isVerified),
+    );
 }
 
 /**
@@ -116,7 +126,7 @@ export async function listAvailableRidersNear(
       FilterExpression:
         "isAvailable = :a AND lat BETWEEN :minLat AND :maxLat AND lon BETWEEN :minLon AND :maxLon",
       ExpressionAttributeValues: {
-        ":v": true,
+        ":v": 1,
         ":a": true,
         ":minLat": box.minLat,
         ":maxLat": box.maxLat,
@@ -126,7 +136,7 @@ export async function listAvailableRidersNear(
     }),
   );
 
-  const candidates = (out.Items as DynamoRider[]) ?? [];
+  const candidates = (((out.Items as Record<string, unknown>[]) ?? []).map((i) => toRider(i)!));
   return candidates
     .map((r) => ({
       rider: r,
@@ -179,7 +189,7 @@ export async function createRider(
   const now = new Date().toISOString();
   const [lon, lat] = input.location.coordinates;
 
-  const item: DynamoRider = {
+  const item: Record<string, unknown> = {
     pk: riderPk(id),
     sk: RIDER_SK,
     id,
@@ -188,7 +198,7 @@ export async function createRider(
     phoneNumber: input.phoneNumber,
     addharNumber: input.addharNumber,
     drivingLicenseNumber: input.drivingLicenseNumber,
-    isVerified: false,
+    isVerified: 0,
     location: input.location,
     lat,
     lon,
@@ -202,7 +212,7 @@ export async function createRider(
   await docClient().send(
     new PutCommand({ TableName: TABLE.riders(), Item: item }),
   );
-  return item;
+  return toRider(item)!;
 }
 
 /**
@@ -233,7 +243,7 @@ export async function claimRiderForOrder(
       ReturnValues: "ALL_NEW",
     }),
   ).catch(() => null); // already claimed / not available
-  return (out?.Attributes as DynamoRider | undefined) ?? null;
+  return toRider(out?.Attributes as Record<string, unknown> | undefined);
 }
 
 /**
@@ -281,7 +291,7 @@ export async function releaseRiderFromOrder(
     return false;
   }
 
-  const updated = out.Attributes as DynamoRider;
+  const updated = toRider(out.Attributes as Record<string, unknown>)!;
   await publish("order:update", `user:${updated.userId}`, notify);
   console.log(`[COMPENSATE] rider ${riderId} released (order ${orderId ?? "n/a"})`);
   return true;
@@ -298,13 +308,13 @@ export async function setRiderVerified(
       UpdateExpression: "SET isVerified = :v, updatedAt = :now",
       ConditionExpression: "attribute_exists(pk)",
       ExpressionAttributeValues: {
-        ":v": isVerified,
+        ":v": isVerified ? 1 : 0,
         ":now": new Date().toISOString(),
       },
       ReturnValues: "ALL_NEW",
     }),
   ).catch(() => null);
-  return (out?.Attributes as DynamoRider | undefined) ?? null;
+  return toRider(out?.Attributes as Record<string, unknown> | undefined);
 }
 
 /**
@@ -338,5 +348,5 @@ export async function setRiderAvailability(
       ReturnValues: "ALL_NEW",
     }),
   );
-  return (out.Attributes as DynamoRider) ?? null;
+  return toRider(out.Attributes as Record<string, unknown> | undefined);
 }

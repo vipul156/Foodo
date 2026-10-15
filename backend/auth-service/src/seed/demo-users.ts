@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import {
   createUser,
   getUserByEmail,
@@ -11,7 +11,7 @@ import {
 // Login" quick-login buttons always have real, working credentials.
 // Profiles (restaurant/rider records) are seeded by their own services.
 
-const DEMO_USERS = [
+export const DEMO_USERS = [
   {
     name: "Aarav Sharma",
     email: "customer@demo.com",

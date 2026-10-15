@@ -10,7 +10,7 @@ import {
   revokeAllActiveRefreshTokens,
   hashRefreshToken,
 } from "@foodo/backend-common/dynamo";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import {
   signAccessToken,
   issueRefreshToken,

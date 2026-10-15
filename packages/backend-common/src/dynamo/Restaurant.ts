@@ -48,6 +48,14 @@ export const RESTAURANT_SK = "PROFILE";
 
 // ─── Reads ───────────────────────────────────────────────────
 
+const toRestaurant = (item: Record<string, unknown> | undefined): DynamoRestaurant | null => {
+  if (!item) return null;
+  return {
+    ...item,
+    isVerified: Boolean(item.isVerified),
+  } as DynamoRestaurant;
+};
+
 export async function getRestaurantById(
   id: string,
 ): Promise<DynamoRestaurant | null> {
@@ -57,7 +65,7 @@ export async function getRestaurantById(
       Key: { pk: restaurantPk(id), sk: RESTAURANT_SK },
     }),
   );
-  return (out.Item as DynamoRestaurant | undefined) ?? null;
+  return toRestaurant(out.Item as Record<string, unknown> | undefined);
 }
 
 export async function getRestaurantByOwner(
@@ -72,7 +80,7 @@ export async function getRestaurantByOwner(
       Limit: 1,
     }),
   );
-  return (out.Items?.[0] as DynamoRestaurant | undefined) ?? null;
+  return toRestaurant(out.Items?.[0] as Record<string, unknown> | undefined);
 }
 
 export async function listVerifiedRestaurants(): Promise<
@@ -83,10 +91,10 @@ export async function listVerifiedRestaurants(): Promise<
       TableName: TABLE.restaurants(),
       IndexName: "verified-index",
       KeyConditionExpression: "isVerified = :v",
-      ExpressionAttributeValues: { ":v": true },
+      ExpressionAttributeValues: { ":v": 1 },
     }),
   );
-  return (out.Items as DynamoRestaurant[]) ?? [];
+  return ((out.Items as Record<string, unknown>[]) ?? []).map((i) => toRestaurant(i)!);
 }
 
 export async function listPendingRestaurants(): Promise<
@@ -97,19 +105,21 @@ export async function listPendingRestaurants(): Promise<
       TableName: TABLE.restaurants(),
       IndexName: "verified-index",
       KeyConditionExpression: "isVerified = :v",
-      ExpressionAttributeValues: { ":v": false },
+      ExpressionAttributeValues: { ":v": 0 },
     }),
   );
-  return (out.Items as DynamoRestaurant[]) ?? [];
+  return ((out.Items as Record<string, unknown>[]) ?? []).map((i) => toRestaurant(i)!);
 }
 
 export async function listAllRestaurants(): Promise<DynamoRestaurant[]> {
   const out = await docClient().send(
     new ScanCommand({ TableName: TABLE.restaurants() }),
   );
-  return ((out.Items as DynamoRestaurant[]) ?? []).sort(
-    (a, b) => Number(b.isOpen) - Number(a.isOpen) || a.name.localeCompare(b.name),
-  );
+  return ((out.Items as Record<string, unknown>[]) ?? [])
+    .map((i) => toRestaurant(i)!)
+    .sort(
+      (a, b) => Number(b.isOpen) - Number(a.isOpen) || a.name.localeCompare(b.name),
+    );
 }
 
 /**
@@ -134,7 +144,7 @@ export async function listRestaurantsNear(
       FilterExpression:
         "lat BETWEEN :minLat AND :maxLat AND lon BETWEEN :minLon AND :maxLon",
       ExpressionAttributeValues: {
-        ":v": true,
+        ":v": 1,
         ":minLat": box.minLat,
         ":maxLat": box.maxLat,
         ":minLon": box.minLon,
@@ -143,7 +153,7 @@ export async function listRestaurantsNear(
     }),
   );
 
-  const candidates = (out.Items as DynamoRestaurant[]) ?? [];
+  const candidates = (((out.Items as Record<string, unknown>[]) ?? []).map((i) => toRestaurant(i)!));
   return candidates
     .map((r) => ({
       restaurant: r,
@@ -179,7 +189,7 @@ export async function createRestaurant(
   const now = new Date().toISOString();
   const [lon, lat] = input.autoLocation.coordinates;
 
-  const item: DynamoRestaurant = {
+  const item: Record<string, unknown> = {
     pk: restaurantPk(id),
     sk: RESTAURANT_SK,
     id,
@@ -188,7 +198,7 @@ export async function createRestaurant(
     ...(input.image && { image: input.image }),
     ownerId: input.ownerId,
     phone: input.phone,
-    isVerified: false,
+    isVerified: 0,
     autoLocation: input.autoLocation,
     lat,
     lon,
@@ -200,7 +210,7 @@ export async function createRestaurant(
   await docClient().send(
     new PutCommand({ TableName: TABLE.restaurants(), Item: item }),
   );
-  return item;
+  return toRestaurant(item)!;
 }
 
 export async function updateRestaurantByOwner(
@@ -233,14 +243,14 @@ export async function updateRestaurantByOwner(
   const out = await docClient().send(
     new UpdateCommand({
       TableName: TABLE.restaurants(),
-      Key: { pk: existing.pk, sk: existing.sk },
+      Key: { pk: restaurantPk(existing.id), sk: RESTAURANT_SK },
       UpdateExpression: `SET ${expr}, updatedAt = :now`,
       ExpressionAttributeNames: { ...attrNames },
       ExpressionAttributeValues: { ...attrValues, ":now": new Date().toISOString() },
       ReturnValues: "ALL_NEW",
     }),
   );
-  return (out.Attributes as DynamoRestaurant) ?? null;
+  return toRestaurant(out.Attributes as Record<string, unknown> | undefined);
 }
 
 export async function setRestaurantVerified(
@@ -254,13 +264,13 @@ export async function setRestaurantVerified(
       UpdateExpression: "SET isVerified = :v, updatedAt = :now",
       ConditionExpression: "attribute_exists(pk)",
       ExpressionAttributeValues: {
-        ":v": isVerified,
+        ":v": isVerified ? 1 : 0,
         ":now": new Date().toISOString(),
       },
       ReturnValues: "ALL_NEW",
     }),
   ).catch(() => null);
-  return (out?.Attributes as DynamoRestaurant | undefined) ?? null;
+  return toRestaurant(out?.Attributes as Record<string, unknown> | undefined);
 }
 
 export async function setRestaurantOpen(

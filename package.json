@@ -15,8 +15,10 @@
     "deploy:infra": "turbo run deploy --filter=@foodo/infra",
     "deploy:core": "turbo run deploy --filter=@foodo/core-api",
     "deploy:services": "turbo run deploy --filter=\"@foodo/*-service\"",
-    "deploy:frontend": "turbo run deploy --filter=web",
-    "deploy:all": "pnpm run deploy:infra && pnpm run deploy:core && pnpm run deploy:services && pnpm run deploy:frontend",
+    "deploy:frontend": "node scripts/deploy-frontend-docker.js",
+    "deploy:frontend:local": "turbo run deploy --filter=web",
+    "seed": "tsx scripts/seed-demo-data.ts",
+    "deploy:all": "pnpm run deploy:infra && pnpm run deploy:core && pnpm run deploy:services && pnpm run seed && pnpm run deploy:frontend",
 
     "remove:frontend": "turbo run remove --filter=web",
     "remove:services": "turbo run remove --filter=\"@foodo/*-service\"",

@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "lint": "prettier --check \"src/**/*.ts\"",
     "deploy": "serverless deploy",
+    "seed": "tsx src/seed/demo-restaurant.ts",
     "remove": "serverless remove",
     "info": "serverless info"
   },

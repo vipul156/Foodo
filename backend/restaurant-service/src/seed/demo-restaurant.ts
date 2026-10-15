@@ -4,6 +4,7 @@ import {
   createRestaurant,
   getRestaurantByOwner,
   updateRestaurantByOwner,
+  setRestaurantVerified,
 } from "@foodo/backend-common/dynamo";
 import {
   createMenuItem,
@@ -111,14 +112,31 @@ export const seedDemoRestaurant = async (): Promise<void> => {
     if (restaurant) {
       restaurant =
         (await updateRestaurantByOwner(seller.id, {
-          ...RESTAURANT_SEED_BASE,
+          name: RESTAURANT_SEED_BASE.name,
+          description: RESTAURANT_SEED_BASE.description,
+          image: RESTAURANT_SEED_BASE.image,
+          phone: RESTAURANT_SEED_BASE.phone,
+          isOpen: RESTAURANT_SEED_BASE.isOpen,
         })) ?? restaurant;
+      if (!restaurant.isVerified) {
+        restaurant = (await setRestaurantVerified(restaurant.id, true)) ?? restaurant;
+      }
     } else {
       restaurant = await createRestaurant({
-        ...RESTAURANT_SEED_BASE,
+        name: RESTAURANT_SEED_BASE.name,
+        description: RESTAURANT_SEED_BASE.description,
+        image: RESTAURANT_SEED_BASE.image,
+        phone: RESTAURANT_SEED_BASE.phone,
         ownerId: seller.id,
         autoLocation,
       });
+      // createRestaurant sets isVerified: false by default, mark verified for demo
+      const verified = await setRestaurantVerified(restaurant.id, true);
+      if (verified) restaurant = verified;
+      if (RESTAURANT_SEED_BASE.isOpen) {
+        const opened = await updateRestaurantByOwner(seller.id, { isOpen: true });
+        if (opened) restaurant = opened;
+      }
     }
 
     const existing = await listMenuItemsByRestaurant(restaurant.id);

@@ -1,0 +1,33 @@
+FROM node:20-bookworm-slim
+
+# Install system dependencies needed by SST, OpenNext, and sharp/native modules
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    bash \
+    tar \
+    && rm -rf /var/lib/apt/lists/*
+
+# Enable and configure pnpm matching workspace version
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+
+WORKDIR /app
+
+# Copy root manifests and workspace configs
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+
+# Copy all packages and app definitions required for workspace build
+COPY packages/ ./packages/
+COPY apps/ ./apps/
+
+# Install dependencies in isolated Linux environment
+RUN pnpm install --frozen-lockfile
+
+# Pre-build shared packages
+RUN pnpm --filter @foodo/types build
+
+WORKDIR /app/apps/web
+
+# Execute SST deployment with Linux native POSIX paths and symlinks
+CMD ["pnpm", "run", "deploy"]

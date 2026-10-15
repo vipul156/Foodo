@@ -50,17 +50,17 @@ export default $config({
     // and cookies are 100% same-origin first-party.
     //
     // Automatically retrieve the live endpoints from the deployed Serverless Framework stacks:
-    const deployedHttpApiUrl = await getCloudFormationExport(
-      `foodo-core-api-${stage}-HttpApiUrl`,
-    );
-    const deployedWebSocketUrl = await getCloudFormationExport(
-      `foodo-realtime-${stage}-WebSocketUrl`,
-    );
+    const deployedHttpApiUrl =
+      (await getCloudFormationExport(`foodo-core-api-${stage}-HttpApiUrl`)) ||
+      (await getCloudFormationExport(`foodo-core-api-dev-HttpApiUrl`));
+    const deployedWebSocketUrl =
+      (await getCloudFormationExport(`foodo-realtime-${stage}-WebSocketUrl`)) ||
+      (await getCloudFormationExport(`foodo-realtime-dev-WebSocketUrl`));
 
     const coreApiEndpoint =
       process.env.API_GATEWAY_URL ||
       deployedHttpApiUrl ||
-      `https://foodo-core-api-${stage}.execute-api.ap-south-1.amazonaws.com`;
+      `https://smzwggbsbl.execute-api.ap-south-1.amazonaws.com`;
 
     const realtimeWsUrl =
       process.env.NEXT_PUBLIC_REALTIME_WS_URL ||
@@ -110,16 +110,8 @@ export default $config({
                 "DELETE",
               ],
               cachedMethods: ["GET", "HEAD"],
-              // Do NOT cache dynamic API responses; pass all headers and cookies
-              defaultTtl: 0,
-              minTtl: 0,
-              maxTtl: 0,
-              compress: true,
-              forwardedValues: {
-                queryString: true,
-                cookies: { forward: "all" },
-                headers: ["*"],
-              },
+              cachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad", // Managed-CachingDisabled
+              originRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac", // Managed-AllViewerExceptHostHeader
             },
             ...(args.orderedCacheBehaviors || []),
           ];
