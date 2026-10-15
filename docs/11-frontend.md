@@ -193,7 +193,7 @@ against that.
 
 ### The `_id` contract
 
-`publicUser()` in auth-service returns `_id`, and `IUser._id` is what every component reads.
+`publicUser()` in auth-service returns `_id`, and `IUser.id` is what every component reads.
 The web app never renames it — a deliberate preservation of the Mongo-era contract so no
 component had to change.
 

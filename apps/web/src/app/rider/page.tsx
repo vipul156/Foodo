@@ -67,7 +67,7 @@ export default function RiderDashboardPage() {
   // (heading to the restaurant) through pickup to delivery. NOTE: during a
   // delivery isAvailable is false (the rider is intentionally marked
   // unavailable for new offers), so availability must NOT gate streaming.
-  useRiderLocationStream(currentOrder?._id, Boolean(currentOrder));
+  useRiderLocationStream(currentOrder?.id, Boolean(currentOrder));
 
   // Offers from the server — ready orders near the rider's last known
   // location. Covers riders who logged in / refreshed after the socket
@@ -115,9 +115,9 @@ export default function RiderDashboardPage() {
   };
 
   const handleUpdateOrderStatus = async () => {
-    if (!currentOrder?._id) return;
+    if (!currentOrder?.id) return;
     try {
-      await updateOrderStatus.mutateAsync({ orderId: currentOrder._id });
+      await updateOrderStatus.mutateAsync({ orderId: currentOrder.id });
       // Order flips to picked_up / delivered — refresh card + availability
       queryClient.invalidateQueries({ queryKey: ["rider", "order", "current"] });
       queryClient.invalidateQueries({ queryKey: ["rider", "profile"] });
@@ -208,11 +208,11 @@ export default function RiderDashboardPage() {
             {availableOrders && availableOrders.length > 0 ? (
               availableOrders.map((order) => (
                 <AvailableOrderCard
-                  key={order._id}
+                  key={order.id}
                   order={order}
-                  highlight={socketOffer?.orderId === order._id}
-                  isAccepting={acceptOrder.isPending && pendingOrderId === order._id}
-                  onAccept={() => handleAcceptOrder(order._id)}
+                  highlight={socketOffer?.orderId === order.id}
+                  isAccepting={acceptOrder.isPending && pendingOrderId === order.id}
+                  onAccept={() => handleAcceptOrder(order.id)}
                 />
               ))
             ) : socketOffer ? (
@@ -462,7 +462,7 @@ function DeliveryCard({
                   : "text-muted-foreground"
               }`}
             >
-              Order #{order._id.slice(-6)}
+              Order #{order.id.slice(-6)}
               {isPickedUp ? " · Picked up" : " · Pickup"}
             </p>
           </div>

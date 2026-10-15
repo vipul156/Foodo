@@ -30,7 +30,7 @@ import {
 export default function SellerMenuPage() {
   const { data: restaurant } = useGetMyRestaurant();
   const { data: menuItems, isLoading, refetch } = useGetMenuItems(
-    restaurant?._id || "",
+    restaurant?.id || "",
   );
   const createItem = useCreateMenuItem();
   const toggleItem = useToggleMenuItem();
@@ -182,7 +182,7 @@ export default function SellerMenuPage() {
         ) : menuItems && menuItems.length > 0 ? (
           <div className="space-y-3">
             {menuItems.map((item: IMenuItem) => (
-              <GlassCard key={item._id} className="p-4">
+              <GlassCard key={item.id} className="p-4">
                 <div className="flex items-center gap-4">
                   {item.image && (
                     <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover shrink-0" />
@@ -199,7 +199,7 @@ export default function SellerMenuPage() {
                     )}
                     <div className="flex items-center gap-2 mt-2">
                       <button
-                        onClick={() => handleToggle(item._id)}
+                        onClick={() => handleToggle(item.id)}
                         disabled={toggleItem.isPending}
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-all ${
                           item.isAvailable
@@ -211,7 +211,7 @@ export default function SellerMenuPage() {
                         {item.isAvailable ? "Available" : "Unavailable"}
                       </button>
                       <button
-                        onClick={() => handleDelete(item._id)}
+                        onClick={() => handleDelete(item.id)}
                         disabled={deleteItem.isPending}
                         className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-destructive transition-colors"
                       >

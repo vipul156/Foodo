@@ -120,12 +120,12 @@ export default function AdminRidersPage() {
             ) : (
               pending!.map((rider) => (
                 <PendingRow
-                  key={rider._id}
+                  key={rider.id}
                   rider={rider}
-                  onApprove={() => verifyRider.mutate(rider._id)}
+                  onApprove={() => verifyRider.mutate(rider.id)}
                   isApproving={
                     verifyRider.isPending &&
-                    verifyRider.variables === rider._id
+                    verifyRider.variables === rider.id
                   }
                 />
               ))
@@ -167,7 +167,7 @@ export default function AdminRidersPage() {
                   </p>
                 </div>
               ) : (
-                filteredAll.map((rider) => <RosterRow key={rider._id} rider={rider} />)
+                filteredAll.map((rider) => <RosterRow key={rider.id} rider={rider} />)
               )}
             </GlassCard>
           </>

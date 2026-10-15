@@ -76,7 +76,7 @@ export const createRiderController = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const existingRider = await getRiderByUserId(String(user._id));
+  const existingRider = await getRiderByUserId(String(user.id));
   if (existingRider) {
     return res.status(400).json({
       message: "Rider already exists",
@@ -91,7 +91,7 @@ export const createRiderController = tryCatch(async (req: AuthRequest, res) => {
       type: "Point",
       coordinates: [Number(longitude), Number(latitude)],
     },
-    userId: String(user._id),
+    userId: String(user.id),
     picture: pictureUrl,
   });
 
@@ -110,7 +110,7 @@ export const fetchMyProfile = tryCatch(async (req: AuthRequest, res) => {
     });
   }
 
-  const rider = await getRiderByUserId(String(user._id));
+  const rider = await getRiderByUserId(String(user.id));
   if (!rider) {
     return res.status(404).json({
       message: "Rider not found",
@@ -147,7 +147,7 @@ export const toogleRiderAvailablity = tryCatch(
       });
     }
 
-    const rider = await getRiderByUserId(String(user._id));
+    const rider = await getRiderByUserId(String(user.id));
     if (!rider) {
       return res.status(404).json({
         message: "Rider not found",
@@ -178,7 +178,7 @@ export const toogleRiderAvailablity = tryCatch(
     }
 
     const updated = await setRiderAvailability(
-      String(user._id),
+      String(user.id),
       isAvailable,
       [Number(longitude), Number(latitude)],
     );
@@ -191,7 +191,7 @@ export const toogleRiderAvailablity = tryCatch(
 );
 
 export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
-  const riderUserId = req.user?._id;
+  const riderUserId = req.user?.id;
   const orderId = req.params.orderId as string;
 
   if (!riderUserId) {
@@ -252,7 +252,7 @@ export const acceptOrder = tryCatch(async (req: AuthRequest, res) => {
 });
 
 export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
-  const riderUserId = req.user?._id;
+  const riderUserId = req.user?.id;
 
   if (!riderUserId) {
     return res.status(401).json({
@@ -282,7 +282,7 @@ export const fetchMyCurrentOrder = tryCatch(async (req: AuthRequest, res) => {
 });
 
 export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => {
-  const riderUserId = req.user?._id;
+  const riderUserId = req.user?.id;
 
   if (!riderUserId) {
     return res.status(401).json({
@@ -316,7 +316,7 @@ export const fetchMyDeliveryHistory = tryCatch(async (req: AuthRequest, res) => 
 // Available orders for the rider dashboard — paid, ready_for_rider
 // orders at restaurants within 10km of the rider's last known location.
 export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
-  const riderUserId = req.user?._id;
+  const riderUserId = req.user?.id;
 
   if (!riderUserId) {
     return res.status(401).json({
@@ -360,7 +360,7 @@ export const fetchAvailableOrders = tryCatch(async (req: AuthRequest, res) => {
 });
 
 export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
-  const riderUserId = req.user?._id;
+  const riderUserId = req.user?.id;
 
   if (!riderUserId) {
     return res.status(401).json({

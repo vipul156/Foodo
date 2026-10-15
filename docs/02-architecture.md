@@ -274,4 +274,4 @@ CloudFront's `/api/*` behaviour sets `defaultTtl/minTtl/maxTtl = 0` but honours
 | Image namespace escape | Signature covers the folder; folder is fixed server-side per resource |
 | DoS via body size | 1 MB global; 10 MB only on the three image-bearing create/update paths; the old 50 MB global was removed as trivial amplification |
 | Data leakage in admin | `stripCredentials` removes `password`; `stripKeys` removes `pk`/`sk` before any admin response |
-| Order enumeration | `fetchSingleOrder` and `getOrderPaymentStatus` both verify `order.userId === user._id` |
+| Order enumeration | `fetchSingleOrder` and `getOrderPaymentStatus` both verify `order.userId === user.id` |

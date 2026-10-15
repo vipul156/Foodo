@@ -103,7 +103,7 @@ can silently break it, and the only detector is production.
 
 | ID | Category | Severity | Component / File Path | Core Flaw Summary |
 |---|---|:--:|---|---|
-| F-01 | Contract / Runtime | **Critical** | `apps/web/src/types/index.ts` vs `packages/backend-common/src/dynamo/*.ts` | Frontend reads `entity._id`; backend returns `entity.id`. Only users are mapped. `order._id.slice(-8)` throws `TypeError`. |
+| F-01 | Contract / Runtime | **Critical** | `apps/web/src/types/index.ts` vs `packages/backend-common/src/dynamo/*.ts` | Frontend reads `entity.id`; backend returns `entity.id`. Only users are mapped. `order.id.slice(-8)` throws `TypeError`. |
 | F-02 | Security / Runtime | **Critical** | `apps/web/src/lib/cloudinary-upload.ts:36-42` | Client drops `tags` + `transformation` from the signed parameter set → Cloudinary signature mismatch → all direct uploads fail. |
 | F-03 | Security | **Critical** | all `backend/*/src/controllers/*.ts` | Zero server-side input validation. No zod/joi anywhere outside `apps/web`. Unvalidated `req.body` reaches repositories. |
 | F-04 | Scalability | **Critical** | `packages/backend-common/src/dynamo/Rider.ts:110-146` | `listAvailableRidersNear` — unbounded `Query` + post-read `FilterExpression`. Runs on every `ready_for_rider`. |
@@ -125,7 +125,7 @@ can silently break it, and the only detector is production.
 | F-19 | Observability | **Medium** | all services | Unstructured `console.*`. No correlation ID propagated from the API Gateway access log into Lambda logs. |
 | F-20 | Observability | **Medium** | all services | No standardized error envelope — five different response shapes across six services. |
 | F-21 | Code Quality | **Medium** | `apps/web/src/providers/query-provider.tsx:31` | `<ReactQueryDevtools />` rendered unconditionally — shipped to the production client bundle. |
-| F-22 | Correctness | **Medium** | `apps/web/src/lib/socket-events.ts:49,59` | `RiderAssignedPayload.order._id` — the server sends a raw `DynamoOrder` with `id`. Type contract is fiction. |
+| F-22 | Correctness | **Medium** | `apps/web/src/lib/socket-events.ts:49,59` | `RiderAssignedPayload.order.id` — the server sends a raw `DynamoOrder` with `id`. Type contract is fiction. |
 | F-23 | Correctness | **Medium** | `backend/auth-service/src/seed/demo-users.ts` | Weak demo passwords (`customer123`) committed in source; seeder is role-gated on nothing. |
 | F-24 | Security | **Medium** | `backend/auth-service/src/controllers/auth.ts:~65` | No server-side password policy (frontend says 6, Cognito says 8). |
 | F-25 | Concurrency | **Medium** | `packages/backend-common/src/aws/messaging.ts:makeFanoutPublisher` | Fire-and-forget publish swallows all errors; a lost `order:new` leaves the restaurant board stale with no recovery path. |
@@ -181,16 +181,16 @@ $ grep -rn "interceptors" apps/web/src                          → (none)
 $ grep -rn "id → _id" in features/orders/api/index.ts           → (none)
 ```
 
-TypeScript does not catch it because `IOrder._id: string` is a *declaration*, and the
+TypeScript does not catch it because `IOrder.id: string` is a *declaration*, and the
 runtime value is `undefined`. Failure mode is therefore a **hard runtime crash**, not a
 type error:
 
 ```tsx
 // apps/web/src/app/(customer)/orders/page.tsx:208
-Order #{order._id.slice(-8).toUpperCase()}
+Order #{order.id.slice(-8).toUpperCase()}
 ```
 
-With `order._id === undefined` this throws
+With `order.id === undefined` this throws
 `TypeError: Cannot read properties of undefined (reading 'slice')` during render — which
 React cannot recover from without an error boundary. There is an
 `app/_global-error/page.tsx`, so the user sees the error page.
@@ -199,12 +199,12 @@ Every affected surface:
 
 | Surface | Expression | Result |
 |---|---|---|
-| Customer order list | `key={order._id}`, `order._id.slice(-8)` | **render crash** |
-| Order detail | `orderId={order._id}` to the tracking map | map subscribes to `order:undefined` |
-| Seller order board | `order._id.slice(-6)` | **render crash** |
-| Rider dashboard | `onAccept={() => handleAcceptOrder(order._id)}` | `POST /api/rider/accept/undefined` |
-| Rider history | `expandedId === order._id` | rows never expand |
-| Cart sheet | `getItemId()` reads `itemId._id` off a **populated** object | returns `undefined` |
+| Customer order list | `key={order.id}`, `order.id.slice(-8)` | **render crash** |
+| Order detail | `orderId={order.id}` to the tracking map | map subscribes to `order:undefined` |
+| Seller order board | `order.id.slice(-6)` | **render crash** |
+| Rider dashboard | `onAccept={() => handleAcceptOrder(order.id)}` | `POST /api/rider/accept/undefined` |
+| Rider history | `expandedId === order.id` | rows never expand |
+| Cart sheet | `getItemId()` reads `itemId.id` off a **populated** object | returns `undefined` |
 
 The cart case is the most revealing — someone already hit this and patched it *locally*:
 
@@ -212,7 +212,7 @@ The cart case is the most revealing — someone already hit this and patched it 
 // apps/web/src/features/cart/components/cart-sheet.tsx:21-23
 /** Extract the string _id from a populated or unpopulated itemId field */
 function getItemId(itemId: string | { _id: string }): string {
-  return typeof itemId === "object" ? itemId._id : itemId;
+  return typeof itemId === "object" ? itemId.id : itemId;
 }
 ```
 
@@ -272,7 +272,7 @@ Apply at every egress — order controller:
 import { toWire, toWireAll } from "@foodo/backend-common/dynamo";
 
 export const getMyOrders = tryCatch(async (req: AuthRequest, res) => {
-  const orders = await listOrdersByUser(String(user._id));
+  const orders = await listOrdersByUser(String(user.id));
   return res.status(200).json({
     success: true,
     count: orders.length,
@@ -282,7 +282,7 @@ export const getMyOrders = tryCatch(async (req: AuthRequest, res) => {
 
 export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
   const order = await getOrderById(orderId);
-  if (order.userId !== String(user._id)) throw new UnauthorizedError();
+  if (order.userId !== String(user.id)) throw new UnauthorizedError();
 
   const menuById = await fetchMenuItemsForCart(order.items.map((i) => i.itemId));
   const orderObj = toWire(order);
@@ -328,7 +328,7 @@ export type ICartItem    = Wire<DynamoCartRow>      & { itemId: IMenuItem; resta
 export type IAddress     = Wire<DynamoAddress>;
 ```
 
-Now `order._id` is `string` (typed) **and** present (runtime), and if the backend ever stops
+Now `order.id` is `string` (typed) **and** present (runtime), and if the backend ever stops
 calling `toWire`, the unit tests below fail loudly instead of crashing a user's browser.
 
 #### Trade-offs & migration path
@@ -351,8 +351,8 @@ it("every order endpoint exposes _id for the web contract", async () => {
   const { body } = await agent.get("/api/order/my").set(authCookie);
   expect(body.orders.length).toBeGreaterThan(0);
   for (const o of body.orders) {
-    expect(typeof o._id).toBe("string");   // fails today
-    expect(o._id).toBe(o.id);
+    expect(typeof o.id).toBe("string");   // fails today
+    expect(o.id).toBe(o.id);
   }
 });
 ```
@@ -1154,11 +1154,11 @@ socket.emit("rider:location", { orderId, latitude, longitude });
 So any authenticated user (a customer, a seller, or a rider) who knows or guesses an order
 id can read **that delivery's live coordinates indefinitely**. Order ids are UUIDv4, so
 guessing is not practical — but they are *not secret*: they appear in URLs
-(`/orders/${order._id}`), in Razorpay/Stripe `receipt`/`metadata`, in order rows returned by
+(`/orders/${order.id}`), in Razorpay/Stripe `receipt`/`metadata`, in order rows returned by
 the admin API, and in browser history.
 
 Mitigating factor: the HTTP endpoints that serve order *contents* do verify
-`order.userId === user._id`, so this leaks coordinates, not PII or order details. That is the
+`order.userId === user.id`, so this leaks coordinates, not PII or order details. That is the
 difference between a High and a Critical, but it is still a privacy failure.
 
 #### Current vulnerable code
@@ -1350,7 +1350,7 @@ Uniqueness ("one restaurant per owner") is enforced only by the controller's pre
 
 ```ts
 // backend/restaurant-service/src/controllers/restaurant.ts
-const existingRestaurant = await getRestaurantByOwner(String(user._id));
+const existingRestaurant = await getRestaurantByOwner(String(user.id));
 if (existingRestaurant) return res.status(400).json({ message: "You already have a restaurant" });
 ```
 
@@ -1476,7 +1476,7 @@ And surface the conflict as a **409**, not a silent success — the caller must 
 
 ```ts
 // backend/restaurant-service/src/controllers/restaurant.ts
-const restaurant = await updateRestaurantByOwner(String(user._id), updateFields);
+const restaurant = await updateRestaurantByOwner(String(user.id), updateFields);
 if (!restaurant) {
   return res.status(409).json({ message: "Restaurant was modified elsewhere — retry" });
 }
@@ -1507,7 +1507,7 @@ rather avoid a new table, the alternative is to key the restaurant item as
 
 ```ts
 export const getMyRestaurant = tryCatch(async (req, res) => {
-  const restaurant = await getRestaurantByOwner(String(user._id));
+  const restaurant = await getRestaurantByOwner(String(user.id));
   if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
   if (!user.restaurantId) {
@@ -1590,7 +1590,7 @@ export const getSocketToken = tryCatch(async (req: AuthRequest, res: Response) =
 ```ts
 // backend/realtime-service/src/config/websocket.ts — handleConnect
 const decoded = jwt.verify(cleanToken, JWT_SECRET) as SocketPrincipal & { restaurantId?: string };
-const userId = decoded.sub ?? (decoded as any).user?._id;    // legacy fallback, remove after §3.8 ships
+const userId = decoded.sub ?? (decoded as any).user?.id;    // legacy fallback, remove after §3.8 ships
 await joinRoom(connectionId, `user:${userId}`);
 if (decoded.restaurantId) await joinRoom(connectionId, `restaurant:${decoded.restaurantId}`);  // ← now fires
 ```
@@ -1600,7 +1600,7 @@ Then remove the token minting entirely:
 ```ts
 // backend/restaurant-service/src/controllers/restaurant.ts
 export const getMyRestaurant = tryCatch(async (req: AuthRequest, res) => {
-  const restaurant = await getRestaurantByOwner(String(user._id));
+  const restaurant = await getRestaurantByOwner(String(user.id));
   if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
   setCacheablePrivate(res, 5);
   return res.status(200).json({ message: "Restaurant fetched successfully", restaurant });
@@ -1641,8 +1641,8 @@ Meanwhile the controllers throw bare `Error`s for authorization failures:
 ```ts
 // backend/restaurant-service/src/controllers/order.ts
 if (!user) throw new Error("Unauthorized");
-if (!restaurant || restaurant.ownerId !== String(user._id)) throw new Error("Unauthorized");
-if (order.userId !== String(user._id)) throw new Error("Unauthorized");
+if (!restaurant || restaurant.ownerId !== String(user.id)) throw new Error("Unauthorized");
+if (order.userId !== String(user.id)) throw new Error("Unauthorized");
 ```
 
 Result: a customer requesting someone else's order gets **HTTP 500**, not 401 or 403.
@@ -1713,8 +1713,8 @@ export const tryCatch =
 import { tryCatch, Unauthorized, Forbidden } from "@foodo/backend-common";
 
 if (!user) throw Unauthorized();
-if (!restaurant || restaurant.ownerId !== String(user._id)) throw Forbidden("Not your restaurant");
-if (order.userId !== String(user._id)) throw Forbidden("Not your order");
+if (!restaurant || restaurant.ownerId !== String(user.id)) throw Forbidden("Not your restaurant");
+if (order.userId !== String(user.id)) throw Forbidden("Not your order");
 ```
 
 Adopting the `{"error": {code, message}}` envelope also closes **F-20** (see §3.13).
@@ -2224,7 +2224,7 @@ Every finding in this document is reproducible:
 # F-01 — no id→_id mapping outside auth-service
 grep -rn "_id:" apps/web/src --include=*.ts --include=*.tsx | grep -v "restaurantId: {"
 grep -rn "interceptors" apps/web/src                          # → none
-grep -n "_id" backend/restaurant-service/src/controllers/order.ts   # → only req.user._id
+grep -n "_id" backend/restaurant-service/src/controllers/order.ts   # → only req.user.id
 
 # F-02 — client drops signed params
 sed -n '30,45p' apps/web/src/lib/cloudinary-upload.ts

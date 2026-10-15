@@ -167,11 +167,11 @@ export default function RestaurantDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {menuItems.map((item: IMenuItem) => (
               <MenuItemCard
-                key={item._id}
+                key={item.id}
                 item={item}
                 restaurantId={restaurantId}
-                onAddToCart={() => handleAddToCart(item._id)}
-                isAdding={addingItemId === item._id}
+                onAddToCart={() => handleAddToCart(item.id)}
+                isAdding={addingItemId === item.id}
               />
             ))}
           </div>

@@ -25,6 +25,7 @@ export interface DynamoRestaurant {
   pk: string;
   sk: string;
   id: string;
+  _id: string; // Mongo-compatible alias for frontend consumers
   name: string;
   description?: string;
   image?: string;
@@ -50,8 +51,11 @@ export const RESTAURANT_SK = "PROFILE";
 
 const toRestaurant = (item: Record<string, unknown> | undefined): DynamoRestaurant | null => {
   if (!item) return null;
+  const id = (item.id as string) || (item.pk ? String(item.pk).replace("RESTAURANT#", "") : "");
   return {
     ...item,
+    id,
+    _id: id,
     isVerified: Boolean(item.isVerified),
   } as DynamoRestaurant;
 };

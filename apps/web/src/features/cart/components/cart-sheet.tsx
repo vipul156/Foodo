@@ -17,9 +17,9 @@ interface CartSheetProps {
   onClose: () => void;
 }
 
-/** Extract the string _id from a populated or unpopulated itemId field */
-function getItemId(itemId: string | { _id: string }): string {
-  return typeof itemId === "object" ? itemId._id : itemId;
+/** Extract the string id from a populated or unpopulated itemId field */
+function getItemId(itemId: string | { id: string }): string {
+  return typeof itemId === "object" ? itemId.id : itemId;
 }
 
 export function CartSheet({ open, onClose }: CartSheetProps) {
@@ -67,15 +67,15 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
   const cartLength = cartData?.cartLength || 0;
   const subtotal = cartData?.subtotal || 0;
 
-  const handleIncrement = (itemId: string | { _id: string }) => {
+  const handleIncrement = (itemId: string | { id: string }) => {
     incrementQuantity.mutate(getItemId(itemId));
   };
 
-  const handleDecrement = (itemId: string | { _id: string }) => {
+  const handleDecrement = (itemId: string | { id: string }) => {
     decrementQuantity.mutate(getItemId(itemId));
   };
 
-  const handleRemove = (itemId: string | { _id: string }) => {
+  const handleRemove = (itemId: string | { id: string }) => {
     removeItem.mutate(getItemId(itemId));
   };
 
@@ -167,7 +167,7 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
 
                 return (
                   <div
-                    key={item._id || idx}
+                    key={item.id || idx}
                     className="flex items-center gap-3 rounded-xl border border-border/50 bg-card p-3"
                   >
                     {/* Item image placeholder */}

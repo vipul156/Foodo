@@ -21,7 +21,7 @@ import {
 export const createMenuItemController = tryCatch(
   async (req: AuthRequest, res) => {
     if (!req.user) throw new Error("User not found");
-    const restaurant = await getRestaurantByOwner(String(req.user._id));
+    const restaurant = await getRestaurantByOwner(String(req.user.id));
     if (!restaurant) throw new Error("Restaurant not found");
     const { name, description, price } = req.body;
     if (!name || !price) {
@@ -87,7 +87,7 @@ export const deleteMenuItemController = tryCatch(
     if (!menuItem) throw new Error("Menu item not found");
 
     const restaurant = await getRestaurantById(menuItem.restaurantId);
-    if (!restaurant || restaurant.ownerId !== String(req.user._id)) {
+    if (!restaurant || restaurant.ownerId !== String(req.user.id)) {
       throw new Error("Restaurant not found");
     }
 
@@ -107,7 +107,7 @@ export const toogleMenuItemAvailability = tryCatch(
     if (!menuItem) throw new Error("Menu item not found");
 
     const restaurant = await getRestaurantById(menuItem.restaurantId);
-    if (!restaurant || restaurant.ownerId !== String(req.user._id)) {
+    if (!restaurant || restaurant.ownerId !== String(req.user.id)) {
       throw new Error("Restaurant not found");
     }
 

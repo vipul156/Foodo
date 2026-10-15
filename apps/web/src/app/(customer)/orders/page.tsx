@@ -154,7 +154,7 @@ export default function OrdersPage() {
       ) : orders && orders.length > 0 ? (
         <div className="space-y-4">
           {orders.map((order: IOrder) => (
-            <Link key={order._id} href={`/orders/${order._id}`} className="block group">
+            <Link key={order.id} href={`/orders/${order.id}`} className="block group">
               <OrderCard order={order} />
             </Link>
           ))}
@@ -205,7 +205,7 @@ function OrderCard({ order }: { order: IOrder }) {
           <div>
             <h3 className="font-semibold">{order.restaurantName}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Order #{order._id.slice(-8).toUpperCase()}
+              Order #{order.id.slice(-8).toUpperCase()}
             </p>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium">

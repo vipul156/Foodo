@@ -55,7 +55,7 @@ if (!token) return fail(401, "Unauthorized: missing token");
 const cleanToken = token.replace(/^Bearer\s+/i, "");
 const decoded = jwt.verify(cleanToken, JWT_SECRET);
 const userData = decoded.user || decoded;         // ← unwraps the nested legacy shape
-const userId = userData._id || userData.sub || userData.id;
+const userId = userData.id || userData.sub || userData.id;
 
 if (!userId) return fail(401, "Invalid token payload");
 

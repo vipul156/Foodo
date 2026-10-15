@@ -75,10 +75,10 @@ export default function SellerDashboardPage() {
     isLoading: loadingRestaurant,
     error: restaurantError,
   } = useGetMyRestaurant();
-  const { data: menuItems } = useGetMenuItems(restaurant?._id || "");
+  const { data: menuItems } = useGetMenuItems(restaurant?.id || "");
   // First page (50) is enough for the today-stats + recent list; deeper
   // history is available via the keyset cursor on the Orders page.
-  const { orders } = useRestaurantOrdersFlat(restaurant?._id || "");
+  const { orders } = useRestaurantOrdersFlat(restaurant?.id || "");
 
   const isLoading = loadingRestaurant;
 
@@ -205,7 +205,7 @@ export default function SellerDashboardPage() {
                   </div>
                 ) : (
                   stats.recent.map((order) => (
-                    <OrderRow key={order._id} order={order} />
+                    <OrderRow key={order.id} order={order} />
                   ))
                 )}
               </GlassCard>
@@ -292,7 +292,7 @@ function OrderRow({ order }: { order: IOrder }) {
       {/* Order id + meta */}
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">
-          #{order._id?.slice(-6)?.toUpperCase()}
+          #{order.id?.slice(-6)?.toUpperCase()}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {createdAt ? timeAgo(createdAt) : ""}

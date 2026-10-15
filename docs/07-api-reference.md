@@ -151,7 +151,7 @@ One restaurant per owner → `400 "You already have a restaurant"`.
 → `201 { message: "Menu item created successfully", menuItem }`
 
 **`DELETE /api/menu-item/delete/{id}`** / **`PUT /api/menu-item/toggle/{id}`** — both verify
-`restaurant.ownerId === user._id`, otherwise `404 "Restaurant not found"` (deliberately
+`restaurant.ownerId === user.id`, otherwise `404 "Restaurant not found"` (deliberately
 404, not 403 — don't confirm existence).
 
 ### Cart — all under `router.use(isAuth)`
@@ -177,7 +177,7 @@ COD → `paymentStatus: "paid"` + cart cleared in the same `TransactWrite`.
 → `201 { message: "Order created successfully", orderId, amount }`
 
 **`GET /api/order/order/{restaurantId}?limit&cursor`** — seller only; verifies
-`restaurant.ownerId === user._id`. `limit` default 50, **capped at 200 server-side**.
+`restaurant.ownerId === user.id`. `limit` default 50, **capped at 200 server-side**.
 → `{ success, count, orders, nextCursor }` — `nextCursor` is `"<createdAt>|<id>"`.
 
 **`GET /api/order/analytics/{restaurantId}?days=7|30`** — seller only.

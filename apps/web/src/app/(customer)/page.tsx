@@ -291,7 +291,7 @@ export default function CustomerHomePage() {
         ) : restaurants && restaurants.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {restaurants.slice(0, 6).map((restaurant) => (
-              <RestaurantCard key={restaurant._id} restaurant={restaurant} />
+              <RestaurantCard key={restaurant.id} restaurant={restaurant} />
             ))}
           </div>
         ) : (
@@ -414,8 +414,9 @@ function HowItWorksCard({
 // ─── Restaurant Card — Real Data ─────────────────────────────
 
 function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
+  const restId = restaurant.id || restaurant.id;
   return (
-    <Link href={`/restaurants/${restaurant._id}`}>
+    <Link href={`/restaurants/${restId}`}>
       <GlassCard hover className="overflow-hidden p-0 cursor-pointer group">
         <div className="aspect-[16/9] bg-primary/10 flex items-center justify-center relative overflow-hidden">
           {restaurant.image ? (

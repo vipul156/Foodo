@@ -146,14 +146,14 @@ export default function RiderHistoryPage() {
                 <GlassCard className="divide-y divide-border/50 p-0">
                   {group.orders.map((order) => {
                     const created = new Date(order.createdAt || "");
-                    const expanded = expandedId === order._id;
+                    const expanded = expandedId === order.id;
 
                     return (
-                      <div key={order._id}>
+                      <div key={order.id}>
                         {/* Row — tap to expand the delivery details */}
                         <button
                           type="button"
-                          onClick={() => setExpandedId(expanded ? null : order._id)}
+                          onClick={() => setExpandedId(expanded ? null : order.id)}
                           className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
                           aria-expanded={expanded}
                         >

@@ -51,12 +51,12 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Address is required");
   }
 
-  const address = await getAddress(String(req.user._id), String(addressId));
+  const address = await getAddress(String(req.user.id), String(addressId));
   if (!address) {
     throw new Error("Address not found");
   }
 
-  const cartRows = await getCartRows(String(req.user._id));
+  const cartRows = await getCartRows(String(req.user.id));
   if (cartRows.length === 0) {
     throw new Error("Cart is empty");
   }
@@ -120,7 +120,7 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   // TransactWriteItems — notifications stay outside the transaction.
   const order = await createOrderRecord(
     {
-      userId: String(req.user._id),
+      userId: String(req.user.id),
       restaurantId,
       restaurantName: restaurant.name,
       restaurantLocation: {
@@ -145,7 +145,7 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
       paymentStatus: isCod ? "paid" : "pending",
       expiresAt,
     },
-    isCod ? { userId: String(req.user._id) } : undefined,
+    isCod ? { userId: String(req.user.id) } : undefined,
   );
 
   if (isCod) {
@@ -155,7 +155,7 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     await publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
       orderId: order.id,
     });
-    await publishRealtimeEvent("order:update", `user:${req.user._id}`, {
+    await publishRealtimeEvent("order:update", `user:${req.user.id}`, {
       orderId: order.id,
       status: "placed",
     });
@@ -186,7 +186,7 @@ export const fetchRestaurantOrders = tryCatch(async (req: AuthRequest, res) => {
   }
 
   const restaurant = await getRestaurantById(restaurantId);
-  if (!restaurant || restaurant.ownerId !== String(user._id)) {
+  if (!restaurant || restaurant.ownerId !== String(user.id)) {
     throw new Error("Unauthorized");
   }
 
@@ -235,7 +235,7 @@ export const getRestaurantAnalytics = tryCatch(async (req: AuthRequest, res) => 
   }
 
   const restaurant = await getRestaurantById(restaurantId);
-  if (!restaurant || restaurant.ownerId !== String(user._id)) {
+  if (!restaurant || restaurant.ownerId !== String(user.id)) {
     throw new Error("Unauthorized");
   }
 
@@ -360,7 +360,7 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   if (!restaurant) {
     throw new Error("No restaurant found");
   }
-  if (restaurant.ownerId !== String(user._id)) {
+  if (restaurant.ownerId !== String(user.id)) {
     throw new Error("Unauthorized");
   }
 
@@ -420,12 +420,12 @@ export const cancelOrderController = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("No order found");
   }
 
-  const isOwner = order.userId === String(user._id);
+  const isOwner = order.userId === String(user.id);
   const isSellerUser = order.restaurantName && user.role === "seller";
 
   if (isSellerUser) {
     const restaurant = await getRestaurantById(order.restaurantId);
-    if (!restaurant || restaurant.ownerId !== String(user._id)) {
+    if (!restaurant || restaurant.ownerId !== String(user.id)) {
       throw new Error("Unauthorized");
     }
   } else if (!isOwner) {
@@ -481,7 +481,7 @@ export const getMyOrders = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Unauthorized");
   }
 
-  const orders = await listOrdersByUser(String(user._id));
+  const orders = await listOrdersByUser(String(user.id));
 
   return res.status(200).json({
     success: true,
@@ -506,7 +506,7 @@ export const getOrderPaymentStatus = tryCatch(async (req: AuthRequest, res) => {
     return res.status(404).json({ message: "No order found" });
   }
 
-  if (order.userId !== String(user._id)) {
+  if (order.userId !== String(user.id)) {
     throw new Error("Unauthorized");
   }
 
@@ -534,7 +534,7 @@ export const fetchSingleOrder = tryCatch(async (req: AuthRequest, res) => {
   if (!order) {
     throw new Error("No order found");
   }
-  if (order.userId !== String(user._id)) {
+  if (order.userId !== String(user.id)) {
     throw new Error("Unauthorized");
   }
 

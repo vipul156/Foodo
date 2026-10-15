@@ -61,8 +61,8 @@ export default function SellerAnalyticsPage() {
   const {
     data: analytics,
     isLoading: loadingAnalytics,
-  } = useGetSellerAnalytics(restaurant?._id || "", window);
-  const { data: menuItems } = useGetMenuItems(restaurant?._id || "");
+  } = useGetSellerAnalytics(restaurant?.id || "", window);
+  const { data: menuItems } = useGetMenuItems(restaurant?.id || "");
 
   const stats = useMemo(() => {
     if (!analytics) return null;

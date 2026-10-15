@@ -92,12 +92,12 @@ export default function AdminDashboardPage() {
                   .slice(0, 5)
                   .map((r) => (
                     <RestaurantRow
-                      key={r._id}
+                      key={r.id}
                       restaurant={r}
-                      onApprove={() => verifyRestaurant.mutate(r._id)}
+                      onApprove={() => verifyRestaurant.mutate(r.id)}
                       isApproving={
                         verifyRestaurant.isPending &&
-                        verifyRestaurant.variables === r._id
+                        verifyRestaurant.variables === r.id
                       }
                     />
                   ))
@@ -121,11 +121,11 @@ export default function AdminDashboardPage() {
                   .slice(0, 5)
                   .map((r) => (
                     <RiderRow
-                      key={r._id}
+                      key={r.id}
                       rider={r}
-                      onApprove={() => verifyRider.mutate(r._id)}
+                      onApprove={() => verifyRider.mutate(r.id)}
                       isApproving={
-                        verifyRider.isPending && verifyRider.variables === r._id
+                        verifyRider.isPending && verifyRider.variables === r.id
                       }
                     />
                   ))

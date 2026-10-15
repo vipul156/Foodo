@@ -309,7 +309,7 @@ export default function CheckoutPage() {
         latitude: newAddress.latitude,
         longitude: newAddress.longitude,
       });
-      setSelectedAddressId(result.data._id);
+      setSelectedAddressId(result.data.id);
       setShowAddressForm(false);
       setNewAddress({
         mobile: "",
@@ -350,7 +350,7 @@ export default function CheckoutPage() {
               typeof item.itemId === "object" ? item.itemId : null;
             return (
               <div
-                key={item._id}
+                key={item.id}
                 className="flex items-center justify-between text-sm"
               >
                 <span className="flex-1 truncate">
@@ -400,9 +400,9 @@ export default function CheckoutPage() {
             <div className="space-y-2">
               {addresses.map((addr) => (
                 <label
-                  key={addr._id}
+                  key={addr.id}
                   className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-                    selectedAddressId === addr._id
+                    selectedAddressId === addr.id
                       ? "border-primary bg-primary/5"
                       : "border-border/50 hover:border-border"
                   }`}
@@ -410,9 +410,9 @@ export default function CheckoutPage() {
                   <input
                     type="radio"
                     name="address"
-                    value={addr._id}
-                    checked={selectedAddressId === addr._id}
-                    onChange={() => setSelectedAddressId(addr._id)}
+                    value={addr.id}
+                    checked={selectedAddressId === addr.id}
+                    onChange={() => setSelectedAddressId(addr.id)}
                     className="mt-0.5 accent-primary"
                   />
                   <div className="flex-1 min-w-0">

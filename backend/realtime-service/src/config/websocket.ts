@@ -30,7 +30,7 @@ export const handleConnect = async (
     const cleanToken = token.replace(/^Bearer\s+/i, "");
     const decoded = jwt.verify(cleanToken, process.env.JWT_SECRET!) as any;
     const userData = decoded.user || decoded;
-    const userId = userData._id || userData.sub || userData.id;
+    const userId = userData.id || userData.sub || userData.id;
 
     if (!userId) return fail(401, "Invalid token payload");
 

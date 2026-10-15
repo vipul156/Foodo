@@ -182,8 +182,8 @@ export async function fetchMenuItemsForCart(
             Key: { pk: `MENU#${id}`, sk: "ITEM" },
           }),
         )
-        .then((r) => r.Item as DynamoMenuItem | undefined)
-        .catch(() => undefined),
+        .then((r) => toMenuItem(r.Item as Record<string, unknown> | undefined))
+        .catch(() => null),
     ),
   );
   const map = new Map<string, DynamoMenuItem>();
@@ -199,6 +199,7 @@ export interface DynamoMenuItem {
   pk: string; // MENU#<itemId>
   sk: string; // ITEM
   id: string;
+  _id: string; // Mongo-compatible alias for frontend consumers
   restaurantId: string;
   name: string;
   description: string;
@@ -212,6 +213,17 @@ export interface DynamoMenuItem {
 
 const menuPk = (id: string) => `MENU#${id}`;
 export const MENU_ITEM_SK = "ITEM";
+
+const toMenuItem = (item: Record<string, unknown> | undefined): DynamoMenuItem | null => {
+  if (!item) return null;
+  const id = (item.id as string) || (item.pk ? String(item.pk).replace("MENU#", "") : "");
+  return {
+    ...item,
+    id,
+    _id: id,
+    isAvailable: Boolean(item.isAvailable),
+  } as DynamoMenuItem;
+};
 
 export async function createMenuItem(input: {
   restaurantId: string;
@@ -228,6 +240,7 @@ export async function createMenuItem(input: {
     pk: menuPk(id),
     sk: MENU_ITEM_SK,
     id,
+    _id: id,
     restaurantId: input.restaurantId,
     name: input.name,
     description: input.description,
@@ -254,7 +267,7 @@ export async function getMenuItemById(
       Key: { pk: menuPk(id), sk: MENU_ITEM_SK },
     }),
   );
-  return (out.Item as DynamoMenuItem | undefined) ?? null;
+  return toMenuItem(out.Item as Record<string, unknown> | undefined);
 }
 
 export async function listMenuItemsByRestaurant(
@@ -268,7 +281,7 @@ export async function listMenuItemsByRestaurant(
       ExpressionAttributeValues: { ":r": restaurantId },
     }),
   );
-  return (out.Items as DynamoMenuItem[]) ?? [];
+  return (((out.Items as Record<string, unknown>[]) ?? []).map((i) => toMenuItem(i)!));
 }
 
 export async function toggleMenuItemAvailabilityTo(
@@ -288,7 +301,7 @@ export async function toggleMenuItemAvailabilityTo(
       ReturnValues: "ALL_NEW",
     }),
   ).catch(() => null);
-  return (out?.Attributes as DynamoMenuItem | undefined) ?? null;
+  return toMenuItem(out?.Attributes as Record<string, unknown> | undefined);
 }
 
 export async function deleteMenuItem(id: string): Promise<void> {

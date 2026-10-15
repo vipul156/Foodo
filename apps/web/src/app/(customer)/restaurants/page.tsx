@@ -73,7 +73,7 @@ export default function RestaurantsPage() {
       ) : restaurants && restaurants.length > 0 ? (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {restaurants.map((restaurant) => (
-            <RestaurantCard key={restaurant._id} restaurant={restaurant} />
+            <RestaurantCard key={restaurant.id} restaurant={restaurant} />
           ))}
         </div>
       ) : (
@@ -105,7 +105,7 @@ export default function RestaurantsPage() {
 
 function RestaurantCard({ restaurant }: { restaurant: IRestaurant }) {
   return (
-    <Link href={`/restaurants/${restaurant._id}`}>
+    <Link href={`/restaurants/${restaurant.id}`}>
       <GlassCard hover className="overflow-hidden p-0 cursor-pointer group h-full">
         <div className="aspect-[16/9] bg-primary/10 flex items-center justify-center relative overflow-hidden">
           {restaurant.image ? (

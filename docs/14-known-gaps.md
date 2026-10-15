@@ -21,7 +21,7 @@ Any connected client can join **any** `order:{orderId}` room and therefore recei
 order's `rider:location` broadcasts (the rider's live GPS, every 5 s).
 
 Blast radius today is limited: the HTTP endpoints that serve order data
-(`GET /api/order/:orderId`, `/:orderId/status`) **do** verify `order.userId === user._id`.
+(`GET /api/order/:orderId`, `/:orderId/status`) **do** verify `order.userId === user.id`.
 So this leaks live delivery coordinates, not order contents or customer details.
 
 **Fix:** in `order:track`, verify ownership before joining — read the order from the

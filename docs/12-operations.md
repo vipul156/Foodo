@@ -235,7 +235,7 @@ receives.
 | Socket connects, no events | the room row is missing, or the event never reached `foodo-realtime-*-emit` | query `room-index`, tail `logs:realtime` |
 | Upload signature 500 | `CLOUDINARY_*` env vars missing (they use the three separate names, not `CLOUDINARY_URL`) | set them on the restaurant/rider stacks |
 | Webhook always 400 | the body was JSON-parsed before `express.raw` | verify `index.ts` ordering in utils |
-| Orders visible to another user | always verify `order.userId === user._id` on read paths | see [14](./14-known-gaps.md) |
+| Orders visible to another user | always verify `order.userId === user.id` on read paths | see [14](./14-known-gaps.md) |
 | Hot catalog slow | CloudFront cache TTL expired, or `Cache-Control` was stripped | check the response headers on the origin |
 
 ---

@@ -23,7 +23,7 @@ export type {
 };
 
 export interface IUser {
-  _id: string;
+  id: string;
   name: string;
   email: string;
   password?: string;
@@ -56,7 +56,7 @@ export interface IRegisterPayload {
 // ─── Restaurant ──────────────────────────────────────────────
 
 export interface IRestaurant {
-  _id: string;
+  id: string;
   name: string;
   description?: string;
   image?: string;
@@ -84,7 +84,7 @@ export interface IUpdateRestaurantPayload {
 // ─── Menu Item ───────────────────────────────────────────────
 
 export interface IMenuItem {
-  _id: string;
+  id: string;
   restaurantId: string;
   name: string;
   description: string;
@@ -106,7 +106,7 @@ export interface ICreateMenuItemPayload {
 // ─── Cart ────────────────────────────────────────────────────
 
 export interface ICartItem {
-  _id: string;
+  id: string;
   userId: string;
   restaurantId: string | IRestaurant;
   itemId: string | IMenuItem;
@@ -125,7 +125,7 @@ export interface ICartResponse {
 // ─── Address ─────────────────────────────────────────────────
 
 export interface IAddress {
-  _id: string;
+  id: string;
   userId: string;
   mobile: number;
   formatterAddress: string;
@@ -166,7 +166,7 @@ export interface IDeliveryAddress {
 }
 
 export interface IOrder {
-  _id: string;
+  id: string;
   userId: string;
   restaurantId: string;
   restaurantName: string;
@@ -205,7 +205,7 @@ export interface ICreateOrderPayload {
 // ─── Rider ───────────────────────────────────────────────────
 
 export interface IRider {
-  _id: string;
+  id: string;
   userId: string;
   picture: string;
   phoneNumber: string;
@@ -233,7 +233,7 @@ export interface ICreateRiderPayload {
 // ─── Admin ───────────────────────────────────────────────────
 
 export interface IPendingRestaurant {
-  _id: string;
+  id: string;
   name: string;
   description?: string;
   image?: string;
@@ -244,7 +244,7 @@ export interface IPendingRestaurant {
 }
 
 export interface IAllRestaurant {
-  _id: string;
+  id: string;
   name: string;
   description?: string;
   image?: string;
@@ -255,7 +255,7 @@ export interface IAllRestaurant {
 }
 
 export interface IPendingRider {
-  _id: string;
+  id: string;
   userId: string;
   picture: string;
   phoneNumber: string;
@@ -268,7 +268,7 @@ export interface IAllRider extends IPendingRider {
 }
 
 export interface IPlatformUser {
-  _id: string;
+  id: string;
   name: string;
   email: string;
   role: "customer" | "seller" | "rider" | "admin";

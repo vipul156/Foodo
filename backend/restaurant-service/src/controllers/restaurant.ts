@@ -22,7 +22,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
   if (!user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  const existingRestaurant = await getRestaurantByOwner(String(user._id));
+  const existingRestaurant = await getRestaurantByOwner(String(user.id));
 
   if (existingRestaurant) {
     return res.status(400).json({
@@ -71,7 +71,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
     description,
     phone,
     ...(resolvedImageUrl && { image: resolvedImageUrl }),
-    ownerId: String(user._id),
+    ownerId: String(user.id),
     autoLocation: {
       type: "Point",
       coordinates: [Number(longitude), Number(latitude)],
@@ -88,7 +88,7 @@ export const getMyRestaurant = tryCatch(async (req: AuthRequest, res) => {
   if (!user) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  const restaurant = await getRestaurantByOwner(String(user._id));
+  const restaurant = await getRestaurantByOwner(String(user.id));
   if (!restaurant) {
     return res.status(404).json({ message: "Restaurant not found" });
   }
@@ -125,7 +125,7 @@ export const updateRestaurantStatus = tryCatch(
       });
     }
 
-    const restaurant = await setRestaurantOpen(String(user._id), status);
+    const restaurant = await setRestaurantOpen(String(user.id), status);
     if (!restaurant) {
       return res.status(404).json({ message: "Restaurant not found" });
     }
@@ -164,7 +164,7 @@ export const updateRestaurantDetails = tryCatch(
     }
 
     const restaurant = await updateRestaurantByOwner(
-      String(user._id),
+      String(user.id),
       updateFields,
     );
     if (!restaurant) {

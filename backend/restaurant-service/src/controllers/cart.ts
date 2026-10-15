@@ -14,7 +14,7 @@ export const addToCart = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  const userId = String(req.user._id);
+  const userId = String(req.user.id);
   const { restaurantId, itemId } = req.body;
 
   if (!restaurantId || !itemId) {
@@ -46,7 +46,7 @@ export const getCart = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  const userId = String(req.user._id);
+  const userId = String(req.user.id);
 
   const rows = await getCartRows(userId);
   const menuById = await fetchMenuItemsForCart(rows.map((r) => r.itemId));
@@ -60,7 +60,7 @@ export const getCart = tryCatch(async (req: AuthRequest, res) => {
       return {
         ...row,
         itemId: item,
-        restaurantId: { _id: row.restaurantId },
+        restaurantId: { id: row.restaurantId },
       };
     })
     .filter(Boolean);
@@ -80,7 +80,7 @@ export const icreamentQuantity = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  const userId = String(req.user._id);
+  const userId = String(req.user.id);
   const { itemId } = req.body;
 
   if (!itemId) {
@@ -111,7 +111,7 @@ export const decrementQuantity = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  const userId = String(req.user._id);
+  const userId = String(req.user.id);
   const { itemId } = req.body;
 
   if (!itemId) {
@@ -138,7 +138,7 @@ export const removeItem = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  const userId = String(req.user._id);
+  const userId = String(req.user.id);
   const { itemId } = req.body;
 
   if (!itemId) {
@@ -163,7 +163,7 @@ export const clearCartController = tryCatch(async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
-  const userId = String(req.user._id);
+  const userId = String(req.user.id);
 
   await clearCart(userId);
 

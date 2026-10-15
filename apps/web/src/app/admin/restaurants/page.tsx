@@ -125,12 +125,12 @@ export default function AdminRestaurantsPage() {
             ) : (
               pending!.map((restaurant) => (
                 <PendingRow
-                  key={restaurant._id}
+                  key={restaurant.id}
                   restaurant={restaurant}
-                  onApprove={() => verifyRestaurant.mutate(restaurant._id)}
+                  onApprove={() => verifyRestaurant.mutate(restaurant.id)}
                   isApproving={
                     verifyRestaurant.isPending &&
-                    verifyRestaurant.variables === restaurant._id
+                    verifyRestaurant.variables === restaurant.id
                   }
                 />
               ))
@@ -175,7 +175,7 @@ export default function AdminRestaurantsPage() {
                 </div>
               ) : (
                 filteredAll.map((restaurant) => (
-                  <RosterRow key={restaurant._id} restaurant={restaurant} />
+                  <RosterRow key={restaurant.id} restaurant={restaurant} />
                 ))
               )}
             </GlassCard>

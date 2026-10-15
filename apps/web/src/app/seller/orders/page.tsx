@@ -124,7 +124,7 @@ function OrderCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-mono text-muted-foreground">
-              #{order._id.slice(-6).toUpperCase()}
+              #{order.id.slice(-6).toUpperCase()}
             </span>
             <StatusBadge status={order.status} />
             <span className="text-xs text-muted-foreground">{timeAgo}</span>
@@ -206,7 +206,7 @@ function OrderCard({
         <div className="shrink-0 flex flex-col items-end gap-2">
           {nextStatus && (
             <button
-              onClick={() => onStatusUpdate(order._id, nextStatus)}
+              onClick={() => onStatusUpdate(order.id, nextStatus)}
               disabled={isUpdating || isCancelling}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:brightness-110 transition-all disabled:opacity-50"
             >
@@ -233,7 +233,7 @@ function OrderCard({
             order.status === "ready_for_rider" ||
             order.status === "rider_assigned") && (
             <button
-              onClick={() => onCancel(order._id)}
+              onClick={() => onCancel(order.id)}
               disabled={isUpdating || isCancelling}
               className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-all disabled:opacity-50"
             >
@@ -270,7 +270,7 @@ export default function SellerOrdersPage() {
     isFetchingNextPage,
     fetchNextPage,
     refetch,
-  } = useRestaurantOrdersFlat(restaurant?._id || "");
+  } = useRestaurantOrdersFlat(restaurant?.id || "");
   const updateStatus = useUpdateOrderStatus();
   const cancelOrder = useCancelOrder();
 
@@ -334,11 +334,11 @@ export default function SellerOrdersPage() {
     useCallback(
       (payload: unknown) => {
         const data = payload as RiderAssignedPayload;
-        if (data?.order?.restaurantId === restaurant?._id) {
+        if (data?.order?.restaurantId === restaurant?.id) {
           refetch();
         }
       },
-      [refetch, restaurant?._id],
+      [refetch, restaurant?.id],
     ),
   );
 
@@ -425,12 +425,12 @@ export default function SellerOrdersPage() {
                 </h3>
                 {activeOrders.map((order) => (
                   <OrderCard
-                    key={order._id}
+                    key={order.id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
                     onCancel={handleCancelOrder}
-                    isUpdating={updatingId === order._id}
-                    isCancelling={cancellingId === order._id}
+                    isUpdating={updatingId === order.id}
+                    isCancelling={cancellingId === order.id}
                   />
                 ))}
               </div>
@@ -444,12 +444,12 @@ export default function SellerOrdersPage() {
                 </h3>
                 {completedOrders.map((order) => (
                   <OrderCard
-                    key={order._id}
+                    key={order.id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
                     onCancel={handleCancelOrder}
-                    isUpdating={updatingId === order._id}
-                    isCancelling={cancellingId === order._id}
+                    isUpdating={updatingId === order.id}
+                    isCancelling={cancellingId === order.id}
                   />
                 ))}
               </div>

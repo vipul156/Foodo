@@ -25,7 +25,7 @@ export const createAddressController = tryCatch(
     }
 
     const newAddress = await createAddress({
-      userId: String(user._id),
+      userId: String(user.id),
       mobile,
       formatterAddress,
       location: {
@@ -55,12 +55,12 @@ export const deleteAddressController = tryCatch(
       throw new Error("Address ID is required");
     }
 
-    const address = await getAddress(String(user._id), id);
+    const address = await getAddress(String(user.id), id);
     if (!address) {
       throw new Error("Address not found");
     }
 
-    await deleteAddressRow(String(user._id), id);
+    await deleteAddressRow(String(user.id), id);
 
     return res.status(200).json({
       success: true,
@@ -75,7 +75,7 @@ export const getMyAddresses = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("User not found");
   }
 
-  const addresses = await listAddresses(String(user._id));
+  const addresses = await listAddresses(String(user.id));
 
   return res.status(200).json({
     success: true,

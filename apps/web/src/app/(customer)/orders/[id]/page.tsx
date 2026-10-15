@@ -117,7 +117,7 @@ export default function OrderDetailPage() {
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold">{order.restaurantName}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Order #{order._id.slice(-8).toUpperCase()}
+            Order #{order.id.slice(-8).toUpperCase()}
             {order.createdAt &&
               ` · ${new Date(order.createdAt).toLocaleString("en-IN", {
                 day: "numeric",
@@ -145,7 +145,7 @@ export default function OrderDetailPage() {
             Live tracking
           </SectionTitle>
           <LiveTracking
-            orderId={order._id}
+            orderId={order.id}
             restaurant={{
               name: order.restaurantName,
               latitude: order.restaurantLocation.latitude,
@@ -296,7 +296,7 @@ export default function OrderDetailPage() {
 
         {canCancel && user && (
           <button
-            onClick={() => cancelOrder.mutate(order._id)}
+            onClick={() => cancelOrder.mutate(order.id)}
             disabled={cancelOrder.isPending}
             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-destructive/40 px-4 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
           >

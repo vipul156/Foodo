@@ -62,9 +62,9 @@ const gatewayClaims = (req: Request): GatewayClaims | undefined => {
 
 /** Normalize user ID across token generations (sub / id / _id). */
 const normalizeIds = (payload: Record<string, any>): void => {
-  if (payload.sub && !payload._id) payload._id = payload.sub;
-  if (payload.id && !payload._id) payload._id = payload.id;
-  if (payload._id && !payload.id) payload.id = payload._id;
+  if (payload.sub && !payload.id) payload.id = payload.sub;
+  if (payload.id && !payload.id) payload.id = payload.id;
+  if (payload.id && !payload.id) payload.id = payload.id;
 };
 
 export const isAuth = (req: AuthRequest, res: Response, next: NextFunction) => {

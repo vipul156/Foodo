@@ -60,7 +60,7 @@ function publicUser(user: {
   image: string;
 }) {
   return {
-    _id: user.id, // web app contract keeps the Mongo-style `_id` key
+    id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,

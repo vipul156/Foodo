@@ -364,7 +364,7 @@ Restaurant {
   name: String
   description: String
   image: String
-  ownerId: String (references User._id)
+  ownerId: String (references User.id)
   phone: Number
   isVerified: Boolean
   isOpen: Boolean

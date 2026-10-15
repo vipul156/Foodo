@@ -157,7 +157,7 @@ export default function AdminUsersPage() {
               </p>
             </div>
           ) : (
-            filtered.map((user) => <UserRow key={user._id} user={user} />)
+            filtered.map((user) => <UserRow key={user.id} user={user} />)
           )}
         </GlassCard>
       </div>
