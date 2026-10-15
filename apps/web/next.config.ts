@@ -17,6 +17,7 @@ const API_GATEWAY_URL = process.env.API_GATEWAY_URL;
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   reactStrictMode: true,
   images: {
     remotePatterns: [
