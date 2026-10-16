@@ -1,0 +1,30 @@
+{
+  "name": "@foodo/realtime-service",
+  "version": "1.0.0",
+  "description": "Foodo realtime service (API Gateway WebSocket API + SQS-triggered broadcaster Lambda).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx --watch src/handlers/wsRouter.ts",
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "@foodo/backend-common": "workspace:*",
+    "@foodo/types": "workspace:*",
+    "jsonwebtoken": "catalog:"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

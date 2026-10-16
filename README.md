@@ -1,749 +1,861 @@
-# 🍽️ Foodo — Multi-Role Food Delivery Platform
+<div align="center">
 
-**Foodo** is a production-grade, microservice-based food delivery platform supporting four distinct user roles: **Customers**, **Restaurant Owners (Sellers)**, **Delivery Riders**, and **Platform Administrators**. The system follows a modular microservice architecture with a Next.js frontend and multiple Node.js/Express backend services.
+# 🍽️ Foodo
+
+### A serverless, multi-role food delivery platform on AWS
+
+**Customers** · **Restaurant Owners** · **Delivery Riders** · **Platform Admins**
+
+![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-ARM64-FF9900?logo=awslambda&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=nodedotjs&logoColor=white)
+![DynamoDB](https://img.shields.io/badge/DynamoDB-8_tables-4053D6?logo=amazondynamodb&logoColor=white)
+![Serverless](https://img.shields.io/badge/Serverless_Framework-v3-FD5750?logo=serverless&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Turborepo](https://img.shields.io/badge/Turborepo-pnpm-EF4444?logo=turborepo&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
+
+<br/>
+
+<img width="100%" alt="Foodo — current AWS serverless architecture" src="https://github.com/user-attachments/assets/537e1585-fc37-4815-a19f-aaf53a4e2fac" />
+
+<sub><b>Current architecture</b> — fully serverless on AWS</sub>
+
+<br/>
+
+[Overview](#overview) ·
+[Architecture](#architecture) ·
+[Shift Story](#shift-story) ·
+[Deployment](#deployment) ·
+[Services](#services) ·
+[Events](#events) ·
+[Database](#database) ·
+[API](#api) ·
+[Local Dev](#local-dev) ·
+[Config](#config) ·
+[Tech Stack](#tech-stack)
+
+</div>
 
 ---
 
-## 📋 Table of Contents
+## 📑 Table of Contents
 
-- [Architecture Overview](#-architecture-overview)
-- [System Requirements](#-system-requirements)
-- [Services Overview](#-services-overview)
-  - [1. Auth Service](#1-auth-service)
-  - [2. Restaurant Service](#2-restaurant-service)
-  - [3. Rider Service](#3-rider-service)
-  - [4. Admin Service](#4-admin-service)
-  - [5. Realtime Service](#5-realtime-service)
-  - [6. Utils Service](#6-utils-service)
-  - [7. AI Verification Service](#7-ai-verification-service)
-  - [8. AI Orchestrator Service](#8-ai-orchestrator-service)
-  - [9. Frontend](#9-frontend)
-- [Service Communication](#-service-communication)
-- [Database Schema Overview](#-database-schema-overview)
-- [API Endpoints Reference](#-api-endpoints-reference)
-- [Installation & Setup](#-installation--setup)
-- [Running Locally](#-running-locally)
-- [Environment Variables Reference](#-environment-variables-reference)
-- [Tech Stack](#-tech-stack)
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [The Shift Story: Local → Serverless](#shift-story)
+4. [Repository Layout](#repo-layout)
+5. [Deployment](#deployment)
+6. [Services](#services)
+7. [Events & Service Communication](#events)
+8. [Database Schema](#database)
+9. [API Reference](#api)
+10. [Installation & Local Development](#local-dev)
+11. [Configuration & Environment Variables](#config)
+12. [Operations](#operations)
+13. [Tech Stack](#tech-stack)
+14. [Contributing & License](#contributing)
 
 ---
 
-## 🏗 Architecture Overview
+<a id="overview"></a>
+## 🌟 Overview
+
+Foodo started as a set of Express + MongoDB + RabbitMQ services on a developer box or EC2 and is now deployed entirely on **AWS serverless infrastructure**. Every domain is its own Serverless Framework stack with its own functions, IAM role and event wiring. Deploys run through a **Turborepo** pipeline in three ordered tiers, plus the frontend.
+
+### 👥 Who uses it
+
+| Role | What they do | Frontend route |
+|---|---|---|
+| 🛒 **Customer** | Discover restaurants, build a cart, order, pay, track delivery live | `/` |
+| 🍳 **Seller** | Manage restaurant, menu and incoming orders | `/seller` |
+| 🏍️ **Rider** | Accept orders and run the delivery lifecycle | `/rider` |
+| 🛡️ **Admin** | Verify restaurants and riders, oversee the platform | `/admin` |
+
+### ✨ Highlights
+
+| | |
+|---|---|
+| 🧩 **One stack per domain** | Auth, Restaurant, Rider, Admin, Utils and Realtime deploy independently. |
+| 🌐 **One base URL** | A single shared HTTP API serves `/api/*`, and CloudFront makes it same-origin for the browser. |
+| 📨 **Event-driven** | An SNS event bus with filtered subscriptions, plus SQS work queues with DLQs. |
+| 🔌 **Real-time push** | API Gateway WebSocket API with a DynamoDB connection registry. |
+| 🖼️ **Signed direct uploads** | Images go browser → Cloudinary. The API secret never leaves the server and no bytes are proxied. |
+| 🔐 **Central auth gate** | One Lambda REQUEST authorizer guards protected routes, and role checks stay in each service. |
+
+### 🔢 Platform at a glance
+
+| 6 service stacks | 8 DynamoDB tables | 2 SQS work queues + DLQs | 1 SNS event bus | 1 HTTP API + 1 WebSocket API |
+|:-:|:-:|:-:|:-:|:-:|
+
+### ⚡ Quick start
+
+```bash
+pnpm install                 # install the whole monorepo
+# export secrets (see Configuration) or create .env.<stage> files
+STAGE=dev pnpm deploy:all    # infra → core → services → seed → frontend
+```
+
+---
+
+<a id="architecture"></a>
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    U([👤 Browser])
+
+    subgraph EDGE["Edge · foodo-web (SST)"]
+        CF["CloudFront<br/>single origin"]
+        NX["Next.js 16<br/>OpenNext"]
+    end
+
+    subgraph CORE["foodo-core-api"]
+        API["HTTP API<br/>one base URL + CORS"]
+        AZ["λ foodo-jwt<br/>REQUEST authorizer"]
+    end
+
+    WS["WebSocket API<br/>(foodo-realtime)"]
+
+    subgraph SVC["Service stacks · Lambda · ARM64 · Node.js 20"]
+        direction LR
+        AUTH[auth]
+        REST[restaurant]
+        RIDER[rider]
+        ADMIN[admin]
+        UTILS[utils]
+        RT[realtime]
+    end
+
+    subgraph INFRA["foodo-infra · foundation"]
+        DDB[("DynamoDB<br/>8 tables")]
+        SNS{{"SNS<br/>events topic"}}
+        SQS[["SQS<br/>payment + order<br/>+ DLQs"]]
+        S3[("S3<br/>uploads")]
+        COG["Cognito<br/>(future issuer)"]
+    end
+
+    U --> CF
+    CF -->|"/*"| NX
+    CF -->|"/api/*"| API
+    U -.->|"wss://"| WS
+    API -.->|"protected routes"| AZ
+    API --> AUTH & REST & RIDER & ADMIN & UTILS
+    WS --> RT
+    SVC --> DDB
+    SVC --> SNS
+    SVC --> SQS
+```
+
+### 🧭 Key architectural decisions
+
+| Decision | Replaces | How it works |
+|---|---|---|
+| **Single shared HTTP API** | Six Express ports | One API Gateway v2 HTTP API is the only base URL. Each stack attaches routes by `id`. CORS lives on the API because service stacks can't extend it. |
+| **Central REQUEST authorizer** | Per-service JWT middleware at the edge | `foodo-jwt` verifies the HS256 token from the `session` cookie (cookie-session: base64 JSON with a `jwt` field) or an `Authorization: Bearer` header. It returns `{ isAuthorized, context }`. It **authenticates only**. Role checks (`isSeller` / `isRider` / `isAdmin`) stay in each service. |
+| **SNS + SQS** | RabbitMQ | SQS work queues carry cross-service transport. After `maxReceiveCount` failures a message lands in a DLQ. SNS is the domain event bus with per-service filtered subscriptions. |
+| **DynamoDB** | Shared MongoDB | Each service reads and writes only its own tables via AWS SDK v3, with per-service IAM scoped to exactly those tables. |
+| **WebSocket API** | Socket.IO server | `wsRouter` handles `$connect/$disconnect/$default`. `eventConsumer` fans domain events out to rooms via the Management API. Connection state lives in a TTL'd `connections` table. |
+| **Signed direct uploads** | Multer proxy in Utils | The owning service signs locally (HMAC-SHA1, <1 ms). The browser uploads straight to Cloudinary. |
+| **EventBridge Scheduler** | In-process `setInterval` | A `reconcile` Lambda in the utils stack runs on `rate(1 hour)`. |
+
+> [!NOTE]
+> **Identity migration path.** The app issues its own HS256 access tokens today (signed with `JWT_SECRET`), and the authorizer verifies them. The foundation stack already ships a **Cognito user pool + web client**. When auth-service moves to Cognito-issued tokens, the authorizer flips to JWKS verification (or the HTTP API's built-in Cognito authorizer) with no infrastructure changes in this stack.
+
+### 🔓 What is intentionally public at the gateway
+
+| Surface | Why it's public |
+|---|---|
+| `/api/auth/*` (register, login, refresh) | Token issuance. No access token exists yet. |
+| `GET /api/restaurant/all` · `/nearby` · `/{id}` · `GET /api/menu-item/all/{id}` | Anonymous browsing. |
+| `POST /api/order/payment/claim/{orderId}` | Service-to-service, guarded by `x-internal-key`. |
+| `/api/utils/*` | Webhook HMAC signatures and controller-validated claims. |
+| `/health/*` | Probes. |
+| WebSocket `$connect` | JWT verified inside the handler. |
+
+> [!IMPORTANT]
+> Gateway denies return **403** (API Gateway simple-response semantics). In-app guards still return **401**, as before.
+
+---
+
+<a id="shift-story"></a>
+## 🔄 The Shift Story: Local → Serverless
+
+### 📍 Where we started
+
+<div align="center">
+
+<img width="100%" alt="Foodo — previous architecture before the serverless migration" src="https://github.com/user-attachments/assets/dd65d3b5-f029-4a6b-910a-8b0d8cb9fe78" />
+
+<sub><b>Previous architecture</b> — what we migrated away from</sub>
+
+</div>
+
+<br/>
+
+Foodo originally ran as Node.js/Express microservices on one shared MongoDB, with RabbitMQ for async events and Socket.IO for real-time push. Everything ran as `node` processes on a developer machine, in a Vagrant VM, or on a long-lived EC2 instance.
+
+| Component | Port | Stack |
+|---|:-:|---|
+| Next.js frontend | 3000 | Next.js |
+| Auth Service | 3000 | Express + Mongoose, MongoDB |
+| Restaurant Service | 3001 | Express + Mongoose, MongoDB, RabbitMQ |
+| Realtime Service | 3002 | Express + Socket.IO |
+| Rider Service | 3003 | Express + Mongoose, MongoDB, RabbitMQ |
+| Admin Service | 3004 | Express + native MongoDB driver |
+| Utils Service | 3005 | Express + Razorpay/Stripe, RabbitMQ |
+
+### 🧱 Why we changed it
+
+| Pain point | Impact |
+|---|---|
+| **Long-lived servers** | Patching, scaling and monitoring several services per host. Scaling one meant resizing the whole box. |
+| **Shared MongoDB** | A bottleneck and a shared blast radius. No per-service data boundary. |
+| **RabbitMQ cluster** | We owned durability, clustering and failover. |
+| **Socket.IO process** | Real-time needed its own always-on server. |
+| **Multer upload proxy** | Bytes flowed client → Utils → Cloudinary, so the API secret lived wherever the proxy ran and the backend had to stay warm. |
+| **Stateful deploys** | A release meant coordinated restarts of several processes. |
+
+### 🚀 Where we are now
+
+| What we had | What it became |
+|---|---|
+| Express services on EC2/Vagrant | **Lambda per domain** (ARM64, Node.js 20), individually packaged |
+| Shared MongoDB (Mongoose + native driver) | **8 DynamoDB tables** (single-table-per-entity) in the foundation stack, accessed via `@aws-sdk/client-dynamodb` + `lib-dynamodb` |
+| RabbitMQ queues + pub/sub | **SQS work queues** (payment, order) with DLQs, plus an **SNS** event bus with filtered subscriptions |
+| Socket.IO server | **API Gateway WebSocket API** + Lambda handlers + a `connections` table + an event consumer broadcasting via the Management API |
+| Upload proxy through Utils | **Signed direct uploads**. Restaurant and rider sign locally via `@foodo/backend-common`. `POST /api/utils/upload` answers **410 Gone** |
+| Payment polling / in-process timers | **EventBridge Scheduler** → `reconcile` Lambda, `rate(1 hour)` |
+| Restart-everything releases | **Per-stack deploys**. Turborepo chains each service's cached `build` before `serverless deploy` |
+
+### 🧷 What didn't change (on purpose)
+
+- **HTTP contract.** One base URL with `/api/auth|restaurant|rider|admin|utils/*` and `/api/menu-item|cart|order|address/*`. API Gateway + Lambda now serve it instead of raw Express ports.
+- **Stateless JWT auth.** Role checks still live inside each service, not at the gateway.
+- **Event vocabulary.** `rider.order_accepted`, `rider.order_status_changed`, `payment.intent.created`, `rider.order_rejected`, `order.cancelled`, `order.delivered`.
+- **Order lifecycle.**
+
+  ```
+  placed → accepted → preparing → ready_for_rider → rider_assigned → picked_up → delivered | cancelled
+  ```
+- **Frontend stack.** Next.js 16 / React 19, Tailwind CSS v4, Shadcn UI, TanStack Query, Zustand.
+
+> The surface the app presents to a browser is unchanged. The machinery underneath is now event-driven, stateless and fully managed.
+
+---
+
+<a id="repo-layout"></a>
+## 📁 Repository Layout
+
+pnpm workspaces + Turborepo monorepo:
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                     Frontend (Next.js)                    │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐ │
-│  │ Customer │ │  Seller  │ │  Rider   │ │    Admin     │ │
-│  │  Portal  │ │ Dashboard│ │   App    │ │ Control Panel│ │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘ │
-│       │             │            │               │         │
-└───────┼─────────────┼────────────┼───────────────┼─────────┘
-        │             │            │               │
-        ▼             ▼            ▼               ▼
-┌──────────────────────────────────────────────────────────┐
-│         Microservice API Gateway (Direct HTTP calls)      │
-│                                                           │
-│  ┌──────────┐ ┌──────────┐ ┌──────┐  ┌──────────────┐   │
-│  │  Auth    │ │Restaurant│ │Rider │  │    Admin     │   │
-│  │ :3000    │ │ :3001    │ │:Port │  │    :Port     │   │
-│  └────┬─────┘ └────┬─────┘ └──┬───┘  └──────┬───────┘   │
-│       │            │          │              │           │
-│       ▼            ▼          ▼              ▼           │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │            MongoDB (Shared Database)              │   │
-│  └──────────────────────────────────────────────────┘    │
-│                                                           │
-│  ┌────────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │  RabbitMQ MQ   │  │   Realtime   │  │    Utils     │ │
-│  │ (Event Queue)  │  │  Socket.IO   │  │(Payments,    │ │
-│  │                │  │   :3002      │  │ Uploads)     │ │
-│  └────────────────┘  └──────────────┘  │   :Port      │ │
-│                                         └──────────────┘ │
-└──────────────────────────────────────────────────────────┘
+Foodo/
+├── apps/
+│   └── web/                     # Next.js 16 app, deployed with SST (foodo-web)
+│       ├── src/
+│       │   ├── app/             # App Router: (auth) (customer) admin rider seller
+│       │   ├── components/      # UI & shared components
+│       │   ├── features/        # auth, orders, restaurants
+│       │   ├── hooks/ lib/ providers/ store/ types/
+│       ├── sst.config.ts        # OpenNext + CloudFront reverse proxy
+│       └── next.config.ts
+├── backend/
+│   ├── auth-service/            # foodo-auth
+│   ├── restaurant-service/      # foodo-restaurant
+│   ├── rider-service/           # foodo-rider
+│   ├── admin-service/           # foodo-admin
+│   ├── utils-service/           # foodo-utils
+│   └── realtime-service/        # foodo-realtime
+│       └── (each) src/ · serverless.yml · package.json · tsconfig.json
+├── packages/
+│   ├── types/                   # @foodo/types: shared TS types, 0 runtime deps
+│   └── backend-common/          # @foodo/backend-common: signer, tryCatch, isAuth, file helpers
+├── infra/                       # foodo-infra: foundation stack (Serverless)
+├── core/                        # foodo-core-api: shared HTTP API + JWT authorizer
+│   └── src/authorizer.ts
+├── scripts/seed-demo-data.ts    # demo data (runs after deploy)
+├── turbo.json                   # build · dev · lint · deploy · remove
+├── pnpm-workspace.yaml          # workspaces + version catalog
+└── tsconfig.base.json
 ```
 
-### Key Architectural Decisions
+---
 
-- **Microservices**: Each domain is a separate Node.js/Express service with its own responsibility.
-- **JWT Authentication**: JSON Web Tokens for stateless auth across microservices.
-- **Internal Service Keys**: Services communicate internally using shared `INTERNAL_SERVICE_KEY` headers.
-- **RabbitMQ**: Async event-driven communication for order lifecycle events (ready for rider, payment updates).
-- **Socket.IO**: Real-time push notifications to customers, sellers, and riders.
-- **Shared MongoDB**: Services share a MongoDB database (collections separated by domain).
+<a id="deployment"></a>
+## ☁️ Deployment
+
+### 🪜 Three ordered tiers (plus the frontend)
+
+Serverless resolves all paths against the config's directory, so every stack is self-contained.
+
+```mermaid
+flowchart LR
+    A["1️⃣ infra<br/><b>foodo-infra</b>"] --> B["2️⃣ core<br/><b>foodo-core-api</b>"]
+    B --> C["3️⃣ services<br/><b>foodo-&lt;svc&gt;</b> × 6"]
+    C --> D["🌱 seed<br/>demo data"]
+    D --> E["🖥️ frontend<br/><b>foodo-web</b> (SST)"]
+```
+
+| Tier | Directory | Stack | Owns |
+|:-:|---|---|---|
+| **1** | `infra/` | `foodo-infra` | VPC (2 AZs, S3 + DynamoDB gateway endpoints, opt-in NAT), private S3 uploads bucket, Cognito pool + web client, **8 DynamoDB tables**, SNS event bus, SQS work queues (payment, order) + DLQs |
+| **2** | `core/` | `foodo-core-api` | Shared HTTP API (single base URL + CORS) and the central JWT REQUEST authorizer Lambda |
+| **3** | `backend/<svc>/` | `foodo-<svc>` | Functions, per-service IAM, own fan-out queues + SNS subscriptions + filter policies, and the WebSocket API (realtime only) |
+| **+** | `apps/web/` | `foodo-web` | Next.js via SST Ion / OpenNext on CloudFront, with a reverse-proxy origin to the HTTP API |
+
+### ▶️ Deploy commands
+
+```bash
+pnpm deploy:infra       # VPC, S3, Cognito, DynamoDB, SNS, SQS   (rarely changes)
+pnpm deploy:core        # shared HTTP API + JWT authorizer       (rarely changes)
+pnpm deploy:services    # ALL six service stacks (turbo, parallel)
+pnpm deploy:frontend    # Next.js via SST Ion / OpenNext
+
+pnpm deploy:all         # everything: infra → core → services → seed → frontend
+STAGE=prod pnpm deploy:all
+```
+
+Deploy a **single service**. Turbo runs its cached `build` first:
+
+```bash
+turbo run deploy --filter=@foodo/auth-service
+turbo run deploy --filter=@foodo/restaurant-service -- --stage prod
+```
+
+### 🗑️ Teardown
+
+```bash
+pnpm remove:all         # removes services FIRST, then the rest
+```
+
+> [!WARNING]
+> **Order matters.** Removing `core-api` while service routes still exist fails. Removing `infra` while any stack still reads its exports fails. Always tear down in reverse: `frontend → services → core → infra`. The uploads bucket uses `DeletionPolicy: Retain`, so delete it manually if you really mean it.
+
+### 🔑 Secrets (deploy time, never committed)
+
+Pass them via environment variables or per-stack `.env.<stage>` files. See [Configuration](#config) for the full list and which stack needs which.
+
+> [!IMPORTANT]
+> Use the **same values across all stacks** in a stage. The JWT authorizer in `core` must verify the tokens `auth-service` mints.
+
+### 🔄 Cutover from the old stacks
+
+If you previously deployed the old `foodo-core` / `foodo-services` stacks:
+
+1. **Remove the old service stacks first.** They own routes on the shared API. Run `serverless remove` in the old directories.
+2. **Migrate data manually.** The old `foodo-core` data stack kept its tables, and the new `foodo-infra` stack creates **fresh** tables under new names. There is no in-place upgrade.
+3. **Repoint the frontend** to the new base URL (`foodo-core-api-<stage>-HttpApiUrl`) and the WS URL from the realtime stack.
 
 ---
 
-## 💻 System Requirements
+<a id="services"></a>
+## 🔧 Services
 
-| Tool | Version |
-|------|---------|
-| Node.js | >= 18 |
-| npm | >= 9 |
-| MongoDB | >= 6 |
-| RabbitMQ | >= 3.12 |
-| TypeScript | 6.x - 7.x (service-dependent) |
+### 🗺️ What runs where
 
----
+| Service | Stack | Lambda entrypoints (`dist/`) | Triggers |
+|---|---|---|---|
+| 🔐 **Auth** | `foodo-auth` | `index` | HTTP `/api/auth/*` |
+| 🍽️ **Restaurant** | `foodo-restaurant` | `http`, `paymentConsumer`, `riderEventsConsumer` | HTTP (5 routers) + payment work queue + SNS fan-out |
+| 🏍️ **Rider** | `foodo-rider` | `http`, `orderReadyConsumer`, `riderEventsConsumer` | HTTP `/api/rider/*` + order work queue + SNS fan-out |
+| 🛡️ **Admin** | `foodo-admin` | `index` | HTTP `/api/admin/*` |
+| 💳 **Utils** | `foodo-utils` | `http`, `reconciliation` (function `reconcile`) | HTTP `/api/utils/*` + EventBridge `rate(1 hour)` |
+| 🔌 **Realtime** | `foodo-realtime` | `wsRouter`, `eventConsumer` | WebSocket routes + SNS fan-out → Management API |
 
-## 🔧 Services Overview
+### 🔒 Data access matrix (per-service IAM)
 
-### 1. Auth Service
+| Service | users | restaurants | riders | orders | menu-items | carts | addresses | webhook-dedupe |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| **auth** | ✅ | | | | | | | |
+| **restaurant** | | ✅ | | ✅ | ✅ | ✅ | ✅ | |
+| **rider** | | ✅ | ✅ | ✅ | | | | |
+| **admin** | ✅ | ✅ | ✅ | ✅ | | | | |
+| **utils** | | | | ✅ | | | | ✅ |
+| **realtime** | *owns its own `connections` table* | | | | | | | |
 
-**Purpose**: User registration, login, and session management.
-
-| Property | Value |
-|----------|-------|
-| Port | `3000` |
-| TypeScript | `6.x` |
-| Database | MongoDB (`auth` collections via Mongoose) |
-
-**Dependencies**: `express`, `mongoose`, `jsonwebtoken`, `bcrypt`, `cookie-session`, `googleapis`
-
-**Routes**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/auth/register` | No | Register new user (roles: customer, rider, seller) |
-| POST | `/api/auth/login` | No | Login with email/password |
-| GET | `/api/auth/me` | JWT | Get current authenticated user |
-
-**Auth Flow**: JWT token stored in `req.session` (cookie-session). Returns user data + sets session cookie. For cross-service auth, the frontend must pass the JWT in the `Authorization: Bearer <token>` header.
+All access goes through each table's indexes where needed. Every service also gets only the SNS/SQS permissions it uses.
 
 ---
 
-### 2. Restaurant Service
+### 1️⃣ 🔐 Auth Service
 
-**Purpose**: Restaurant management, menu items, cart operations, and order management.
+> Registration, login, refresh, logout, profile and WebSocket token issuance.
 
-| Property | Value |
-|----------|-------|
-| Port | `3001` |
-| TypeScript | `6.x` |
-| Database | MongoDB (Mongoose) |
-| Message Queue | RabbitMQ |
+| | |
+|---|---|
+| **Stack / entry** | `foodo-auth` · `dist/index.handler` |
+| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s |
+| **Data** | `users` table: `GetItem`, `PutItem`, `UpdateItem`, `Query` + indexes `email-index`, `refresh-index` |
+| **Events** | Publishes to the SNS `events` topic (e.g. on registration) |
+| **Sessions** | Refresh-token rows carry a per-item `ttl`, so DynamoDB sweeps expired sessions automatically |
 
-**Dependencies**: `express`, `mongoose`, `jsonwebtoken`, `amqplib`, `multer`, `datauri`, `axios`, `cookie-session`
-
-**Restaurant Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/restaurant/new` | Seller | Create restaurant profile |
-| GET | `/restaurant/my` | Seller | Get own restaurant details |
-| PUT | `/restaurant/update` | Seller | Update restaurant details |
-| PUT | `/restaurant/status` | Seller | Toggle open/closed status |
-
-**Menu Item Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/menu-item/all/:id` | Auth | Get all menu items for a restaurant |
-| POST | `/menu-item/new` | Seller | Create new menu item (multipart) |
-| DELETE | `/menu-item/delete/:id` | Seller | Delete a menu item |
-| PUT | `/menu-item/toggle/:id` | Seller | Toggle item availability |
-
-**Cart Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/cart/add` | Auth | Add item to cart |
-| GET | `/cart/all` | Auth | Get cart with subtotal |
-| DELETE | `/cart/clear` | Auth | Clear entire cart |
-| PUT | `/cart/increase` | Auth | Increment item quantity |
-| PUT | `/cart/decrease` | Auth | Decrement item quantity |
-
-**Order Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/order/new` | Auth | Create order from cart |
-| GET | `/order/my` | Auth | Get my orders |
-| GET | `/order/:orderId` | Auth | Get single order details |
-| GET | `/order/order/:restaurantId` | Seller | Get restaurant orders |
-| PUT | `/order/:orderId` | Seller | Update order status |
-| GET | `/order/payment/:id` | Internal | Fetch order for payment processing |
-| PUT | `/order/assign/rider` | Internal | Assign rider to order |
-| GET | `/order/current/rider` | Internal | Get rider's current order |
-| PUT | `/order/update/status/rider` | Internal | Rider updates delivery status |
-
-**Address Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/address/new` | Auth | Create delivery address |
-| GET | `/address/all` | Auth | Get all saved addresses |
-| DELETE | `/address/:id` | Auth | Delete an address |
+**Routes:** `register` and `login` are public (token issuance). `logout`, `me` and `socket-token` are JWT-protected at the gateway *and* in-app (defense in depth). `/api/auth/{proxy+}` is a public catch-all for the rest (refresh, etc.). Full table in the [API Reference](#api).
 
 ---
 
-### 3. Rider Service
+### 2️⃣ 🍽️ Restaurant Service
 
-**Purpose**: Rider profile management, order acceptance, and delivery lifecycle.
+> Restaurants, menu items, carts, orders, payment claim and rider-event consumption.
 
-| Property | Value |
-|----------|-------|
-| Port | `3003` (configurable via `PORT` env) |
-| TypeScript | `7.x` |
-| Database | MongoDB (Mongoose) |
-| Message Queue | RabbitMQ |
+| | |
+|---|---|
+| **Stack / entry** | `foodo-restaurant` · `http`, `paymentConsumer`, `riderEventsConsumer` |
+| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s (30 s for consumers) |
+| **Data** | `restaurants`, `orders`, `menu-items`, `carts`, `addresses`: `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query` + indexes |
 
-**Dependencies**: `express`, `mongoose`, `jsonwebtoken`, `amqplib`, `multer`, `datauri`, `axios`
+**Event wiring**
+- 📤 Publishes **order-ready** messages to the shared `order` SQS queue and domain events to the `events` SNS topic.
+- 📥 Consumes the shared `payment` SQS queue directly (`paymentConsumer`, batch size 5, partial batch responses).
+- 📥 Owns its inbound `rider-events` queue + DLQ + SNS filter subscription for `rider.order_accepted`, `rider.order_status_changed` and `payment.intent.created`.
 
-**Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/rider/new` | Rider | Create rider profile (multipart) |
-| GET | `/rider/myprofile` | Rider | Get rider profile |
-| PATCH | `/rider/toggle` | Rider | Toggle availability (with location) |
-| POST | `/rider/accept/:orderId` | Rider | Accept a delivery order |
-| GET | `/rider/order/current` | Rider | Get current active order |
-| PUT | `/rider/order/update` | Rider | Update order delivery status |
-
-**Order Flow for Riders**:
-1. Restaurant marks order `ready_for_rider` → RabbitMQ event published
-2. Rider service consumer picks up event → eligible riders notified
-3. Rider accepts via `POST /rider/accept/:orderId`
-4. Order status updates: `rider_assigned` → `picked_up` → `delivered`
-5. Realtime events emitted to user room on each status change
+**Image uploads:** `GET /api/restaurant/upload-signature` (and `/api/menu-item/upload-signature`) returns Cloudinary signature params generated locally via `@foodo/backend-common`. Legacy multipart `file` on create/update endpoints still works as a fallback via the same signer.
 
 ---
 
-### 4. Admin Service
+### 3️⃣ 🏍️ Rider Service
 
-**Purpose**: Platform administration, verification of restaurants and riders.
+> Rider profiles, order acceptance, delivery lifecycle, order-ready consumption and saga compensations.
 
-| Property | Value |
-|----------|-------|
-| Port | `3004` (default, configurable via `PORT` env) |
-| TypeScript | `7.x` |
-| Database | MongoDB (Native Driver) |
+| | |
+|---|---|
+| **Stack / entry** | `foodo-rider` · `http`, `orderReadyConsumer`, `riderEventsConsumer` |
+| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s (30 s for consumers) |
+| **Data** | `riders`, `orders`, `restaurants`: `GetItem`, `PutItem`, `UpdateItem`, `Query` + indexes |
 
-**Dependencies**: `express`, `mongodb` (native driver), `jsonwebtoken`, `cookie-session`
+The rider router applies `isAuth` + `isRider` to the **entire** `/api/rider` surface (including rider registration, preserved from current app semantics), so a single protected catch-all covers it at the gateway.
 
-**Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/admin/restaurant/pending` | - | Get unverified restaurants |
-| GET | `/api/admin/rider/pending` | - | Get unverified riders |
-| PATCH | `/api/verify/rider/:id` | - | Approve/reject rider verification |
-| PATCH | `/api/verify/restaurant/:id` | - | Approve/reject restaurant verification |
+**Event wiring**
+- 📥 Consumes the shared `order` SQS queue directly (`orderReadyConsumer`, batch size 5, partial batch responses).
+- 📥 Owns its inbound `rider-events` queue + DLQ + SNS filter subscription for `rider.order_rejected`, `order.cancelled` and `order.delivered` (saga compensations).
 
-**Note**: Admin service directly accesses the restaurant and rider MongoDB collections using native MongoDB driver (not Mongoose).
+**Image uploads:** `GET /api/rider/upload-signature` (signed locally via `@foodo/backend-common`).
 
 ---
 
-### 5. Realtime Service
+### 4️⃣ 🛡️ Admin Service
 
-**Purpose**: WebSocket/Socket.IO server for real-time push notifications.
+> Platform administration: verify restaurants and riders, with read access to users and orders.
 
-| Property | Value |
-|----------|-------|
-| Port | `3002` |
-| TypeScript | `7.x` |
+| | |
+|---|---|
+| **Stack / entry** | `foodo-admin` · `dist/index.handler` |
+| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s |
+| **Data** | `users`, `restaurants`, `riders`, `orders`: `GetItem`, `UpdateItem`, `Query`, `Scan` + indexes |
 
-**Dependencies**: `express`, `socket.io`, `jsonwebtoken`
-
-**Internal Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/v1/internal/emit` | Internal Key | Emit event to a room |
-
-**Socket.IO Connection**:
-- Connect with `auth: { token: <JWT> }` in handshake
-- Auto-joins `user:<userId>` room
-- Auto-joins `restaurant:<restaurantId>` room if user has `restaurantId`
-
-**Events**:
-- `order:update` — Order status changed
-- `order:rider_assigned` — Rider assigned to order
-- `order:delivered` — Order delivered
+The admin router applies `isAuth` + `isAdmin` to every route, so one protected catch-all (`/api/admin/{proxy+}`) covers the surface. The old native-driver pattern is replaced by SDK v3 queries against the shared foundation tables.
 
 ---
 
-### 6. Utils Service
+### 5️⃣ 💳 Utils Service
 
-**Purpose**: Shared utilities — file uploads (Cloudinary), payment processing (Razorpay, Stripe), and the bounded refund execution surface used by the AI orchestrator.
+> Payments (Razorpay, Stripe), reconciliation and webhook dedupe. It no longer proxies file uploads.
 
-| Property | Value |
-|----------|-------|
-| Port | `3005` (configurable via `PORT` env) |
-| TypeScript | `6.x` |
-| Message Queue | RabbitMQ |
+| | |
+|---|---|
+| **Stack / entry** | `foodo-utils` · `http`, `reconciliation` |
+| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s (reconcile: 256 MB · 120 s) |
+| **Data** | `orders`, `webhook-dedupe`: `GetItem`, `UpdateItem`, `PutItem`, `Query` |
+| **Events** | Publishes to the SNS `events` topic and sends to the shared `payment` SQS queue |
 
-**Dependencies**: `express`, `cloudinary`, `razorpay`, `stripe`, `jsonwebtoken`, `amqplib`
-
-**Capabilities**:
-- **Image Uploads**: Proxy uploads to Cloudinary (used by Restaurant & Rider services)
-- **Payment Processing**: Razorpay and Stripe integration
-- **Bounded Refunds**: capped, idempotent, audit-trailed refund execution (agent tool surface, internal-key only)
-- **RabbitMQ**: Event-driven payment confirmation → order fulfillment
+- **Why `/api/utils/*` is fully public at the gateway:** payment webhooks are the source of truth for payment success. They authenticate with provider **HMAC signatures** (Razorpay/Stripe) over raw bodies, not user sessions. Payment-create endpoints validate order state atomically in the controller.
+- **Reconciliation:** the `reconcile` Lambda runs on an EventBridge Scheduler `rate(1 hour)`. It audits provider-vs-DB payment state using `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `STRIPE_SECRET_KEY`.
+- **Webhook dedupe:** `webhook-dedupe` carries a `ttl`, so processed event ids are swept automatically.
 
 ---
 
-### 7. Frontend
+### 6️⃣ 🔌 Realtime Service
 
-**Purpose**: Next.js 16 multi-role web application.
+> WebSocket push notifications on API Gateway WebSockets.
 
-| Property | Value |
-|----------|-------|
-| Port | `3000` (Next.js dev server) |
-| Framework | Next.js 16, React 19 |
-| Styling | Tailwind CSS v4, Shadcn UI |
-| State | TanStack Query, Zustand |
+| | |
+|---|---|
+| **Stack / entry** | `foodo-realtime` · `wsRouter`, `eventConsumer` |
+| **Runtime** | ARM64 · Node.js 20 · 256 MB · 30 s |
+| **Owns** | Its own **WebSocket API + stage**, its own **`connections` table** (ephemeral runtime state, not in the shared data tier) and its own inbound **`emit`** queue + unfiltered SNS subscription |
+| **Frontend URL** | `foodo-realtime-<stage>-WebSocketUrl` export (`wss://…`) |
 
-**Tech Stack**: `next`, `react`, `tailwindcss`, `shadcn`, `@tanstack/react-query`, `zustand`, `react-hook-form`, `zod`, `framer-motion`, `lucide-react`
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant WS as WebSocket API
+    participant R as wsRouter λ
+    participant T as connections table
+    participant Q as emit queue
+    participant E as eventConsumer λ
 
-**Routes**:
+    B->>WS: $connect (token from /api/auth/socket-token)
+    WS->>R: verify JWT in-handler
+    R->>T: register connectionId → room (+TTL)
+    B->>WS: $default { action: "order:track" | "rider:location" }
+    Note over Q,E: SNS (no filter) → emit queue
+    Q->>E: domain event
+    E->>T: resolve target room(s)
+    E-->>B: PostToConnection (Management API)
+    B->>WS: $disconnect
+    WS->>R: remove connection
+```
+
+| Handler | Role |
+|---|---|
+| `$connect` | JWT verified in-handler, auto room joins, connection stored with `room` + TTL |
+| `$disconnect` | Connection removed from the `connections` table |
+| `$default` | Client actions routed by `action` in the body (`order:track`, `rider:location`) |
+| `eventConsumer` | Consumes **every** domain event (no filter, like the old fanout exchange) and broadcasts to rooms |
+
+---
+
+### 7️⃣ 🖥️ Frontend
+
+> Next.js 16 multi-role web app, deployed with SST Ion's native OpenNext integration on CloudFront.
+
+| | |
+|---|---|
+| **Stack** | `foodo-web` (SST) |
+| **Framework** | Next.js 16 · React 19 |
+| **UI / state** | Tailwind CSS v4 · Shadcn UI (Radix) · TanStack Query · Zustand |
+| **Deploy** | `sst deploy` (OpenNext → CloudFront) |
+
+**🌐 Zero-cost reverse proxy (single origin).** The app runs at `https://<id>.cloudfront.net/`. Browser calls to relative `/api/*` flow through the same CloudFront origin to the HTTP API, so there is **no custom domain, no CORS issues, and cookies stay first-party and same-origin**.
+
+| Request | Origin | Behavior |
+|---|---|---|
+| `/api/*` | `ApiGatewayBackend` → deployed `foodo-core-api` HTTP API URL | Caching disabled, all viewer methods allowed |
+| Everything else | Next.js (OpenNext) | Default |
+
+SST reads live endpoints from CloudFormation exports at deploy time (`foodo-core-api-<stage>-HttpApiUrl`, `foodo-realtime-<stage>-WebSocketUrl`), with stage-default fallbacks.
+
 | Route | Role | Description |
-|-------|------|-------------|
+|---|---|---|
 | `/` | Customer | Restaurant discovery homepage |
-| `/login` | All | User login |
-| `/register` | All | User registration with role selection |
+| `/login` | All | Login |
+| `/register` | All | Registration with role selection |
 | `/seller` | Seller | Restaurant owner dashboard |
 | `/rider` | Rider | Delivery rider mobile interface |
 | `/admin` | Admin | Platform admin control panel |
 
 ---
 
-### 7. AI Verification Service
+<a id="events"></a>
+## 🎯 Events & Service Communication
 
-**Purpose**: Multimodal visual verification — kitchen packing checks and rider proof-of-delivery, with evidence storage and an auditable verdict ledger.
+### 📨 Event topology
 
-| Property | Value |
-|----------|-------|
-| Port | `3007` |
-| TypeScript | `6.x` |
-| Database | MongoDB (Verification collection, TTL-bounded) |
-| AI Providers | Gemini Flash (primary) → Claude Haiku (fallback) |
+Each service **owns** its inbound queue, its DLQ and its SNS subscription (including the queue policy that lets SNS deliver). The **work queues** stay in the foundation stack because their producers and consumers are different services.
 
-**Dependencies**: `express`, `mongoose`, `cloudinary`, `opossum`, `amqplib`
+```mermaid
+flowchart LR
+    SNS{{"📣 SNS events topic<br/>(foodo-infra)"}}
 
-**Endpoints (internal-key only; proxied server-side by restaurant/rider services)**:
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/verification/packing` | Verify open-bag photo vs order ticket |
-| POST | `/api/verification/delivery` | Verify rider drop-off photo (POD) |
-| GET | `/api/verification/order/:orderId` | Audit read — all verdicts for an order |
+    subgraph RESTAURANT["foodo-restaurant"]
+        RQ[["rider-events<br/>queue + DLQ"]]
+        PC["λ paymentConsumer"]
+        RC1["λ riderEventsConsumer"]
+    end
 
-Verdicts are `{status: verified \| flagged \| unverified, flag, confidence, ...}` — never a 5xx on AI failure. Full design: [`docs/AI_SYSTEMS_DESIGN.md`](docs/AI_SYSTEMS_DESIGN.md).
+    subgraph RIDER["foodo-rider"]
+        DQ[["rider-events<br/>queue + DLQ"]]
+        OC["λ orderReadyConsumer"]
+        RC2["λ riderEventsConsumer"]
+    end
+
+    subgraph REALTIME["foodo-realtime"]
+        EQ[["emit queue"]]
+        EC["λ eventConsumer"]
+    end
+
+    PQ[["💳 payment queue + DLQ"]]
+    OQ[["📦 order queue + DLQ"]]
+
+    SNS -->|"rider.order_accepted<br/>rider.order_status_changed<br/>payment.intent.created"| RQ --> RC1
+    SNS -->|"rider.order_rejected<br/>order.cancelled<br/>order.delivered"| DQ --> RC2
+    SNS -->|"no filter · every event"| EQ --> EC
+
+    UTILS["foodo-utils"] --> PQ --> PC
+    RESTAURANT_PUB["restaurant<br/>(order ready)"] --> OQ --> OC
+```
+
+| Mechanism | Producer(s) | Consumer | Purpose |
+|---|---|---|---|
+| **payment** SQS queue | utils | restaurant `paymentConsumer` | Payment results into order flow |
+| **order** SQS queue | restaurant | rider `orderReadyConsumer` | Order ready for a rider |
+| SNS → restaurant `rider-events` | rider, utils | restaurant `riderEventsConsumer` | Rider progress and payment intent updates |
+| SNS → rider `rider-events` | restaurant, rider | rider `riderEventsConsumer` | Saga compensations |
+| SNS → realtime `emit` | all | realtime `eventConsumer` | Live push to browsers |
+
+### 🖼️ Image uploads (signed direct upload, no utils-service hop)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Owning service<br/>(restaurant / rider)
+    participant CL as Cloudinary
+
+    C->>S: GET /api/{menu-item|restaurant|rider}/upload-signature
+    S-->>C: signature, timestamp, apiKey, cloudName
+    C->>CL: POST file + signed params<br/>(/v1_1/<cloud_name>/image/upload)
+    CL-->>C: secure_url
+    C->>S: create / update endpoint with secure_url
+```
+
+- Signatures are **HMAC-SHA1 over sorted params** (`@foodo/backend-common`). They are purely local, take <1 ms, and are bound to the exact server-chosen folder and params.
+- `CLOUDINARY_API_SECRET` **never leaves the signing service**. Clients only receive `signature`, `timestamp`, `apiKey` and `cloudName`.
+- Multipart `file` uploads to create/update endpoints still work as a legacy fallback. `POST /api/utils/upload` returns **410 Gone**.
+
+### 🤝 Internal communication rules
+
+- Service-to-service HTTP calls authenticate with an `x-internal-key` header matching `INTERNAL_SERVICE_KEY` (e.g. `/api/order/payment/claim/{orderId}`).
+- SNS is the domain event bus, with per-service filtered subscriptions.
+- SQS work queues carry cross-service transport. Each service owns its fan-out queue + DLQ + SNS subscription.
+- Realtime publishes to rooms through the API Gateway Management API, and the `connections` table maps `connectionId → room`.
 
 ---
 
-### 8. AI Orchestrator Service
+<a id="database"></a>
+## 📊 Database Schema
 
-**Purpose**: Bounded-autonomy support & refund arbitration agent — vision triage, delivery telemetry audit, customer trust scoring, and autonomous refund/voucher actions with HITL fallback.
+All shared tables live in the foundation stack (`foodo-infra`). Each is **single-table-per-entity** with a `pk`/`sk` key schema plus the indexes each query path needs. The `connections` table is owned by the realtime stack.
 
-| Property | Value |
-|----------|-------|
-| Port | `3008` |
-| TypeScript | `6.x` |
-| Database | MongoDB (ArbitrationCase, RefundLedger) |
-| AI Providers | Claude Haiku (classifications only — policy is deterministic code) |
+| Table | Key pattern (`pk` = `sk`) | Indexes (GSI) | TTL | Accessed by |
+|---|---|---|:-:|---|
+| **users** | `USER#<userId>` | `email-index` (email), `refresh-index` (tokenHash) | ✅ refresh tokens | auth, admin |
+| **restaurants** | `RESTAURANT#<id>` | `owner-index` (ownerId), `verified-index` (isVerified 0\|1) | | restaurant, rider, admin |
+| **riders** | `RIDER#<id>` | `user-index` (userId), `verified-index` (isVerified 0\|1) | | rider, admin |
+| **orders** | `ORDER#<id>` | `user-orders`, `restaurant-orders`, `rider-orders`, `status-board`, `payment-status` | ✅ unpaid, 15-min window | restaurant, rider, admin, utils |
+| **menu-items** | `MENU_ITEM#<id>` | `restaurant-index` (restaurantId) | | restaurant |
+| **carts** | `CART#<userId>#<restaurantId>#<itemId>` | none | | restaurant |
+| **addresses** | `ADDRESS#<id>` | none | | restaurant |
+| **webhook-dedupe** | `<eventId>` (pk only) | none | ✅ | utils |
+| *connections* (realtime-owned) | `connectionId` → `room` | none | ✅ | realtime |
 
-**Endpoints**:
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/agent/dispute` | Public (rate-limited) | File a dispute → async arbitration graph, returns `caseId` |
-| GET | `/api/agent/case/:caseId` | Public | Full case record incl. every tool step (thought graph) |
-| GET | `/api/agent/queue` | Internal | Escalated cases awaiting human review |
+<details>
+<summary><b>📦 Entity fields & index details</b> (click to expand)</summary>
 
-**Refund bounds enforced server-side**: cumulative per-order caps, server-resolved payment ids, idempotency keys, voucher caps. The agent classifies; deterministic policy decides; utils executes.
+<br/>
 
----
+**Users**: `email`, `tokenHash`, role and profile fields. Refresh-token rows carry a per-item `ttl`. Auth-service owns this table.
 
-## 🔄 Service Communication
+**Restaurants**: `name`, `description`, `image`, `ownerId`, `phone`, `isVerified`, `isOpen`, `autoLocation` (lng/lat + formattedAddress).
 
-```
-┌─────────────┐         ┌──────────────┐
-│   Rider     │────────▶│  Restaurant  │
-│  Service    │  HTTP   │   Service    │
-│             │ (assign,│              │
-│             │  status)│              │
-└──────┬──────┘         └──────┬───────┘
-       │                       │
-       │  RabbitMQ             │  HTTP (Realtime)
-       │  (order:ready)        │  (emit events)
-       ▼                       ▼
-┌──────────────┐       ┌──────────────┐
-│   Realtime   │◀──────│  Restaurant  │
-│   Service    │ HTTP  │   Service    │
-│ (Socket.IO)  │       │              │
-└──────────────┘       └──────────────┘
-       │                       │
-       │  Socket.IO            │  HTTP (Upload)
-       ▼                       ▼
-┌──────────────┐       ┌──────────────┐
-│   Frontend   │──────▶│ Utils Service│
-│  (Next.js)   │ HTTP  │  (Cloudinary)│
-└──────────────┘       └──────────────┘
-```
+**Riders**: `userId`, `picture`, `phoneNumber`, `addharNumber`, `drivingLicenseNumber`, `isVerified`, `isAvailable`, `location` (lng/lat), `lastActive`.
 
-**Internal Communication**:
-- Services authenticate inter-service calls via `x-internal-key` header matching `INTERNAL_SERVICE_KEY`
-- RabbitMQ used for async events (order ready for rider, payment confirmation)
-- Realtime service receives HTTP calls from Restaurant service to emit Socket.IO events
+**Orders**
+- Fields: `userId`, `restaurantId`, `restaurantName`, `riderId`, `riderName`, `riderPhone`, `distance`, `riderAmount`, `items` (itemId/name/price/quantity), `subtotal`, `deliveryFee`, `platformFee`, `totalAmount`, `addressId`, `deliveryAddress` (formattedAddress/mobile/latitude/longitude), `status`, `paymentMethod`, `paymentStatus`, `expiresAt`.
+- Indexes:
+
+  | GSI | Partition key | Sort key |
+  |---|---|---|
+  | `user-orders` | `userId` | `createdAt` |
+  | `restaurant-orders` | `restaurantId` | `createdAt` |
+  | `rider-orders` | `riderId` | `createdAt` |
+  | `status-board` | `status` | `createdAt` |
+  | `payment-status` | `paymentStatus` | `paymentIntentInitiatedAt` |
+
+**Menu items**: `restaurantId`, `name`, `description`, `price`, `image`, `isAvailable`.
+
+**Carts**: `userId`, `restaurantId`, `itemId`, `quantity`.
+
+**Addresses**: `userId`, `mobile`, `formatterAddress`, `location` (lng/lat).
+
+**Webhook dedupe**: `pk = <eventId>`, `ttl = <expiry>`. Used to dedupe payment webhooks.
+
+</details>
 
 ---
 
-## 📊 Database Schema Overview
+<a id="api"></a>
+## 📡 API Reference
 
-### Users (`auth` service)
-```
-User {
-  _id: ObjectId
-  name: String
-  email: String (unique)
-  password: String (bcrypt hashed)
-  role: "customer" | "seller" | "rider"
-  image: String (optional)
-}
-```
+**Legend:** 🔓 Public at the gateway · 🔒 JWT-protected at the gateway (the authorizer authenticates, services authorize roles)
 
-### Restaurants (`restaurant` service)
-```
-Restaurant {
-  _id: ObjectId
-  name: String
-  description: String
-  image: String
-  ownerId: String (references User._id)
-  phone: Number
-  isVerified: Boolean
-  isOpen: Boolean
-  autoLocation: { type: "Point", coordinates: [lng, lat], formattedAddress }
-}
-```
+> [!TIP]
+> API Gateway routes to the **most specific** matching route. Protected routes like `/api/restaurant/my` and `/api/restaurant/upload-signature` are declared **explicitly** so the public `GET /api/restaurant/{id}` doesn't swallow them.
 
-### Menu Items (`restaurant` service)
-```
-MenuItem {
-  _id: ObjectId
-  restaurantId: ObjectId (ref: Restaurant)
-  name: String
-  description: String
-  price: Number
-  image: String
-  isAvailable: Boolean
-}
-```
+### 🔐 Auth
 
-### Cart (`restaurant` service)
-```
-Cart {
-  userId: ObjectId (ref: User) [indexed]
-  restaurantId: ObjectId (ref: Restaurant) [indexed]
-  itemId: ObjectId (ref: MenuItem) [indexed]
-  quantity: Number (min: 1)
-}
-// Compound unique index: { userId, restaurantId, itemId }
-```
+| Method | Endpoint | Access | Notes |
+|:-:|---|:-:|---|
+| POST | `/api/auth/register` | 🔓 | Token issuance |
+| POST | `/api/auth/login` | 🔓 | Token issuance |
+| POST | `/api/auth/logout` | 🔒 | Gateway + in-app |
+| GET | `/api/auth/me` | 🔒 | Gateway + in-app |
+| GET | `/api/auth/socket-token` | 🔒 | For the WebSocket handshake |
+| `*` | `/api/auth/{proxy+}` | 🔓 | Remaining auth routes (refresh, etc.) |
 
-### Orders (`restaurant` service)
-```
-Order {
-  userId: String
-  restaurantId: String
-  restaurantName: String
-  riderId: String | null
-  riderName: String | null
-  riderPhone: Number | null
-  distance: Number
-  riderAmount: Number
-  items: [{ itemId, name, price, quantity }]
-  subtotal: Number
-  deliveryFee: Number
-  platformFee: Number
-  totalAmount: Number
-  addressId: String
-  deliveryAddress: { formattedAddress, mobile, latitude, longitude }
-  status: "placed" | "accepted" | "preparing" | "ready_for_rider" | "rider_assigned" | "picked_up" | "delivered" | "cancelled"
-  paymentMethod: "razorpay" | "stripe"
-  paymentStatus: "pending" | "paid" | "failed"
-  expiresAt: Date (TTL index)
-}
-```
+### 🍽️ Restaurant service (restaurants · menu · cart · order · address)
 
-### Addresses (`restaurant` service)
-```
-Address {
-  userId: String
-  mobile: Number
-  formatterAddress: String
-  location: { type: "Point", coordinates: [lng, lat] }
-}
-// 2dsphere index on location
-```
+| Method | Endpoint | Access | Notes |
+|:-:|---|:-:|---|
+| GET | `/api/restaurant/all` | 🔓 | Anonymous browsing |
+| GET | `/api/restaurant/nearby` | 🔓 | Anonymous browsing |
+| GET | `/api/restaurant/{id}` | 🔓 | Anonymous browsing |
+| GET | `/api/menu-item/all/{id}` | 🔓 | Anonymous browsing |
+| POST | `/api/order/payment/claim/{orderId}` | 🔓 | Service-to-service, `x-internal-key` |
+| GET | `/health/restaurant` | 🔓 | Probe |
+| GET | `/api/restaurant/my` | 🔒 | Explicit, not caught by `/{id}` |
+| GET | `/api/restaurant/upload-signature` | 🔒 | Explicit, signed direct upload |
+| `*` | `/api/restaurant/{proxy+}` | 🔒 | |
+| `*` | `/api/menu-item/{proxy+}` | 🔒 | Includes `upload-signature` |
+| `*` | `/api/cart/{proxy+}` | 🔒 | |
+| `*` | `/api/order/{proxy+}` | 🔒 | |
+| `*` | `/api/address/{proxy+}` | 🔒 | |
 
-### Riders (`rider` service)
-```
-Rider {
-  userId: String (unique)
-  picture: String
-  phoneNumber: String (unique)
-  addharNumber: String (unique)
-  drivingLicenseNumber: String (unique)
-  isVerified: Boolean
-  isAvailable: Boolean
-  location: { type: "Point", coordinates: [lng, lat] }
-  lastActive: Date
-}
-// 2dsphere index on location
-```
+### 🏍️ Rider service
+
+| Method | Endpoint | Access | Notes |
+|:-:|---|:-:|---|
+| `*` | `/api/rider/{proxy+}` | 🔒 | Entire surface (includes `upload-signature` and rider registration) |
+| GET | `/health/rider` | 🔓 | Probe |
+
+### 🛡️ Admin service
+
+| Method | Endpoint | Access | Notes |
+|:-:|---|:-:|---|
+| `*` | `/api/admin/{proxy+}` | 🔒 | Entire surface |
+| GET | `/health/admin` | 🔓 | Probe |
+
+### 💳 Utils service
+
+| Method | Endpoint | Access | Notes |
+|:-:|---|:-:|---|
+| `*` | `/api/utils/{proxy+}` | 🔓 | Webhook HMAC + controller-validated claims |
+| GET | `/health/utils` | 🔓 | Probe |
+| POST | `/api/utils/upload` | 🔓 | **410 Gone**, replaced by signed direct uploads |
+
+### 🔌 Realtime (WebSocket API)
+
+| Route | Access | Purpose |
+|---|:-:|---|
+| `$connect` | JWT (in-handler) | Handshake, auto room joins |
+| `$disconnect` | n/a | Connection cleanup |
+| `$default` | n/a | Client actions (`order:track`, `rider:location`) |
 
 ---
 
-## 📡 API Endpoints Reference
+<a id="local-dev"></a>
+## 💻 Installation & Local Development
 
-### Full API Map
+### ✅ Prerequisites
 
-| Service | Method | Endpoint | Auth | Description |
-|---------|--------|----------|------|-------------|
-| **Auth** | POST | `/api/auth/register` | - | Register |
-| **Auth** | POST | `/api/auth/login` | - | Login |
-| **Auth** | GET | `/api/auth/me` | JWT | Get profile |
-| **Restaurant** | POST | `/restaurant/new` | Seller | Create restaurant |
-| **Restaurant** | GET | `/restaurant/my` | Seller | Get my restaurant |
-| **Restaurant** | PUT | `/restaurant/update` | Seller | Update restaurant |
-| **Restaurant** | PUT | `/restaurant/status` | Seller | Toggle open/closed |
-| **Restaurant** | GET | `/menu-item/all/:id` | Auth | List menu items |
-| **Restaurant** | POST | `/menu-item/new` | Seller | Create item |
-| **Restaurant** | DELETE | `/menu-item/delete/:id` | Seller | Delete item |
-| **Restaurant** | PUT | `/menu-item/toggle/:id` | Seller | Toggle availability |
-| **Restaurant** | POST | `/cart/add` | Auth | Add to cart |
-| **Restaurant** | GET | `/cart/all` | Auth | Get cart |
-| **Restaurant** | DELETE | `/cart/clear` | Auth | Clear cart |
-| **Restaurant** | PUT | `/cart/increase` | Auth | Increase qty |
-| **Restaurant** | PUT | `/cart/decrease` | Auth | Decrease qty |
-| **Restaurant** | POST | `/order/new` | Auth | Create order |
-| **Restaurant** | GET | `/order/my` | Auth | My orders |
-| **Restaurant** | GET | `/order/:orderId` | Auth | Order detail |
-| **Restaurant** | GET | `/order/order/:restaurantId` | Seller | Restaurant orders |
-| **Restaurant** | PUT | `/order/:orderId` | Seller | Update status |
-| **Restaurant** | GET | `/order/payment/:id` | Internal | Payment fetch |
-| **Restaurant** | PUT | `/order/assign/rider` | Internal | Assign rider |
-| **Restaurant** | GET | `/order/current/rider` | Internal | Rider's current order |
-| **Restaurant** | PUT | `/order/update/status/rider` | Internal | Rider status update |
-| **Restaurant** | POST | `/address/new` | Auth | Create address |
-| **Restaurant** | GET | `/address/all` | Auth | Get addresses |
-| **Restaurant** | DELETE | `/address/:id` | Auth | Delete address |
-| **Admin** | GET | `/api/admin/restaurant/pending` | - | Pending restaurants |
-| **Admin** | GET | `/api/admin/rider/pending` | - | Pending riders |
-| **Admin** | PATCH | `/api/verify/rider/:id` | - | Verify rider |
-| **Admin** | PATCH | `/api/verify/restaurant/:id` | - | Verify restaurant |
-| **Rider** | POST | `/rider/new` | Rider | Create rider profile |
-| **Rider** | GET | `/rider/myprofile` | Rider | Get profile |
-| **Rider** | PATCH | `/rider/toggle` | Rider | Toggle availability |
-| **Rider** | POST | `/rider/accept/:orderId` | Rider | Accept order |
-| **Rider** | GET | `/rider/order/current` | Rider | Current order |
-| **Rider** | PUT | `/rider/order/update` | Rider | Update status |
-| **Realtime** | POST | `/api/v1/internal/emit` | Internal | Emit socket event |
-| **Utils** | GET | `/api/utils/refund/order/:id/claim` | Internal | Refund pre-flight claim |
-| **Utils** | POST | `/api/utils/refund/execute` | Internal | Capped, idempotent refund execution |
-| **AI Verification** | POST | `/api/verification/packing` | Internal | Open-bag photo verification |
-| **AI Verification** | POST | `/api/verification/delivery` | Internal | Drop-off POD verification |
-| **AI Verification** | GET | `/api/verification/order/:orderId` | Internal | Verdict audit read |
-| **Restaurant** | POST | `/order/verification/:orderId/packing` | Seller | Submit packing snapshot (AI verdict) |
-| **Restaurant** | PUT | `/order/verification/:orderId/override` | Seller | Audited ship-anyway override |
-| **Restaurant** | GET | `/order/verification/:orderId` | Seller | Current verification state |
-| **Rider** | POST | `/rider/order/pod` | Rider | Proof-of-delivery photo + completion |
-| **AI Orchestrator** | POST | `/api/agent/dispute` | Public | File dispute → arbitration graph |
-| **AI Orchestrator** | GET | `/api/agent/case/:caseId` | Public | Case record with thought graph |
-| **AI Orchestrator** | GET | `/api/agent/queue` | Internal | HITL escalation review queue |
+| Tool | Version |
+|---|---|
+| Node.js | ≥ 20 |
+| pnpm | ≥ 10 (`corepack enable` or `npm i -g pnpm`) |
+| AWS credentials | Configured (for `serverless deploy` / `sst deploy`) |
+| Serverless Framework | v3 (via the workspace `serverless` catalog entry) |
+| TypeScript | 5.x (shared via workspace catalog) |
 
----
+### 📥 Install
 
-## 🚀 Installation & Setup
-
-### Prerequisites
-
-Make sure the following are installed and running:
-1. **Node.js** >= 18
-2. **MongoDB** (local or Atlas)
-3. **RabbitMQ** (for event-driven features)
-4. **npm** >= 9
-
-### Clone the Repositories
-
-Each service is a separate repository/path under the `Foodo/` directory:
-
-```
-Foodo/
-├── auth/             # Auth microservice
-├── restaurant/       # Restaurant microservice
-├── rider/            # Rider microservice
-├── admin/            # Admin microservice
-├── realtime/         # Socket.IO realtime service
-├── utils/            # Shared utilities (uploads, payments, refunds)
-├── ai-verification/  # Multimodal visual verification (packing + POD)
-├── ai-orchestrator/  # Bounded-autonomy refund arbitration agent
-└── frontend/         # Next.js web application
-```
-
-### Quick Setup (All Services)
-
-Run these commands from the `Foodo/` root for each service:
+One command from the repo root installs everything through workspace symlinks:
 
 ```bash
-# Navigate to each service directory and install
-cd auth && npm install && cd ..
-cd restaurant && npm install && cd ..
-cd rider && npm install && cd ..
-cd admin && npm install && cd ..
-cd realtime && npm install && cd ..
-cd utils && npm install && cd ..
-cd ai-verification && npm install && cd ..
-cd ai-orchestrator && npm install && cd ..
-cd frontend && npm install && cd ..
+pnpm install
 ```
 
----
+### 🧪 Two ways to run Foodo
 
-## 🏃 Running Locally
+| | ☁️ **Canonical: serverless** | 💻 **Local: legacy shape** |
+|---|---|---|
+| Compute | Lambda behind API Gateway | Long-running Express processes |
+| Data | DynamoDB | MongoDB (`mongod`) |
+| Messaging | SNS + SQS | RabbitMQ |
+| Realtime | WebSocket API | Socket.IO |
+| Command | `pnpm deploy:all` | `pnpm dev` |
 
-### 1. Start Infrastructure
+The frontend contract is identical either way: a single base URL with the same `/api/*` paths. Only the backing resource changes.
+
+### ▶️ Running locally (legacy shape)
 
 ```bash
-# Start MongoDB
+# 1. start backing services
 mongod
-
-# Start RabbitMQ
 rabbitmq-server
+
+# 2. start all services + web (turbo, shared terminal)
+pnpm dev
+
+# or scope to one workspace
+pnpm --filter @foodo/auth-service dev
+pnpm --filter web dev
 ```
 
-### 2. Configure Environment Variables
+- Each service needs its own `.env` in its directory (see [Configuration](#config)).
+- Local image uploads still flow through the backend. Setting `CLOUDINARY_URL` in restaurant/rider lets the signer work locally too.
 
-Each service requires a `.env` file. Create one in each service directory. Below are the required variables:
+---
 
-#### Auth Service `.env`
-```env
-PORT=3000
-MONGO_URI=mongodb://localhost:27017/foodo
-JWT_SECRET=your-jwt-secret-key
-COOKIE_SECRET=your-cookie-secret
-```
+<a id="config"></a>
+## 🔐 Configuration & Environment Variables
 
-#### Restaurant Service `.env`
-```env
-PORT=3001
-MONGO_URI=mongodb://localhost:27017/foodo
-JWT_SECRET=your-jwt-secret-key
-COOKIE_SECRET=your-cookie-secret
-UTILS_SERVICE_URL=http://localhost:PORT
-REALTIME_SERVICE_URL=http://localhost:3002
-INTERNAL_SERVICE_KEY=your-internal-service-key
-RABBITMQ_URL=amqp://localhost
-```
+### 🔑 Deploy-time secrets
 
-#### Rider Service `.env`
-```env
-PORT=3003
-MONGO_URI=mongodb://localhost:27017/foodo
-JWT_SECRET=your-jwt-secret-key
-RESTAURANT_SERVICE=http://localhost:3001
-INTERNAL_SERVICE_KEY=your-internal-service-key
-RABBITMQ_URL=amqp://localhost
-UTILS_SERVICE_URL=http://localhost:PORT
-```
+Passed via environment or `.env.<stage>` in each stack's directory. **Keep values identical across all stacks in a stage.**
 
-#### Admin Service `.env`
-```env
-PORT=3006
-JWT_SECRET=your-jwt-secret-key
-COOKIE_SECRET=your-cookie-secret
-AUTH_SERVICE_URL=http://localhost:3001
-RESTAURANT_SERVICE_URL=http://localhost:3003
-RIDER_SERVICE_URL=http://localhost:3004
-INTERNAL_SERVICE_KEY=your-internal-service-key
-```
+| Variable | Used by | Description |
+|---|---|---|
+| `JWT_SECRET` | all service stacks, core-api (infra reserved for Cognito migration) | JWT signing secret. Must be identical everywhere in a stage |
+| `COOKIE_SECRET` | auth, restaurant, admin, realtime, utils | Cookie-session encryption key |
+| `INTERNAL_SERVICE_KEY` | restaurant, rider, utils | Shared key for inter-service auth (`x-internal-key`) |
+| `REFRESH_COOKIE_NAME` | auth | Refresh-token cookie name |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | utils | Razorpay credentials |
+| `RAZORPAY_WEBHOOK_SECRET` | utils | Razorpay webhook HMAC secret |
+| `STRIPE_SECRET_KEY` | utils | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | utils | Stripe webhook HMAC secret |
+| `CLOUDINARY_URL` | restaurant, rider | Cloudinary URL for signed direct uploads |
+| `FRONTEND_URL` | utils | Frontend origin (webhook redirects, etc.) |
+| `IAM_PERMISSIONS_BOUNDARY_ARN` | all stacks (optional) | Permissions boundary for the provider role. Unset in dev, set in prod accounts that enforce one |
 
-#### Realtime Service `.env`
-```env
-PORT=3002
-JWT_SECRET=your-jwt-secret-key
-INTERNAL_SERVICE_KEY=your-internal-service-key
-RABBITMQ_URL=amqp://localhost
-# Optional overrides — defaults are order.status_changed / realtime.emit
-# REALTIME_EXCHANGE=order.status_changed
-# REALTIME_QUEUE=realtime.emit
-```
+### 🔗 Stack-to-stack references (resolved via `${cf:…}` at deploy time)
 
-#### Utils Service `.env`
-```env
-PORT=3005
-MONGO_URI=mongodb://localhost:27017/foodo
-JWT_SECRET=your-jwt-secret-key
-FRONTEND_URL=http://localhost:3000
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
-RAZORPAY_KEY_ID=your-razorpay-key
-RAZORPAY_KEY_SECRET=your-razorpay-secret
-STRIPE_SECRET_KEY=your-stripe-secret
-# Webhook signing secrets — webhooks are the source of truth for payment success
-RAZORPAY_WEBHOOK_SECRET=your-razorpay-webhook-secret
-STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
-RABBITMQ_URL=amqp://localhost
-INTERNAL_SERVICE_KEY=your-internal-service-key
-# Optional: provider-vs-DB payment audit interval (default 1 hour)
-# PAYMENT_RECONCILE_INTERVAL_MS=3600000
-```
+**From `foodo-infra`**, referenced as `${cf:foodo-infra-<stage>.<Export>}`:
 
-#### AI Verification Service `.env`
-```env
-PORT=3007
-MONGO_URI=mongodb://localhost:27017/foodo
-FRONTEND_URL=http://localhost:3000
-INTERNAL_SERVICE_KEY=your-internal-service-key
-RABBITMQ_URL=amqp://localhost
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
-# AI providers (configure at least one; both recommended)
-GEMINI_API_KEY=your-gemini-key
-GEMINI_MODEL=gemini-2.5-flash
-ANTHROPIC_API_KEY=your-anthropic-key
-ANTHROPIC_MODEL=claude-haiku-4-5
-# Optional tuning
-# AI_TIMEOUT_MS=12000
-# AI_MAX_IMAGE_BYTES=5242880
-# VERIFICATION_TTL_DAYS=90
-# VERIFICATION_EXCHANGE=verification.events
-# REDIS_URL=redis://localhost:6379
-```
+| Variable | Used by | Export |
+|---|---|---|
+| `USERS_TABLE` | auth, admin | `UsersTable` |
+| `RESTAURANTS_TABLE` | restaurant, rider, admin | `RestaurantsTable` |
+| `RIDERS_TABLE` | rider, admin | `RidersTable` |
+| `ORDERS_TABLE` | restaurant, rider, admin, utils | `OrdersTable` |
+| `MENU_ITEMS_TABLE` | restaurant | `MenuItemsTable` |
+| `CARTS_TABLE` | restaurant | `CartsTable` |
+| `ADDRESSES_TABLE` | restaurant | `AddressesTable` |
+| `WEBHOOK_DEDUPE_TABLE` | utils | `WebhookDedupeTable` |
+| `EVENTS_TOPIC_ARN` | all services | `EventsTopicArn` |
+| `PAYMENT_QUEUE_URL` / `_ARN` | restaurant (consume), utils (send) | `PaymentQueueUrl` / `PaymentQueueArn` |
+| `ORDER_QUEUE_URL` / `_ARN` | rider (consume), restaurant (send) | `OrderQueueUrl` / `OrderQueueArn` |
+| `VpcId`, `PublicSubnetIds`, `PrivateSubnetIds` | *(reserved for future VPC workloads)* | same names |
+| `CognitoUserPoolId`, `CognitoUserPoolClientId`, `CognitoIssuerUrl` | *(reserved for the identity migration)* | same names |
 
-#### AI Orchestrator Service `.env`
-```env
-PORT=3008
-MONGO_URI=mongodb://localhost:27017/foodo
-FRONTEND_URL=http://localhost:3000
-INTERNAL_SERVICE_KEY=your-internal-service-key
-RABBITMQ_URL=amqp://localhost
-RESTAURANT_SERVICE_URL=http://localhost:3001
-RIDER_SERVICE_URL=http://localhost:3004
-ADMIN_SERVICE_URL=http://localhost:3006
-UTILS_SERVICE_URL=http://localhost:3005
-ANTHROPIC_API_KEY=your-anthropic-key
-ANTHROPIC_MODEL=claude-haiku-4-5
-# Autonomy bounds
-# AGENT_MAX_AUTO_REFUND=500
-# AGENT_VOUCHER_CAP=150
-# AGENT_EXCHANGE=agent.events
-# AGENT_DISPUTE_QUEUE=agent.disputes
-# INTERNAL_HTTP_TIMEOUT_MS=5000
-# LLM_TIMEOUT_MS=30000
-```
+**From `foodo-core-api`**, referenced as `${cf:foodo-core-api-<stage>.<Export>}`:
 
-#### Restaurant Service additions
-```env
-# VERIFICATION_HTTP_TIMEOUT_MS=20000   # AI-tier pool timeout
-```
+| Variable | Used by | Export |
+|---|---|---|
+| `HttpApiId` | all service stacks | `HttpApiId` |
+| `AuthorizerId` | all service stacks | `AuthorizerId` |
 
-#### Rider Service additions
-```env
-# VERIFICATION_HTTP_TIMEOUT_MS=20000
-```
+**From the realtime stack itself:** `CONNECTIONS_TABLE_NAME` (`foodo-realtime-<stage>-connections`) and `WEBSOCKET_API_ENDPOINT` (the WebSocket API URL).
 
-#### Frontend `.env.local` additions
-```env
-AI_ORCHESTRATOR_URL=http://localhost:3008
-```
+### 🖥️ Frontend variables
 
-#### Frontend `.env.local`
+| Variable | Deployed value |
+|---|---|
+| `NEXT_PUBLIC_STAGE` | Deployed stage (`dev`, `prod`, …) |
+| `NEXT_PUBLIC_API_URL` | **Empty** (same-origin relative paths via the CloudFront reverse proxy) |
+| `NEXT_PUBLIC_REALTIME_WS_URL` | Resolved from the `foodo-realtime-<stage>-WebSocketUrl` export |
+
+### 🧰 Local dev variables (per-service `.env`)
+
+| Variable | Services | Description |
+|---|---|---|
+| `PORT` | all | Service port |
+| `MONGO_URI` | auth, restaurant, rider | MongoDB connection string *(local only)* |
+| `RABBITMQ_URL` | restaurant, rider | RabbitMQ URL *(local only)* |
+| `UTILS_SERVICE_URL` | restaurant, rider | Utils microservice URL |
+| `REALTIME_SERVICE_URL` | restaurant | Realtime socket service URL |
+| `RESTAURANT_SERVICE` | rider | Restaurant microservice URL |
+
+Frontend `.env.local` for local dev:
+
 ```env
 NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost:3000/api/auth
 NEXT_PUBLIC_RESTAURANT_SERVICE_URL=http://localhost:3001
@@ -752,182 +864,104 @@ NEXT_PUBLIC_ADMIN_SERVICE_URL=http://localhost:3004/api
 NEXT_PUBLIC_REALTIME_SERVICE_URL=http://localhost:3002
 ```
 
-### 3. Start All Services
+---
 
-Open separate terminals for each service:
+<a id="operations"></a>
+## 🛠️ Operations
+
+### 📜 Tail logs
 
 ```bash
-# Terminal 1 — Auth Service
-cd auth && npm run dev
-
-# Terminal 2 — Restaurant Service
-cd restaurant && npm run dev
-
-# Terminal 3 — Rider Service
-cd rider && npm run dev
-
-# Terminal 4 — Admin Service
-cd admin && npm run dev
-
-# Terminal 5 — Realtime Service
-cd realtime && npm run dev
-
-# Terminal 6 — Utils Service
-cd utils && npm run dev
-
-# Terminal 7 — AI Verification Service
-cd ai-verification && npm run dev
-
-# Terminal 8 — AI Orchestrator Service
-cd ai-orchestrator && npm run dev
-
-# Terminal 9 — Frontend
-cd frontend && npm run dev
+pnpm logs:payment      # restaurant-service paymentConsumer --tail
+pnpm logs:reconcile    # utils-service reconcile --tail
+pnpm logs:realtime     # realtime-service eventConsumer --tail
 ```
 
-### 4. Open the Application
+### 🛂 IAM permissions boundary
 
-Visit [http://localhost:3000](http://localhost:3000) in your browser.
+All stacks honor an optional `IAM_PERMISSIONS_BOUNDARY_ARN` on the provider role. Leave it unset for dev. Set it for prod accounts that enforce a boundary.
 
----
+### 🌐 NAT gateways (opt-in)
 
-## 🔐 Environment Variables Reference
-
-| Variable | Services | Description |
-|----------|----------|-------------|
-| `PORT` | All | Service port number |
-| `MONGO_URI` | Auth, Restaurant, Rider | MongoDB connection string |
-| `JWT_SECRET` | Auth, Restaurant, Rider, Admin, Realtime | JWT signing secret |
-| `COOKIE_SECRET` | Auth, Restaurant, Admin | Cookie session encryption key |
-| `INTERNAL_SERVICE_KEY` | Restaurant, Rider, Realtime, Utils | Shared key for inter-service auth |
-| `RABBITMQ_URL` | Restaurant, Rider, Utils | RabbitMQ connection URL |
-| `UTILS_SERVICE_URL` | Restaurant, Rider | URL of the Utils microservice (e.g. `http://localhost:3005`) |
-| `REALTIME_SERVICE_URL` | Restaurant | URL of the Realtime socket service (e.g. `http://localhost:3002`) |
-| `RESTAURANT_SERVICE` | Rider | URL of the Restaurant microservice (e.g. `http://localhost:3001`) |
-| `CLOUDINARY_*` | Utils, AI Verification | Cloudinary API credentials |
-| `RAZORPAY_*` | Utils | Razorpay payment gateway keys |
-| `STRIPE_SECRET_KEY` | Utils | Stripe payment secret |
-| `GEMINI_API_KEY` | AI Verification | Primary vision provider key |
-| `ANTHROPIC_API_KEY` | AI Verification, AI Orchestrator | Fallback vision + agent LLM key |
-| `AGENT_MAX_AUTO_REFUND` | AI Orchestrator | Autonomous refund cap (default 500) |
-| `AGENT_VOUCHER_CAP` | AI Orchestrator | Goodwill voucher cap (default 150) |
-| `VERIFICATION_TTL_DAYS` | AI Verification | Evidence retention (default 90) |
+Nothing runs inside the VPC yet, so `params.default.natGateways` is `0` (prod: `2`, one per AZ). Turn it on in `infra/serverless.yml` when a workload moves into the private subnets. S3 and DynamoDB gateway endpoints are already wired to every route table.
 
 ---
 
-## 🛠 Tech Stack
+<a id="tech-stack"></a>
+## 🧱 Tech Stack
 
-### Backend Services
-| Technology | Purpose |
-|------------|---------|
-| **Node.js / Express** | HTTP server framework for all services |
-| **TypeScript** 6.x–7.x | Type-safe JavaScript |
-| **MongoDB + Mongoose** | Primary database with ODM |
-| **MongoDB Native Driver** | Admin service direct DB access |
-| **JWT (jsonwebtoken)** | Stateless authentication tokens |
-| **bcrypt** | Password hashing |
-| **cookie-session** | Session cookie management |
-| **Socket.IO** | Real-time bidirectional communication |
-| **RabbitMQ (amqplib)** | Async message queue for events |
-| **Cloudinary** | Image upload and CDN |
-| **Razorpay / Stripe** | Payment gateway integration |
-| **Multer + DataUri** | File upload handling |
+### ☁️ Backend & infrastructure
 
-### Frontend
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Compute** | AWS Lambda (ARM64, Node.js 20) | Every service, individually packaged per stack |
+| **API** | API Gateway v2 **HTTP API** | Single shared platform API (one base URL, CORS, route attachment by id) |
+| | API Gateway v2 **WebSocket API** | Realtime: `$connect/$disconnect/$default` + Management API broadcasts |
+| | **REQUEST authorizer** (`foodo-jwt`) | Verifies the HS256 token from session cookie or Bearer header |
+| **Data** | DynamoDB (PAY_PER_REQUEST, PITR in prod) | 8 shared tables, pk/sk, per-service IAM-scoped access |
+| **Messaging** | SNS | Domain event bus with filtered fan-out |
+| | SQS + DLQs | Cross-service work queues (payment, order), replacing RabbitMQ |
+| **Scheduling** | EventBridge Scheduler | `rate(1 hour)` reconciliation, replacing `setInterval` |
+| **Storage** | S3 | Private uploads bucket (CORS, SSE, lifecycle, retained on teardown) |
+| **Identity** | Cognito | User pool + web client, provisioned for the future issuer migration |
+| **Auth libs** | `jsonwebtoken`, `cookie-session` | HS256 issue/verify and session cookies |
+| **Payments** | Razorpay, Stripe | Gateways + HMAC webhook verification |
+| **Media** | Cloudinary | Image CDN with signed direct uploads |
+| **AWS SDK v3** | `client-dynamodb`, `lib-dynamodb`, `client-sns`, `client-sqs`, `client-apigatewaymanagementapi`, `client-cloudformation` | Service integrations |
+
+### 🧰 Tooling
+
 | Technology | Purpose |
-|------------|---------|
-| **Next.js 16** | React meta-framework with App Router |
+|---|---|
+| **Serverless Framework v3** | IaC for infra, core and all backend stacks |
+| **SST (Ion)** | Frontend deploy (native OpenNext integration) |
+| **Turborepo** | Task pipeline (`build`, `dev`, `lint`, `deploy`, `remove`) with per-filter caching |
+| **pnpm** | Package manager, workspaces and version catalog (`catalog:`) |
+| **tsup** | Per-service bundler (individual packaging via `package.patterns`) |
+| **TypeScript 5.x** | Shared via `tsconfig.base.json` |
+
+### 🎨 Frontend
+
+| Technology | Purpose |
+|---|---|
+| **Next.js 16** (App Router) | React meta-framework, deployed via SST Ion / OpenNext |
 | **React 19** | UI library |
 | **Tailwind CSS v4** | Utility-first styling |
-| **Shadcn UI** | Accessible component primitives (Radix-based) |
-| **TanStack Query** | Server state management & caching |
+| **Shadcn UI** (Radix) | Accessible component primitives |
+| **TanStack Query** | Server state and caching |
 | **Zustand** | Client-side global UI state |
-| **React Hook Form + Zod** | Form validation |
-| **Framer Motion** | Animation library |
-| **Lucide React** | Icon library |
-| **HugeIcons** | Additional icon set |
+| **React Hook Form + Zod** | Forms and validation |
+| **Framer Motion** | Animation |
+| **Lucide React + HugeIcons** | Icons |
+| **Leaflet + react-leaflet** | Maps (nearby restaurants, rider location) |
+
+### 🕰️ Legacy local-dev stack (still usable, no longer canonical)
+
+| Technology | Replaced in deploy by |
+|---|---|
+| Node.js / Express (long-running) | Lambda |
+| MongoDB + Mongoose / native driver | DynamoDB |
+| RabbitMQ (`amqplib`) | SQS + SNS |
+| Socket.IO | API Gateway WebSocket API |
+| Vagrant / EC2 | Serverless stacks |
 
 ---
 
-## 📁 Project Structure
+<a id="contributing"></a>
+## 🤝 Contributing
 
-```
-auth/                     # Auth microservice
-├── src/
-│   ├── config/           # DB connection
-│   ├── controllers/      # Route handlers
-│   ├── middlewares/       # Auth middleware (JWT)
-│   ├── models/           # Mongoose User model
-│   └── routes/           # Auth routes
-├── package.json
-└── tsconfig.json
+1. Install the monorepo: `pnpm install` from the root.
+2. For quick iteration on service logic, run `pnpm dev` (legacy Express + MongoDB + RabbitMQ shape), or scope with `pnpm --filter <service> dev`.
+3. Create a feature branch from `main`.
+4. Follow the existing patterns:
+   - New routes or functions go in the per-service `serverless.yml`.
+   - IAM statements are scoped to just the tables, queues and topics the service needs.
+   - New domain events are published to the shared `events` topic, with per-service filtered subscriptions.
+5. Verify with `pnpm build`. Turborepo caches and rebuilds only what changed.
+6. Validate the canonical path: `pnpm deploy:infra && pnpm deploy:core && pnpm deploy:services && pnpm run seed && pnpm deploy:frontend` (or `pnpm deploy:all`).
+7. Open a pull request with a clear description of the change.
 
-restaurant/               # Restaurant microservice
-├── src/
-│   ├── config/           # DB, RabbitMQ, DataUri
-│   ├── controllers/      # Restaurant, Menu, Cart, Order, Address
-│   ├── middlewares/       # Auth, Seller guards
-│   ├── models/           # All Mongoose models
-│   └── routes/           # All route definitions
-├── package.json
-└── tsconfig.json
-
-rider/                    # Rider microservice
-├── src/
-│   ├── config/           # DB, RabbitMQ, DataUri
-│   ├── controller/       # Rider CRUD, Order lifecycle
-│   ├── middlewares/       # Auth, Rider guards
-│   ├── model/            # Rider Mongoose model
-│   └── routes/           # Rider routes
-├── package.json
-└── tsconfig.json
-
-admin/                    # Admin microservice
-├── src/
-│   ├── config/           # DB connection
-│   ├── controllers/      # Admin verification logic
-│   ├── middlewares/       # Auth middleware
-│   ├── routes/           # Admin API routes
-│   └── util/             # Collection helpers
-├── package.json
-└── tsconfig.json
-
-realtime/                 # Socket.IO realtime service
-├── src/
-│   ├── routes/           # Internal emit endpoint
-│   └── socket.ts         # Socket.IO initialization & events
-├── package.json
-└── tsconfig.json
-
-utils/                    # Shared utilities service
-├── src/
-│   ├── config/           # DB, Cloudinary
-│   ├── controllers/      # Upload & Payment logic
-│   ├── middlewares/       # Auth middleware
-│   └── routers/          # Utility routes
-├── package.json
-└── tsconfig.json
-
-frontend/                 # Next.js web application
-├── src/
-│   ├── app/              # App Router pages
-│   │   ├── (auth)/       # Login, Register
-│   │   ├── (customer)/   # Homepage
-│   │   ├── admin/        # Admin panel
-│   │   ├── rider/        # Rider dashboard
-│   │   └── seller/       # Seller dashboard
-│   ├── components/       # UI & shared components
-│   ├── features/         # Feature modules (auth, orders, restaurants)
-│   ├── hooks/            # Custom hooks
-│   ├── lib/              # API client, utilities
-│   ├── providers/        # TanStack Query, Toast
-│   ├── store/            # Zustand stores
-│   └── types/            # TypeScript definitions
-├── package.json
-└── next.config.ts
-```
-
----
+> **Deployment order reminder:** `infra` (everything reads its exports) → `core` (services attach routes to its API and authorizer) → `services` (own routes on the shared API) → `frontend` (reads `HttpApiUrl` and `WebSocketUrl`). Teardown in reverse.
 
 ## 📜 License
 
@@ -935,10 +969,6 @@ This project is proprietary software. All rights reserved.
 
 ---
 
-## 🤝 Contributing
-
-1. Ensure all services are running locally
-2. Create a feature branch from `master`
-3. Make changes following the existing architecture patterns
-4. Test against the relevant API endpoints
-5. Submit a pull request with a clear description of changes
+<div align="center">
+<sub>Built with ☁️ AWS Lambda, 🗄️ DynamoDB and ❤️ for good food.</sub>
+</div>

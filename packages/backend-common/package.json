@@ -1,0 +1,57 @@
+{
+  "name": "@foodo/backend-common",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Node-only backend utilities (auth middleware, guards, upload signing, DynamoDB repositories, SNS/SQS messaging). Never import from browser code.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cloudinary": {
+      "types": "./dist/cloudinary/index.d.ts",
+      "default": "./dist/cloudinary/index.js"
+    },
+    "./files": {
+      "types": "./dist/files/index.d.ts",
+      "default": "./dist/files/index.js"
+    },
+    "./aws": {
+      "types": "./dist/aws/index.d.ts",
+      "default": "./dist/aws/index.js"
+    },
+    "./dynamo": {
+      "types": "./dist/dynamo/index.d.ts",
+      "default": "./dist/dynamo/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "dev": "tsc --project tsconfig.build.json --watch --preserveWatchOutput",
+    "lint": "prettier --check \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@foodo/types": "workspace:*",
+    "datauri": "catalog:",
+    "@aws-sdk/client-dynamodb": "catalog:",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "@aws-sdk/client-sns": "catalog:",
+    "@aws-sdk/client-sqs": "catalog:"
+  },
+  "peerDependencies": {
+    "express": "^4.0.0 || ^5.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "multer": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/express": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/multer": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

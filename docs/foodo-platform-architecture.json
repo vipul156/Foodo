@@ -1,0 +1,518 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Foodo — AWS Serverless Platform Architecture",
+    "quality_profile": "showcase",
+    "output": "docs/foodo-platform-architecture.html",
+    "repository": {
+      "url": "https://github.com/vipul156/Foodo",
+      "provider": "github",
+      "revision": "4e76e2c4c030c703b5f88113e79568da5e8d61e9"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      130
+    ],
+    "cols": 7,
+    "cellW": 170,
+    "cellH": 64,
+    "gapX": 40,
+    "gapY": 90
+  },
+  "components": [
+    {
+      "id": "web",
+      "type": "frontend","label": "Next.js 16 Web App", "sublabel": "4 personas",
+      "row": 0,
+      "col": 0,
+      "size": [
+        150,
+        64
+      ],
+      "tag": "OpenNext",
+      "sources": [
+        {
+          "path": "apps/web/sst.config.ts",
+          "label": "SST deploy"
+        }
+      ]
+    },
+    {
+      "id": "cdn",
+      "type": "cloud","label": "CloudFront", "sublabel": "single origin",
+      "row": 0,
+      "col": 1,
+      "size": [
+        150,
+        64
+      ],
+      "tag": "foodo-web",
+      "sources": [
+        {
+          "path": "apps/web/sst.config.ts",
+          "label": "cdn transform"
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "cloud","label": "API Gateway HTTP API", "sublabel": "shared base URL",
+      "row": 0,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ],
+      "tag": "foodo-core-api",
+      "sources": [
+        {
+          "path": "core/serverless.yml",
+          "label": "HttpApi"
+        }
+      ]
+    },
+    {
+      "id": "authorizer",
+      "type": "security","label": "JWT Authorizer", "sublabel": "HS256 JWT",
+      "row": 0,
+      "col": 3,
+      "size": [
+        150,
+        64
+      ],
+      "tag": "foodo-core-api",
+      "sources": [
+        {
+          "path": "core/serverless.yml",
+          "label": "FoodoJwtAuthorizer"
+        }
+      ]
+    },
+    {
+      "id": "cloudinary",
+      "type": "external","label": "Cloudinary", "sublabel": "image uploads",
+      "row": 0,
+      "col": 5,
+      "size": [
+        150,
+        64
+      ],
+      "brand": "cloudinary",
+      "sources": [
+        {
+          "path": "README.md",
+          "label": "upload flow"
+        }
+      ]
+    },
+    {
+      "id": "auth-svc",
+      "type": "backend","label": "Auth Service", "sublabel": "/api/auth/*",
+      "row": 1,
+      "col": 1,
+      "size": [
+        150,
+        64
+      ],
+      "tag": "Lambda arm64",
+      "sources": [
+        {
+          "path": "backend/auth-service/serverless.yml",
+          "label": "stack"
+        }
+      ]
+    },
+    {
+      "id": "restaurant-svc",
+      "type": "backend","label": "Restaurant Service", "sublabel": "5 routers",
+      "row": 1,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ],
+      "tag": "Lambda arm64",
+      "sources": [
+        {
+          "path": "backend/restaurant-service/serverless.yml",
+          "label": "stack"
+        }
+      ]
+    },
+    {
+      "id": "rider-svc",
+      "type": "backend","label": "Rider Service", "sublabel": "/api/rider/*",
+      "row": 1,
+      "col": 3,
+      "size": [
+        160,
+        64
+      ],
+      "tag": "Lambda arm64",
+      "sources": [
+        {
+          "path": "backend/rider-service/serverless.yml",
+          "label": "stack"
+        }
+      ]
+    },
+    {
+      "id": "admin-svc",
+      "type": "backend","label": "Admin Service", "sublabel": "/api/admin/*",
+      "row": 1,
+      "col": 0,
+      "size": [
+        150,
+        64
+      ],
+      "tag": "Lambda arm64",
+      "sources": [
+        {
+          "path": "backend/admin-service/serverless.yml",
+          "label": "stack"
+        }
+      ]
+    },
+    {
+      "id": "utils-svc",
+      "type": "backend","label": "Utils Service", "sublabel": "/api/utils/*",
+      "row": 1,
+      "col": 4,
+      "size": [
+        150,
+        64
+      ],
+      "tag": "Lambda arm64",
+      "sources": [
+        {
+          "path": "backend/utils-service/serverless.yml",
+          "label": "stack"
+        }
+      ]
+    },
+    {
+      "id": "realtime-svc",
+      "type": "backend","label": "Realtime Service", "sublabel": "wsRouter",
+      "row": 1,
+      "col": 5,
+      "size": [
+        160,
+        64
+      ],
+      "tag": "Lambda arm64",
+      "sources": [
+        {
+          "path": "backend/realtime-service/serverless.yml",
+          "label": "stack"
+        }
+      ]
+    },
+    {
+      "id": "dynamo",
+      "type": "database","label": "DynamoDB", "sublabel": "8 tables",
+      "row": 2,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ],
+      "tag": "foodo-infra",
+      "sources": [
+        {
+          "path": "infra/serverless.yml",
+          "label": "tables"
+        }
+      ]
+    },
+    {
+      "id": "bus",
+      "type": "messagebus","label": "Event Bus", "sublabel": "SNS + SQS",
+      "row": 2,
+      "col": 3,
+      "size": [
+        170,
+        64
+      ],
+      "tag": "foodo-infra",
+      "sources": [
+        {
+          "path": "infra/serverless.yml",
+          "label": "events + queues"
+        }
+      ]
+    },
+    {
+      "id": "payments",
+      "type": "external","label": "Razorpay · Stripe", "sublabel": "intents",
+      "row": 2,
+      "col": 5,
+      "size": [
+        160,
+        68
+      ],
+      "brand": "stripe",
+      "sources": [
+        {
+          "path": "README.md",
+          "label": "payments"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "AWS ap-south-1 · Serverless Framework stacks",
+      "wraps": [
+        "cdn",
+        "gateway",
+        "authorizer",
+        "auth-svc",
+        "restaurant-svc",
+        "rider-svc",
+        "admin-svc",
+        "utils-svc",
+        "realtime-svc",
+        "dynamo",
+        "bus"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "foodo-web · edge",
+      "wraps": [
+        "web",
+        "cdn"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "foodo-core-api · shared compute",
+      "wraps": [
+        "gateway",
+        "authorizer"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "per-service stacks (one per domain)",
+      "wraps": [
+        "auth-svc",
+        "restaurant-svc",
+        "rider-svc",
+        "admin-svc",
+        "utils-svc",
+        "realtime-svc"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "foodo-infra · shared data + event tier",
+      "wraps": [
+        "dynamo",
+        "bus"
+      ],
+      "pad": 26
+    }
+  ],
+  "connections": [
+    {
+      "id": "web-cdn",
+      "from": "web",
+      "to": "cdn",
+      "label": "HTTPS",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "cdn-gateway",
+      "from": "cdn",
+      "to": "gateway",
+      "label": "/api/*",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "gateway-authorizer",
+      "from": "gateway",
+      "to": "authorizer",
+      "label": "JWT check",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "gateway-auth",
+      "from": "gateway",
+      "to": "auth-svc",
+      "label": "/api/auth/*",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "gateway-restaurant",
+      "from": "gateway",
+      "to": "restaurant-svc",
+      "label": "/api/restaurant/*",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        640,
+        222
+      ]
+    },
+    {
+      "id": "gateway-rider",
+      "from": "gateway",
+      "to": "rider-svc",
+      "label": "/api/rider/*",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "gateway-admin",
+      "from": "gateway",
+      "to": "admin-svc",
+      "label": "/api/admin/*",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "gateway-utils",
+      "from": "gateway",
+      "to": "utils-svc",
+      "label": "/api/utils/* · webhooks",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "web-realtime",
+      "from": "web",
+      "to": "realtime-svc",
+      "label": "WSS · order:track · rider:location","fromSide": "top", "toSide": "right", "via": [[115, 58], [1316, 58], [1316, 316]] },
+    {
+      "id": "web-cloudinary",
+      "from": "web",
+      "to": "cloudinary",
+      "label": "signed direct image PUT",
+      "fromSide": "top",
+      "toSide": "top","via": [[115, 96], [1165, 96]] },
+    {
+      "id": "auth-dynamo",
+      "from": "auth-svc",
+      "to": "dynamo",
+      "label": "users",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        420,
+        366
+      ]
+    },
+    {
+      "id": "restaurant-dynamo",
+      "from": "restaurant-svc",
+      "to": "dynamo",
+      "label": "orders · carts · menu",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "admin-dynamo",
+      "from": "admin-svc",
+      "to": "dynamo",
+      "label": "verify restaurants · riders",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "restaurant-bus",
+      "from": "restaurant-svc",
+      "to": "bus",
+      "label": "publish order events",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "rider-bus",
+      "from": "rider-svc",
+      "to": "bus",
+      "label": "publish rider events",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        880,
+        420
+      ]
+    },
+    {
+      "id": "utils-bus",
+      "from": "utils-svc",
+      "to": "bus",
+      "label": "payment.intent.created",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "id": "utils-payments",
+      "from": "utils-svc",
+      "to": "payments",
+      "label": "intents + signed webhooks",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Same-origin request path",
+      "items": [
+        "CloudFront single origin: browser /api/* proxies straight to the shared HTTP API — no CORS, first-party cookies",
+        "One foodo-jwt REQUEST authorizer verifies the HS256 session cookie or Bearer token; denials return 403 at the gateway",
+        "Role checks (isSeller / isRider / isAdmin) stay inside each service"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Event-driven core",
+      "items": [
+        "Services publish domain events to one SNS topic; each service owns its inbound queue, DLQ and filter policy",
+        "SQS work queues (payment, order) carry cross-service jobs; redrive to DLQ after 3 failed receives",
+        "Restaurant and rider services each own an inbound queue: rider.* and payment.intent.created return to the restaurant service, order.cancelled · delivered · rejected to the rider service",
+        "Realtime's eventConsumer subscribes to the topic and broadcasts every event to rooms via the WebSocket Management API"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "State + provisioned for later",
+      "items": [
+        "Eight shared DynamoDB tables (pk/sk + GSIs): users, restaurants, menu, carts, orders, addresses, payments and the riders table",
+        "TTL sweeps unpaid orders, refresh tokens and webhook dedupe rows",
+        "Realtime owns its own ephemeral connections table (TTL'd)",
+        "Cognito pool and S3 uploads bucket are provisioned for the issuer/upload migration — idle today"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 node_modules/
-**/node_modules/
 dist/
-**/dist/
+.next/
+.turbo/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
 .env
 .vagrant
 /env
@@ -65,3 +67,15 @@ id_rsa*
 # ------------------------------------------------------------------------------
 .agents/
 RESUME_ANALYSIS.md
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+
+.serverless/

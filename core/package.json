@@ -1,0 +1,23 @@
+{
+  "name": "@foodo/core-api",
+  "version": "1.0.0",
+  "description": "Foodo core compute stack — shared HTTP API + central JWT authorizer.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  },
+  "dependencies": {
+    "jsonwebtoken": "catalog:"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}
