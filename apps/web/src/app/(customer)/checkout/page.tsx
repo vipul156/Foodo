@@ -126,6 +126,15 @@ export default function CheckoutPage() {
   const platformFee = 7;
   const totalAmount = subtotal + deliveryFee + platformFee;
 
+  // Auto-select first address if none selected
+  useEffect(() => {
+    if (addresses && addresses.length > 0 && !selectedAddressId) {
+      if (addresses[0].id) {
+        setSelectedAddressId(addresses[0].id);
+      }
+    }
+  }, [addresses, selectedAddressId]);
+
   // Redirect to orders after successful order creation (for COD)
   const handleOrderCreated = useCallback(() => {
     router.push("/orders");
@@ -401,6 +410,7 @@ export default function CheckoutPage() {
               {addresses.map((addr) => (
                 <label
                   key={addr.id}
+                  onClick={() => setSelectedAddressId(addr.id)}
                   className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
                     selectedAddressId === addr.id
                       ? "border-primary bg-primary/5"

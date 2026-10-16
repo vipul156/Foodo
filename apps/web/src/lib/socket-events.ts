@@ -46,7 +46,7 @@ export interface OrderUpdatePayload {
 
 export interface RiderAssignedPayload {
   order: {
-    _id: string;
+    id: string;
     restaurantId: string;
     status: string;
     riderId?: string;
@@ -56,7 +56,7 @@ export interface RiderAssignedPayload {
 }
 
 export interface OrderDeliveredPayload {
-  _id: string;
+  id: string;
   userId: string;
   status: string;
 }

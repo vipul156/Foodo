@@ -199,7 +199,6 @@ export interface DynamoMenuItem {
   pk: string; // MENU#<itemId>
   sk: string; // ITEM
   id: string;
-  _id: string; // Mongo-compatible alias for frontend consumers
   restaurantId: string;
   name: string;
   description: string;
@@ -220,7 +219,6 @@ const toMenuItem = (item: Record<string, unknown> | undefined): DynamoMenuItem |
   return {
     ...item,
     id,
-    _id: id,
     isAvailable: Boolean(item.isAvailable),
   } as DynamoMenuItem;
 };
@@ -240,7 +238,6 @@ export async function createMenuItem(input: {
     pk: menuPk(id),
     sk: MENU_ITEM_SK,
     id,
-    _id: id,
     restaurantId: input.restaurantId,
     name: input.name,
     description: input.description,
