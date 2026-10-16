@@ -5,6 +5,7 @@
 The platform migrated from a local Node.js/Express + MongoDB + RabbitMQ + Vagrant/EC2 development model to a fully serverless AWS architecture: API Gateway HTTP APIs, Lambda functions (ARM64, Node.js 20), DynamoDB (single-table-per-entity), SNS event fan-out, SQS work queues with DLQs, WebSocket APIs for real-time events, Cognito user pools (provisioned for a future identity migration), and a CloudFront reverse proxy for the Next.js frontend — all wired together through Serverless Framework v3 stacks, deployed in three ordered tiers via Turborepo.
 
 ---
+<img width="5240" height="2360" alt="foodo-aws-serverless-platform" src="https://github.com/user-attachments/assets/537e1585-fc37-4815-a19f-aaf53a4e2fac" />
 
 <img width="4932" height="2880" alt="foodo-target-architecture-prd-p0-p2-roadmap" src="https://github.com/user-attachments/assets/dd65d3b5-f029-4a6b-910a-8b0d8cb9fe78" />
 
