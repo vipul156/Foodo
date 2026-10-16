@@ -103,10 +103,29 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   const platformFee = 7;
   const totalAmount = subtotal + deliveryFee + platformFee;
 
+  const restaurantCoords = restaurant.autoLocation?.coordinates;
+  const addressCoords = address.location?.coordinates;
+
+  if (
+    !restaurantCoords ||
+    !Array.isArray(restaurantCoords) ||
+    restaurantCoords.length < 2 ||
+    !addressCoords ||
+    !Array.isArray(addressCoords) ||
+    addressCoords.length < 2
+  ) {
+    throw new Error("Invalid restaurant or delivery address coordinates");
+  }
+
   const orderDistance = deliveryDistanceKm(
-    restaurant.autoLocation.coordinates,
-    address.location.coordinates,
+    restaurantCoords as [number, number],
+    addressCoords as [number, number],
   );
+
+  if (!Number.isFinite(orderDistance) || Number.isNaN(orderDistance)) {
+    throw new Error("Failed to calculate delivery distance");
+  }
+
   const riderAmount = Math.ceil(orderDistance) * 17;
 
   const isCod = paymentMethod === "cod";
@@ -114,7 +133,11 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
     ? null
     : new Date(Date.now() + 15 * 60 * 1000);
 
-  const [longitude, latitude] = address.location.coordinates;
+  const [longitude, latitude] = addressCoords;
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error("Invalid delivery latitude/longitude coordinates");
+  }
 
   // Transactional create: order + (COD) cart clear commit together via
   // TransactWriteItems — notifications stay outside the transaction.
@@ -145,7 +168,12 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
       paymentStatus: isCod ? "paid" : "pending",
       expiresAt,
     },
-    isCod ? { userId: String(req.user.id) } : undefined,
+    isCod
+      ? {
+          userId: String(req.user.id),
+          itemIds: cartRows.map((r) => r.itemId),
+        }
+      : undefined,
   );
 
   if (isCod) {

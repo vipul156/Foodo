@@ -39,10 +39,10 @@ export interface DynamoOrder {
   restaurantId: string;
   restaurantName: string;
   restaurantLocation?: { latitude: number; longitude: number };
-  riderId: string | null;
-  riderPhone: number | string | null;
-  riderName: string | null;
-  riderPicture: string | null;
+  riderId?: string | null;
+  riderPhone?: number | string | null;
+  riderName?: string | null;
+  riderPicture?: string | null;
   distance: number;
   riderAmount: number;
 
@@ -270,7 +270,7 @@ export interface CreateOrderInput {
  */
 export async function createOrder(
   input: CreateOrderInput,
-  cartClear?: { userId: string },
+  cartClear?: { userId: string; itemIds?: string[] },
 ): Promise<DynamoOrder> {
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -283,10 +283,6 @@ export async function createOrder(
     restaurantId: input.restaurantId,
     restaurantName: input.restaurantName,
     restaurantLocation: input.restaurantLocation,
-    riderId: null,
-    riderPhone: null,
-    riderName: null,
-    riderPicture: null,
     distance: input.distance,
     riderAmount: input.riderAmount,
     items: input.items,
@@ -315,7 +311,12 @@ export async function createOrder(
   // reach into the nested paymentIntent map, so the attribute is mirrored
   // at the top level; stampPaymentIntent keeps it in sync.
   if (input.paymentMethod !== "cod") {
-    (item as any).paymentIntentInitiatedAt = new Date().toISOString();
+    const initDate = new Date().toISOString();
+    (item as any).paymentIntentInitiatedAt = initDate;
+    item.paymentIntent = {
+      provider: input.paymentMethod as any,
+      initiatedAt: initDate,
+    };
   }
 
   const transactItems: any[] = [
@@ -327,17 +328,33 @@ export async function createOrder(
     },
   ];
 
-  if (cartClear) {
-    transactItems.push({
-      Delete: {
-        TableName: TABLE.carts(),
-        // Cart partition — all cart rows of one user share the PK.
-        Key: { pk: `CART#${cartClear.userId}` },
-      } as any,
-    });
+  if (cartClear?.itemIds && cartClear.itemIds.length > 0) {
+    for (const itemId of cartClear.itemIds) {
+      transactItems.push({
+        Delete: {
+          TableName: TABLE.carts(),
+          Key: { pk: `CART#${cartClear.userId}`, sk: `ITEM#${itemId}` },
+        },
+      });
+    }
   }
 
-  await docClient().send(new TransactWriteCommand({ TransactItems: transactItems }));
+  try {
+    await docClient().send(new TransactWriteCommand({ TransactItems: transactItems }));
+  } catch (err: any) {
+    const reasons = err?.CancellationReasons || err?.cancellationReasons;
+    if (reasons) {
+      console.error(
+        "[createOrder] DynamoDB TransactionCanceledException CancellationReasons:",
+        JSON.stringify(reasons, null, 2)
+      );
+      const specificMessages = reasons
+        .map((r: any, idx: number) => `[Item ${idx}: ${r.Code || "None"}${r.Message ? ` - ${r.Message}` : ""}]`)
+        .join(", ");
+      throw new Error(`DynamoDB Transaction Failed: ${specificMessages}`);
+    }
+    throw err;
+  }
   return item;
 }
 
@@ -362,7 +379,7 @@ export async function assignRider(
       UpdateExpression:
         "SET riderId = :r, riderName = :rn, riderPhone = :rp, riderPicture = :pic, #s = :assigned, updatedAt = :now",
       ConditionExpression:
-        "attribute_exists(pk) AND riderId = :none AND #s = :ready AND paymentStatus = :paid",
+        "attribute_exists(pk) AND (attribute_not_exists(riderId) OR riderId = :none) AND #s = :ready AND paymentStatus = :paid",
       ExpressionAttributeNames: { "#s": "status" },
       ExpressionAttributeValues: {
         ":r": rider.riderId,
@@ -506,24 +523,50 @@ export async function claimOrderForPayment(
   orderId: string,
   provider: "razorpay" | "stripe",
 ): Promise<{ order: DynamoOrder; attachedProviderOrderId: string | null } | null> {
-  const out = await docClient().send(
+  let out = await docClient().send(
     new UpdateCommand({
       TableName: TABLE.orders(),
       Key: { pk: orderPk(orderId), sk: ORDER_SK },
       UpdateExpression:
-        "SET paymentIntent.provider = :p, paymentIntent.initiatedAt = :now, updatedAt = :now",
+        "SET paymentIntent = if_not_exists(paymentIntent, :initIntent), updatedAt = :now",
       ConditionExpression:
         "attribute_exists(pk) AND paymentStatus <> :paid AND #s <> :cancelled",
       ExpressionAttributeNames: { "#s": "status" },
       ExpressionAttributeValues: {
-        ":p": provider,
+        ":initIntent": {
+          provider,
+          initiatedAt: new Date().toISOString(),
+        },
         ":now": new Date().toISOString(),
         ":paid": "paid",
         ":cancelled": "cancelled",
       },
       ReturnValues: "ALL_NEW",
     }),
-  ).catch(() => null);
+  ).catch(async (err) => {
+    // If paymentIntent already exists and provider needs to update
+    return await docClient().send(
+      new UpdateCommand({
+        TableName: TABLE.orders(),
+        Key: { pk: orderPk(orderId), sk: ORDER_SK },
+        UpdateExpression:
+          "SET paymentIntent.provider = :p, paymentIntent.initiatedAt = :now, updatedAt = :now",
+        ConditionExpression:
+          "attribute_exists(pk) AND paymentStatus <> :paid AND #s <> :cancelled",
+        ExpressionAttributeNames: { "#s": "status" },
+        ExpressionAttributeValues: {
+          ":p": provider,
+          ":now": new Date().toISOString(),
+          ":paid": "paid",
+          ":cancelled": "cancelled",
+        },
+        ReturnValues: "ALL_NEW",
+      }),
+    ).catch((e) => {
+      console.error("[claimOrderForPayment] Update failed:", e);
+      return null;
+    });
+  });
 
   if (!out?.Attributes) return null;
   const order = out.Attributes as DynamoOrder;
