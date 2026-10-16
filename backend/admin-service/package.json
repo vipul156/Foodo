@@ -1,0 +1,38 @@
+{
+  "name": "@foodo/admin-service",
+  "version": "1.0.0",
+  "description": "Foodo admin API service (serverless Lambda — API Gateway HTTP API + DynamoDB).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  },
+  "dependencies": {
+    "@foodo/backend-common": "workspace:*",
+    "@foodo/types": "workspace:*",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "axios": "catalog:",
+    "cookie-session": "catalog:",
+    "dotenv": "catalog:",
+    "express": "catalog:",
+    "jsonwebtoken": "catalog:",
+    "serverless-http": "catalog:"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/cookie-session": "catalog:",
+    "@types/cors": "catalog:",
+    "@types/dotenv": "catalog:",
+    "@types/express": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,10 +1,43 @@
 {
-  "name": "foodo-root",
+  "name": "foodo",
   "version": "1.0.0",
-  "scripts": {
-    "dev": "concurrently --names \"auth,admin,rest,rider,real,utils\" --prefix-colors \"blue,green,magenta,yellow,cyan,red\" \"npm --prefix auth run dev\" \"npm --prefix admin run dev\" \"npm --prefix restaurant run dev\" \"npm --prefix rider run dev\" \"npm --prefix realtime run dev\" \"npm --prefix utils run dev\""
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
   },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,md,yml,yaml}\"",
+
+    "deploy:infra": "turbo run deploy --filter=@foodo/infra",
+    "deploy:core": "turbo run deploy --filter=@foodo/core-api",
+    "deploy:services": "turbo run deploy --filter=\"@foodo/*-service\"",
+    "deploy:frontend": "node scripts/deploy-frontend-docker.js",
+    "deploy:frontend:local": "turbo run deploy --filter=web",
+    "seed": "tsx scripts/seed-demo-data.ts",
+    "deploy:all": "pnpm run deploy:infra && pnpm run deploy:core && pnpm run deploy:services && pnpm run seed && pnpm run deploy:frontend",
+
+    "remove:frontend": "turbo run remove --filter=web",
+    "remove:services": "turbo run remove --filter=\"@foodo/*-service\"",
+    "remove:core": "turbo run remove --filter=@foodo/core-api",
+    "remove:infra": "turbo run remove --filter=@foodo/infra",
+    "remove:all": "pnpm run remove:frontend && pnpm run remove:services && pnpm run remove:core && pnpm run remove:infra",
+
+    "logs:payment": "cd backend/restaurant-service && serverless logs --function paymentConsumer --tail",
+    "logs:reconcile": "cd backend/utils-service && serverless logs --function reconcile --tail",
+    "logs:realtime": "cd backend/realtime-service && serverless logs --function eventConsumer --tail"
+  },
+
   "devDependencies": {
-    "concurrently": "^8.0.0"
+    "prettier": "^3.6.2",
+    "serverless": "catalog:",
+    "serverless-esbuild": "catalog:",
+    "serverless-prune-plugin": "catalog:",
+    "esbuild": "catalog:",
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.3"
   }
 }

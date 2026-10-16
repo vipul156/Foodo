@@ -1,0 +1,253 @@
+# ─── Foodo restaurant service stack ──────────────────────────
+# Routes: public menu/restaurant browsing is carved out explicitly;
+# everything else on the five mounted routers requires a valid JWT
+# at the gateway (the in-app isSeller/isAuth guards remain the
+# authority for roles). The internal payment claim endpoint
+# authenticates via x-internal-key, not a user session, so it is
+# also public at the gateway.
+#
+# Events: this stack owns its inbound fan-out queue + SNS filter
+# subscription. paymentConsumer consumes the SHARED payment work
+# queue (foodo-infra) directly.
+#
+#   turbo run deploy --filter=@foodo/restaurant-service
+
+service: foodo-restaurant
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 512
+  timeout: 15
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, 'dev-only-change-me'}
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
+    USERS_TABLE: ${cf:${self:custom.infra}.UsersTable}
+    RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}
+    ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+    MENU_ITEMS_TABLE: ${cf:${self:custom.infra}.MenuItemsTable}
+    CARTS_TABLE: ${cf:${self:custom.infra}.CartsTable}
+    ADDRESSES_TABLE: ${cf:${self:custom.infra}.AddressesTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+    PAYMENT_QUEUE_URL: ${cf:${self:custom.infra}.PaymentQueueUrl}
+    ORDER_QUEUE_URL: ${cf:${self:custom.infra}.OrderQueueUrl}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RestaurantsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.RestaurantsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.MenuItemsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.MenuItemsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.CartsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.AddressesTable}
+        - Effect: Allow
+          Action:
+            - sns:Publish
+            - sqs:SendMessage
+          Resource:
+            - ${cf:${self:custom.infra}.EventsTopicArn}
+            - ${cf:${self:custom.infra}.OrderQueueArn}
+
+resources:
+  Resources:
+    # ── Inbound fan-out: this service OWNS its queue, DLQ, and the
+    #    SNS filter subscription (previously mis-wired across two
+    #    stacks). RawMessageDelivery + queue policy allow SNS delivery.
+    RiderEventsQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-rider-events-dlq
+        MessageRetentionPeriod: 1209600
+
+    RiderEventsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-rider-events
+        VisibilityTimeout: 180
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt RiderEventsQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    RiderEventsQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref RiderEventsQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt RiderEventsQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
+
+    RiderEventsSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt RiderEventsQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          event:
+            - rider.order_accepted
+            - rider.order_status_changed
+            - payment.intent.created
+
+functions:
+  http:
+    handler: dist/http.handler
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      # ── Public: anonymous browsing + internal payment claim ──
+      - httpApi:
+          path: /api/restaurant/all
+          method: get
+      - httpApi:
+          path: /api/restaurant/nearby
+          method: get
+      - httpApi:
+          path: /api/restaurant/{id}
+          method: get
+      - httpApi:
+          path: /api/menu-item/all/{id}
+          method: get
+      - httpApi:
+          path: /api/order/payment/claim/{orderId}
+          method: post
+      - httpApi:
+          path: /health/restaurant
+          method: get
+      # ── Protected: everything else on the five routers ──────
+      # /restaurant/my and /restaurant/upload-signature are declared
+      # explicitly: without them they'd match the PUBLIC /{id} GET
+      # route above and skip the authorizer. (Literal beats {proxy+}
+      # and {var} in API Gateway route selection.)
+      - httpApi:
+          path: /api/restaurant/my
+          method: get
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/restaurant/upload-signature
+          method: get
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/restaurant/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/menu-item/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/cart/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/order/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/address/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+
+  paymentConsumer:
+    handler: dist/paymentConsumer.handler
+    timeout: 30
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      # Consumes the shared payment work queue directly — no
+      # intermediate trigger queue.
+      - sqs:
+          arn: ${cf:${self:custom.infra}.PaymentQueueArn}
+          batchSize: 5
+          reportBatchItemFailures: true
+
+  riderEventsConsumer:
+    handler: dist/riderEventsConsumer.handler
+    timeout: 30
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      - sqs:
+          arn: !GetAtt RiderEventsQueue.Arn
+          batchSize: 5
+          reportBatchItemFailures: true

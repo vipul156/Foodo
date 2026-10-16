@@ -1,0 +1,11 @@
+{
+  "name": "@foodo/infra",
+  "version": "1.0.0",
+  "description": "Foodo foundation stack — VPC, S3, Cognito, DynamoDB, SNS event bus, SQS work queues.",
+  "private": true,
+  "scripts": {
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  }
+}

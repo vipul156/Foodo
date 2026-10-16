@@ -1,0 +1,406 @@
+// ============================================================
+// Foodo — Restaurants Feature: TanStack Query API Hooks
+// ============================================================
+
+import axios from "axios";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { restaurantApi } from "@/lib/api-client";
+import { uploadToCloudinary, type CloudinaryUploadParams } from "@/lib/cloudinary-upload";
+import type {
+  IRestaurant,
+  IMenuItem,
+  ICartItem,
+  ICartResponse,
+  IAddress,
+  ICreateAddressPayload,
+  IPaginatedResponse,
+} from "@/types";
+
+// ─── Get All Restaurants (public) ────────────────────────────
+
+export function useGetAllRestaurants() {
+  return useQuery({
+    queryKey: ["restaurants", "all"],
+    queryFn: async () => {
+      const res = await restaurantApi.get<IPaginatedResponse<IRestaurant>>(
+        "/restaurant/all",
+      );
+      return res.data;
+    },
+    staleTime: 1000 * 60 * 2, // 2 min cache
+  });
+}
+
+// ─── Get Restaurant By ID (public) ───────────────────────────
+
+export function useGetRestaurantById(id: string) {
+  return useQuery({
+    queryKey: ["restaurant", id],
+    queryFn: async () => {
+      const res = await restaurantApi.get<{
+        success: boolean;
+        data: IRestaurant;
+      }>(`/restaurant/${id}`);
+      return res.data;
+    },
+    enabled: !!id,
+  });
+}
+
+// ─── Get Nearby Restaurants (public, location-based) ─────────
+
+export function useGetNearbyRestaurants(
+  longitude?: number,
+  latitude?: number,
+) {
+  return useQuery({
+    queryKey: ["restaurants", "nearby", longitude, latitude],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (longitude !== undefined) params.longitude = String(longitude);
+      if (latitude !== undefined) params.latitude = String(latitude);
+      const res = await restaurantApi.get<IPaginatedResponse<IRestaurant>>(
+        "/restaurant/nearby",
+        { params },
+      );
+      return res.data;
+    },
+    enabled: true,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+// ─── Get My Restaurant ───────────────────────────────────────
+
+export function useGetMyRestaurant() {
+  return useQuery({
+    queryKey: ["restaurant", "my"],
+    queryFn: async () => {
+      const res = await restaurantApi.get<{
+        message: string;
+        restaurant: IRestaurant;
+        token?: string;
+      }>("/restaurant/my");
+      return res.restaurant;
+    },
+    retry: false,
+  });
+}
+
+// ─── Create Restaurant ───────────────────────────────────────
+// imageFile: picked File → uploaded straight to Cloudinary via signed
+// params (no backend byte-proxying); the resulting URL is stored.
+
+export function useCreateRestaurant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      data: Partial<IRestaurant> & {
+        imageFile?: File | string | null;
+        /** Legacy server-side upload: base64 data URI */
+        file?: string;
+      },
+    ) => {
+      const { imageFile, ...payload } = data;
+
+      if (imageFile instanceof File) {
+        const sig = await restaurantApi.get<CloudinaryUploadParams>(
+          "/restaurant/upload-signature",
+        );
+        payload.image = await uploadToCloudinary(imageFile, sig);
+      } else if (typeof imageFile === "string" && imageFile) {
+        // Legacy path: base64 data URI (server uploads it)
+        payload.file = imageFile;
+      }
+
+      const res = await restaurantApi.post<{
+        message: string;
+        restaurant: IRestaurant;
+      }>("/restaurant/new", payload);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["restaurant"] });
+    },
+  });
+}
+
+// ─── Update Restaurant Status ────────────────────────────────
+
+export function useUpdateRestaurantStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (status: boolean) => {
+      const res = await restaurantApi.put<{
+        message: string;
+        restaurant: IRestaurant;
+      }>("/restaurant/status", { status });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["restaurant"] });
+    },
+  });
+}
+
+// ─── Update Restaurant Details ───────────────────────────────
+
+export function useUpdateRestaurantDetails() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: {
+      name?: string;
+      description?: string;
+      phone?: number;
+      imageFile?: File | string | null;
+      /** Direct-upload result (Cloudinary secure_url) */
+      image?: string;
+      /** Legacy server-side upload: base64 data URI */
+      file?: string;
+    }) => {
+      const { imageFile, ...payload } = data;
+
+      if (imageFile instanceof File) {
+        const sig = await restaurantApi.get<CloudinaryUploadParams>(
+          "/restaurant/upload-signature",
+        );
+        payload.image = await uploadToCloudinary(imageFile, sig);
+      } else if (typeof imageFile === "string" && imageFile) {
+        // Legacy path: base64 data URI (server uploads it)
+        payload.file = imageFile;
+      }
+
+      const res = await restaurantApi.put<{
+        message: string;
+        restaurant: IRestaurant;
+      }>("/restaurant/update", payload);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["restaurant"] });
+    },
+  });
+}
+
+// ─── Get Menu Items ──────────────────────────────────────────
+
+export function useGetMenuItems(restaurantId: string) {
+  return useQuery({
+    queryKey: ["menu-items", restaurantId],
+    queryFn: async () => {
+      const res = await restaurantApi.get<{
+        message: string;
+        menuItems: IMenuItem[];
+      }>(`/menu-item/all/${restaurantId}`);
+      return res.menuItems;
+    },
+    enabled: !!restaurantId,
+  });
+}
+
+// ─── Create Menu Item ────────────────────────────────────────
+// data.imageFile: picked File → uploaded straight to Cloudinary via
+// signed params; the JSON create call then carries the URL.
+
+export function useCreateMenuItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: {
+      name: string;
+      description?: string;
+      price: string;
+      imageFile: File;
+    }) => {
+      const sig = await restaurantApi.get<CloudinaryUploadParams>(
+        "/menu-item/upload-signature",
+      );
+      const imageUrl = await uploadToCloudinary(data.imageFile, sig);
+
+      const res = await restaurantApi.post<{
+        message: string;
+        menuItem: IMenuItem;
+      }>("/menu-item/new", {
+        name: data.name,
+        description: data.description,
+        price: data.price,
+        imageUrl,
+      });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["menu-items"] });
+    },
+  });
+}
+
+// ─── Toggle Menu Item Availability ───────────────────────────
+
+export function useToggleMenuItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.put<{
+        message: string;
+        menuItem: IMenuItem;
+      }>(`/menu-item/toggle/${itemId}`);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["menu-items"] });
+    },
+  });
+}
+
+// ─── Delete Menu Item ────────────────────────────────────────
+
+export function useDeleteMenuItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.delete<{ message: string }>(
+        `/menu-item/delete/${itemId}`,
+      );
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["menu-items"] });
+    },
+  });
+}
+
+// ─── Cart ────────────────────────────────────────────────────
+
+export function useGetCart() {
+  return useQuery({
+    queryKey: ["cart"],
+    queryFn: async () => {
+      const res = await restaurantApi.get<ICartResponse>("/cart/all");
+      return res;
+    },
+  });
+}
+
+export function useAddToCart() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { restaurantId: string; itemId: string }) => {
+      const res = await restaurantApi.post<{
+        success: boolean;
+        message: string;
+        cart: ICartItem;
+      }>("/cart/add", data);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useIncrementQuantity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.put<{
+        success: boolean;
+        message: string;
+        cartItem: ICartItem;
+      }>("/cart/increase", { itemId });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useDecrementQuantity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.put<{
+        success: boolean;
+        message: string;
+      }>("/cart/decrease", { itemId });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useRemoveItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.delete<{
+        success: boolean;
+        message: string;
+      }>("/cart/remove", { data: { itemId } });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+export function useClearCart() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await restaurantApi.delete<{ success: boolean; message: string }>(
+        "/cart/clear",
+      );
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+  });
+}
+
+// ─── Addresses ───────────────────────────────────────────────
+
+export function useGetAddresses() {
+  return useQuery({
+    queryKey: ["addresses"],
+    queryFn: async () => {
+      const res = await restaurantApi.get<{
+        success: boolean;
+        data: IAddress[];
+      }>("/address/all");
+      return res.data;
+    },
+  });
+}
+
+export function useCreateAddress() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: ICreateAddressPayload) => {
+      const res = await restaurantApi.post<{
+        success: boolean;
+        message: string;
+        data: IAddress;
+      }>("/address/new", data);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["addresses"] });
+    },
+  });
+}

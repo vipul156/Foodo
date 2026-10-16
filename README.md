@@ -79,11 +79,11 @@
 
 | Tool | Version |
 |------|---------|
-| Node.js | >= 18 |
-| npm | >= 9 |
+| Node.js | >= 20 |
+| pnpm | >= 10 (package manager + workspaces) |
 | MongoDB | >= 6 |
 | RabbitMQ | >= 3.12 |
-| TypeScript | 6.x - 7.x (service-dependent) |
+| TypeScript | 5.x (shared via workspace catalog) |
 
 ---
 
@@ -258,7 +258,7 @@
 
 ### 6. Utils Service
 
-**Purpose**: Shared utilities — file uploads (Cloudinary) and payment processing (Razorpay, Stripe).
+**Purpose**: Payment processing (Razorpay, Stripe). File uploads have moved to **signed direct uploads** — each owning service (restaurant/rider) generates Cloudinary signatures locally via `@foodo/backend-common`, and clients upload bytes straight to Cloudinary. The legacy `POST /api/utils/upload` proxy answers `410 Gone` and will be removed.
 
 | Property | Value |
 |----------|-------|
@@ -266,10 +266,9 @@
 | TypeScript | `6.x` |
 | Message Queue | RabbitMQ |
 
-**Dependencies**: `express`, `cloudinary`, `razorpay`, `stripe`, `jsonwebtoken`, `amqplib`
+**Dependencies**: `express`, `razorpay`, `stripe`, `jsonwebtoken`, `amqplib`
 
 **Capabilities**:
-- **Image Uploads**: Proxy uploads to Cloudinary (used by Restaurant & Rider services)
 - **Payment Processing**: Razorpay and Stripe integration
 - **RabbitMQ**: Event-driven payment confirmation → order fulfillment
 
@@ -319,13 +318,23 @@
 │ (Socket.IO)  │       │              │
 └──────────────┘       └──────────────┘
        │                       │
-       │  Socket.IO            │  HTTP (Upload)
+       │  Socket.IO            │  Signed direct upload
        ▼                       ▼
 ┌──────────────┐       ┌──────────────┐
-│   Frontend   │──────▶│ Utils Service│
-│  (Next.js)   │ HTTP  │  (Cloudinary)│
-└──────────────┘       └──────────────┘
+│   Frontend   │──────▶│  Cloudinary  │
+│  (Next.js)   │ HTTPS │  (image bytes│
+└──────────────┘       │  never touch │
+                       │  any Foodo   │
+                       │  service)    │
+                       └──────────────┘
 ```
+
+**Image uploads (signed direct upload, no utils-service hop)**:
+1. Client fetches signed params from the owning service (`GET /api/menu-item/upload-signature`, `GET /api/restaurant/upload-signature`, or `GET /api/rider/upload-signature`)
+2. Client POSTs the `File` straight to `https://api.cloudinary.com/v1_1/<cloud_name>/image/upload` with those params
+3. Client passes the resulting `secure_url` to the create/update endpoint
+
+Signatures are HMAC-SHA1 over sorted params (`packages/backend-common/src/cloudinary.ts`) — purely local, <1ms, and the API secret never leaves the signing service. Multipart `file` uploads to the create/update endpoints still work as a legacy fallback (server-side upload via the same signer).
 
 **Internal Communication**:
 - Services authenticate inter-service calls via `x-internal-key` header matching `INTERNAL_SERVICE_KEY`
@@ -355,7 +364,7 @@ Restaurant {
   name: String
   description: String
   image: String
-  ownerId: String (references User._id)
+  ownerId: String (references User.id)
   phone: Number
   isVerified: Boolean
   isOpen: Boolean
@@ -494,39 +503,39 @@ Rider {
 ### Prerequisites
 
 Make sure the following are installed and running:
-1. **Node.js** >= 18
-2. **MongoDB** (local or Atlas)
-3. **RabbitMQ** (for event-driven features)
-4. **npm** >= 9
+1. **Node.js** >= 20
+2. **pnpm** >= 10 (`corepack enable` or `npm i -g pnpm`)
+3. **MongoDB** (local or Atlas)
+4. **RabbitMQ** (for event-driven features)
 
-### Clone the Repositories
-
-Each service is a separate repository/path under the `Foodo/` directory:
+### Repository Layout (pnpm + Turborepo monorepo)
 
 ```
 Foodo/
-├── auth/          # Auth microservice
-├── restaurant/    # Restaurant microservice
-├── rider/         # Rider microservice
-├── admin/         # Admin microservice
-├── realtime/      # Socket.IO realtime service
-├── utils/         # Shared utilities (uploads, payments)
-└── frontend/      # Next.js web application
+├── apps/
+│   └── web/                 # Next.js web application
+├── backend/
+│   ├── auth-service/
+│   ├── restaurant-service/
+│   ├── rider-service/
+│   ├── admin-service/
+│   ├── realtime-service/
+│   └── utils-service/
+├── packages/
+│   ├── types/               # @foodo/types (shared TS types, 0 deps)
+│   └── backend-common/      # @foodo/backend-common (Node-only utils)
+├── package.json             # Root: turbo scripts + dev tools only
+├── turbo.json               # Task pipeline (build, dev, lint)
+├── pnpm-workspace.yaml      # Workspace globs + version catalog
+└── tsconfig.base.json       # Shared compiler options
 ```
 
 ### Quick Setup (All Services)
 
-Run these commands from the `Foodo/` root for each service:
+One command from the repository root installs everything via workspace symlinks:
 
 ```bash
-# Navigate to each service directory and install
-cd auth && npm install && cd ..
-cd restaurant && npm install && cd ..
-cd rider && npm install && cd ..
-cd admin && npm install && cd ..
-cd realtime && npm install && cd ..
-cd utils && npm install && cd ..
-cd frontend && npm install && cd ..
+pnpm install
 ```
 
 ---
@@ -632,34 +641,58 @@ NEXT_PUBLIC_REALTIME_SERVICE_URL=http://localhost:3002
 
 ### 3. Start All Services
 
-Open separate terminals for each service:
+Turborepo runs every service and the web app in one shared terminal:
 
 ```bash
-# Terminal 1 — Auth Service
-cd auth && npm run dev
+# From the repository root — starts all 6 backend services + Next.js web
+pnpm dev
 
-# Terminal 2 — Restaurant Service
-cd restaurant && npm run dev
+# Or scope to a single workspace
+pnpm --filter @foodo/auth-service dev
+pnpm --filter web dev
 
-# Terminal 3 — Rider Service
-cd rider && npm run dev
-
-# Terminal 4 — Admin Service
-cd admin && npm run dev
-
-# Terminal 5 — Realtime Service
-cd realtime && npm run dev
-
-# Terminal 6 — Utils Service
-cd utils && npm run dev
-
-# Terminal 7 — Frontend
-cd frontend && npm run dev
+# Production builds (cached, respects the package dependency graph)
+pnpm build
 ```
 
 ### 4. Open the Application
 
 Visit [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## 📤 Image Uploads — Signed Direct Upload
+
+Image bytes go **browser → Cloudinary** directly. The backend only signs (no byte proxying, no utils-service).
+
+Minimal client example (any framework — the web app wraps this in `apps/web/src/lib/cloudinary-upload.ts`):
+
+```ts
+// 1) Get signed params from the owning service (auth via session cookie)
+const sig = await fetch("/api/menu-item/upload-signature").then(r => r.json());
+
+// 2) POST the File straight to Cloudinary — <15 lines, no backend hop
+const form = new FormData();
+form.append("file", fileInput.files[0]);
+form.append("api_key", sig.apiKey);
+form.append("timestamp", String(sig.timestamp));
+form.append("folder", sig.folder);       // fixed server-side, e.g. "foodo/menu-items"
+form.append("signature", sig.signature); // valid ONLY for these params
+
+const upload = await fetch(
+  `https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`,
+  { method: "POST", body: form },
+).then(r => r.json());
+
+// 3) Store the URL on the record
+await fetch("/api/menu-item/new", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Paneer", price: 249, imageUrl: upload.secure_url }),
+});
+```
+
+**Security notes**: the `CLOUDINARY_API_SECRET` stays server-side (`packages/backend-common/src/cloudinary.ts` signs locally); clients only ever receive `signature`, `timestamp`, `apiKey`, `cloudName`; the signature is bound to the exact server-chosen folder/params, so it cannot be reused for other uploads.
 
 ---
 
@@ -676,7 +709,7 @@ Visit [http://localhost:3000](http://localhost:3000) in your browser.
 | `UTILS_SERVICE_URL` | Restaurant, Rider | URL of the Utils microservice (e.g. `http://localhost:3005`) |
 | `REALTIME_SERVICE_URL` | Restaurant | URL of the Realtime socket service (e.g. `http://localhost:3002`) |
 | `RESTAURANT_SERVICE` | Rider | URL of the Restaurant microservice (e.g. `http://localhost:3001`) |
-| `CLOUDINARY_*` | Utils | Cloudinary API credentials |
+| `CLOUDINARY_*` | Restaurant, Rider | Cloudinary credentials for signed direct uploads (moved from utils) |
 | `RAZORPAY_*` | Utils | Razorpay payment gateway keys |
 | `STRIPE_SECRET_KEY` | Utils | Stripe payment secret |
 
@@ -719,79 +752,44 @@ Visit [http://localhost:3000](http://localhost:3000) in your browser.
 ## 📁 Project Structure
 
 ```
-auth/                     # Auth microservice
-├── src/
-│   ├── config/           # DB connection
-│   ├── controllers/      # Route handlers
-│   ├── middlewares/       # Auth middleware (JWT)
-│   ├── models/           # Mongoose User model
-│   └── routes/           # Auth routes
-├── package.json
-└── tsconfig.json
+backend/
+├── auth-service/            # Auth microservice (@foodo/auth-service)
+│   ├── src/
+│   │   ├── config/          # DB connection
+│   │   ├── controllers/     # Route handlers
+│   │   ├── middlewares/     # Auth middleware (JWT)
+│   │   ├── models/          # Mongoose User model
+│   │   └── routes/          # Auth routes
+│   ├── package.json         # depends on @foodo/* via workspace:*
+│   └── tsconfig.json        # extends ../../tsconfig.base.json
+├── restaurant-service/      # Restaurant, menu, cart, orders
+├── rider-service/           # Rider profiles + delivery lifecycle
+├── admin-service/           # Platform verification
+├── realtime-service/        # Socket.IO + Redis adapter
+└── utils-service/           # Payments (Razorpay/Stripe), uploads
 
-restaurant/               # Restaurant microservice
-├── src/
-│   ├── config/           # DB, RabbitMQ, DataUri
-│   ├── controllers/      # Restaurant, Menu, Cart, Order, Address
-│   ├── middlewares/       # Auth, Seller guards
-│   ├── models/           # All Mongoose models
-│   └── routes/           # All route definitions
-├── package.json
-└── tsconfig.json
+apps/
+└── web/                     # Next.js web application (@foodo/web alias: web)
+    ├── src/
+    │   ├── app/             # App Router pages
+    │   │   ├── (auth)/      # Login, Register
+    │   │   ├── (customer)/  # Homepage
+    │   │   ├── admin/       # Admin panel
+    │   │   ├── rider/       # Rider dashboard
+    │   │   └── seller/      # Seller dashboard
+    │   ├── components/      # UI & shared components
+    │   ├── features/        # Feature modules (auth, orders, restaurants)
+    │   ├── hooks/           # Custom hooks
+    │   ├── lib/             # API client, utilities
+    │   ├── providers/       # TanStack Query, Toast
+    │   ├── store/           # Zustand stores
+    │   └── types/           # TypeScript definitions
+    ├── package.json
+    └── next.config.ts
 
-rider/                    # Rider microservice
-├── src/
-│   ├── config/           # DB, RabbitMQ, DataUri
-│   ├── controller/       # Rider CRUD, Order lifecycle
-│   ├── middlewares/       # Auth, Rider guards
-│   ├── model/            # Rider Mongoose model
-│   └── routes/           # Rider routes
-├── package.json
-└── tsconfig.json
-
-admin/                    # Admin microservice
-├── src/
-│   ├── config/           # DB connection
-│   ├── controllers/      # Admin verification logic
-│   ├── middlewares/       # Auth middleware
-│   ├── routes/           # Admin API routes
-│   └── util/             # Collection helpers
-├── package.json
-└── tsconfig.json
-
-realtime/                 # Socket.IO realtime service
-├── src/
-│   ├── routes/           # Internal emit endpoint
-│   └── socket.ts         # Socket.IO initialization & events
-├── package.json
-└── tsconfig.json
-
-utils/                    # Shared utilities service
-├── src/
-│   ├── config/           # DB, Cloudinary
-│   ├── controllers/      # Upload & Payment logic
-│   ├── middlewares/       # Auth middleware
-│   └── routers/          # Utility routes
-├── package.json
-└── tsconfig.json
-
-frontend/                 # Next.js web application
-├── src/
-│   ├── app/              # App Router pages
-│   │   ├── (auth)/       # Login, Register
-│   │   ├── (customer)/   # Homepage
-│   │   ├── admin/        # Admin panel
-│   │   ├── rider/        # Rider dashboard
-│   │   └── seller/       # Seller dashboard
-│   ├── components/       # UI & shared components
-│   ├── features/         # Feature modules (auth, orders, restaurants)
-│   ├── hooks/            # Custom hooks
-│   ├── lib/              # API client, utilities
-│   ├── providers/        # TanStack Query, Toast
-│   ├── store/            # Zustand stores
-│   └── types/            # TypeScript definitions
-├── package.json
-└── next.config.ts
+packages/
+├── types/                   # @foodo/types — universal types (0 runtime deps)
+└── backend-common/          # @foodo/backend-common — Node-only shared utils
 ```
 
 ---
@@ -804,8 +802,8 @@ This project is proprietary software. All rights reserved.
 
 ## 🤝 Contributing
 
-1. Ensure all services are running locally
+1. Ensure all services are running locally (`pnpm dev` from the root)
 2. Create a feature branch from `master`
 3. Make changes following the existing architecture patterns
-4. Test against the relevant API endpoints
+4. Verify builds with `pnpm build` (Turborepo caches and only rebuilds affected packages)
 5. Submit a pull request with a clear description of changes

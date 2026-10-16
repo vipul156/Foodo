@@ -1,0 +1,46 @@
+{
+  "name": "@foodo/auth-service",
+  "version": "1.0.0",
+  "description": "Foodo authentication service (serverless Lambda — API Gateway HTTP API + DynamoDB).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "dev": "tsx --watch src/index.ts",
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "seed": "tsx src/seed/demo-users.ts",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  },
+  "dependencies": {
+    "@foodo/backend-common": "workspace:*",
+    "@foodo/types": "workspace:*",
+    "axios": "catalog:",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "catalog:",
+    "cookie-session": "catalog:",
+    "cors": "catalog:",
+    "dotenv": "catalog:",
+    "express": "catalog:",
+    "express-rate-limit": "catalog:",
+    "googleapis": "catalog:",
+    "jsonwebtoken": "catalog:",
+    "serverless-http": "catalog:"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/cookie-parser": "catalog:",
+    "@types/cookie-session": "catalog:",
+    "@types/cors": "catalog:",
+    "@types/dotenv": "catalog:",
+    "@types/express": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

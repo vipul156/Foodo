@@ -1,0 +1,43 @@
+{
+  "name": "@foodo/utils-service",
+  "version": "1.0.0",
+  "description": "Foodo utils service (serverless Lambda — payments, webhooks, EventBridge reconciliation).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.cjs",
+    "dev": "tsx --watch src/index.ts",
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  },
+  "dependencies": {
+    "@foodo/backend-common": "workspace:*",
+    "@foodo/types": "workspace:*",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "axios": "catalog:",
+    "dotenv": "catalog:",
+    "express": "catalog:",
+    "express-rate-limit": "catalog:",
+    "jsonwebtoken": "catalog:",
+    "multer": "catalog:",
+    "opossum": "catalog:",
+    "razorpay": "catalog:",
+    "serverless-http": "catalog:",
+    "stripe": "catalog:"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/dotenv": "catalog:",
+    "@types/express": "catalog:",
+    "@types/jsonwebtoken": "catalog:",
+    "@types/multer": "catalog:",
+    "@types/node": "catalog:",
+    "@types/opossum": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

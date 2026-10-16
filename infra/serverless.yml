@@ -1,0 +1,658 @@
+# ─── Foodo foundation stack (Serverless Framework) ───────────
+# Deploy FIRST — core-api and every backend/<service> stack read
+# this stack's exports via ${cf:foodo-infra-<stage>.*}.
+#
+#   pnpm run deploy:infra
+#
+# Contents (network + data + identity + event tiers):
+#   VPC        2 AZs, public/private subnets, IGW, S3+DynamoDB
+#              gateway endpoints. NAT gateways are OPT-IN via params
+#              (nothing runs in the VPC yet — see `params:` below).
+#   S3         private uploads bucket (CORS-ready for direct browser PUT)
+#   Cognito    user pool + web app client (provisioned for the future
+#              issuer migration; the JWT authorizer in core-api still
+#              verifies the app's own JWT_SECRET tokens today)
+#   DynamoDB   the 8 shared tables (single-table-per-entity, pk/sk)
+#   SNS        the domain event bus (`events` topic)
+#   SQS        cross-service WORK queues (payment, order) + DLQs.
+#              Per-service fan-out queues now live in each service
+#              stack, which owns its SNS subscriptions + filter
+#              policies.
+#
+# Everything here is deliberately boring: rarely changes, owns data.
+
+service: foodo-infra
+frameworkVersion: "3"
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'ap-south-1'}
+  stage: ${opt:stage, 'dev'}
+
+custom:
+  stage: ${opt:stage, 'dev'}
+
+# Stage-tunable knobs. NAT gateways cost ~$32/mo each — keep at 0
+# until a workload actually joins the VPC and needs egress (payment
+# gateway calls, etc.). prod gets one NAT per AZ.
+params:
+  default:
+    natGateways: 0
+  prod:
+    natGateways: 2
+
+# ─────────────────────────────────────────────────────────────
+# Network
+# ─────────────────────────────────────────────────────────────
+
+resources:
+  Conditions:
+    NatEnabled: !Not [!Equals ['${param:natGateways}', '0']]
+    DualNat: !Equals ['${param:natGateways}', '2']
+    # Exactly one NAT (first enabled, second not) — AZ-B private subnet
+    # falls back to AZ-A's NAT in this mode (cross-AZ traffic, cheaper).
+    SingleNat: !And [!Condition NatEnabled, !Not [!Condition DualNat]]
+
+  Resources:
+
+    VPC:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: 10.0.0.0/16
+        EnableDnsSupport: true
+        EnableDnsHostnames: true
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}
+
+    InternetGateway:
+      Type: AWS::EC2::InternetGateway
+
+    VPCGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        VpcId: !Ref VPC
+        InternetGatewayId: !Ref InternetGateway
+
+    # ── Subnets: 2 AZs × (public /20 + private /20) ───────────
+
+    PublicSubnetA:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        CidrBlock: 10.0.0.0/20
+        AvailabilityZone: !Select [0, !GetAZs '']
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-public-a
+
+    PublicSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        CidrBlock: 10.0.16.0/20
+        AvailabilityZone: !Select [1, !GetAZs '']
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-public-b
+
+    PrivateSubnetA:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        CidrBlock: 10.0.32.0/20
+        AvailabilityZone: !Select [0, !GetAZs '']
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-private-a
+
+    PrivateSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        CidrBlock: 10.0.48.0/20
+        AvailabilityZone: !Select [1, !GetAZs '']
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-private-b
+
+    # ── Routing ────────────────────────────────────────────────
+
+    PublicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPC
+
+    PublicRoute:
+      Type: AWS::EC2::Route
+      DependsOn: VPCGatewayAttachment
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref InternetGateway
+
+    PublicSubnetARouteAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: { SubnetId: !Ref PublicSubnetA, RouteTableId: !Ref PublicRouteTable }
+
+    PublicSubnetBRouteAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: { SubnetId: !Ref PublicSubnetB, RouteTableId: !Ref PublicRouteTable }
+
+    PrivateRouteTableA:
+      Type: AWS::EC2::RouteTable
+      Properties: { VpcId: !Ref VPC }
+
+    PrivateRouteTableB:
+      Type: AWS::EC2::RouteTable
+      Properties: { VpcId: !Ref VPC }
+
+    PrivateSubnetARouteAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: { SubnetId: !Ref PrivateSubnetA, RouteTableId: !Ref PrivateRouteTableA }
+
+    PrivateSubnetBRouteAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: { SubnetId: !Ref PrivateSubnetB, RouteTableId: !Ref PrivateRouteTableB }
+
+    # NAT egress — only created when params.<stage>.natGateways > 0
+    NatEIPA:
+      Type: AWS::EC2::EIP
+      Condition: NatEnabled
+      DependsOn: VPCGatewayAttachment
+      Properties: { Domain: vpc }
+
+    NatGatewayA:
+      Type: AWS::EC2::NatGateway
+      Condition: NatEnabled
+      Properties:
+        SubnetId: !Ref PublicSubnetA
+        AllocationId: !GetAtt NatEIPA.AllocationId
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-nat-a
+
+    NatEIPB:
+      Type: AWS::EC2::EIP
+      Condition: DualNat
+      DependsOn: VPCGatewayAttachment
+      Properties: { Domain: vpc }
+
+    NatGatewayB:
+      Type: AWS::EC2::NatGateway
+      Condition: DualNat
+      Properties:
+        SubnetId: !Ref PublicSubnetB
+        AllocationId: !GetAtt NatEIPB.AllocationId
+        Tags:
+          - Key: Name
+            Value: ${self:service}-${sls:stage}-nat-b
+
+    PrivateRouteANat:
+      Type: AWS::EC2::Route
+      Condition: NatEnabled
+      Properties:
+        RouteTableId: !Ref PrivateRouteTableA
+        DestinationCidrBlock: 0.0.0.0/0
+        NatGatewayId: !Ref NatGatewayA
+
+    PrivateRouteBNat:
+      Type: AWS::EC2::Route
+      Condition: DualNat
+      Properties:
+        RouteTableId: !Ref PrivateRouteTableB
+        DestinationCidrBlock: 0.0.0.0/0
+        NatGatewayId: !Ref NatGatewayB
+
+    # Single-NAT mode: AZ-B private traffic hairpins through AZ-A's NAT.
+    PrivateRouteBFallback:
+      Type: AWS::EC2::Route
+      Condition: SingleNat
+      Properties:
+        RouteTableId: !Ref PrivateRouteTableB
+        DestinationCidrBlock: 0.0.0.0/0
+        NatGatewayId: !Ref NatGatewayA
+
+    # ── Gateway endpoints (free): AWS service traffic from the VPC
+    #    never needs NAT or internet routing ─────────────────────
+
+    S3GatewayEndpoint:
+      Type: AWS::EC2::VPCEndpoint
+      Properties:
+        VpcId: !Ref VPC
+        ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+        VpcEndpointType: Gateway
+        RouteTableIds:
+          - !Ref PublicRouteTable
+          - !Ref PrivateRouteTableA
+          - !Ref PrivateRouteTableB
+
+    DynamoDBGatewayEndpoint:
+      Type: AWS::EC2::VPCEndpoint
+      Properties:
+        VpcId: !Ref VPC
+        ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+        VpcEndpointType: Gateway
+        RouteTableIds:
+          - !Ref PublicRouteTable
+          - !Ref PrivateRouteTableA
+          - !Ref PrivateRouteTableB
+
+    # ────────────────────────────────────────────────────────
+    # S3 — uploads bucket (private; CORS for direct browser PUT)
+    # ────────────────────────────────────────────────────────
+
+    UploadsBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      Properties:
+        BucketName: ${self:service}-${sls:stage}-uploads
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerEnforced
+        LifecycleConfiguration:
+          Rules:
+            - Id: abort-incomplete-multipart-uploads
+              Status: Enabled
+              AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 7
+
+    # ────────────────────────────────────────────────────────
+    # Cognito — provisioned now for the identity migration.
+    # The API authorizer (core-api stack) still verifies this
+    # app's own JWT_SECRET tokens; once auth-service issues
+    # Cognito tokens, the authorizer flips to JWKS verification
+    # (or the HTTP API's built-in Cognito authorizer) with no
+    # infrastructure changes needed here.
+    # ────────────────────────────────────────────────────────
+
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-${sls:stage}-users
+        AutoVerifiedAttributes: [email]
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireUppercase: true
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: false
+        AccountRecoverySetting:
+          RecoveryMechanisms:
+            - { Name: verified_email, Priority: 1 }
+        UsernameAttributes: [email]
+
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${sls:stage}-web
+        UserPoolId: !Ref UserPool
+        GenerateSecret: false            # public SPA client
+        ExplicitAuthFlows:
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        PreventUserExistenceErrors: ENABLED
+        AccessTokenValidity: 60
+        IdTokenValidity: 60
+        RefreshTokenValidity: 30
+        TokenValidityUnits:
+          AccessToken: minutes
+          IdToken: minutes
+          RefreshToken: days
+
+    # ────────────────────────────────────────────────────────
+    # DynamoDB tables (PAY_PER_REQUEST; PITR on for prod-grade
+    # safety) — unchanged from the former foodo-core stack
+    # ────────────────────────────────────────────────────────
+
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-users
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: email, AttributeType: S }        # email-index
+          - { AttributeName: tokenHash, AttributeType: S }    # refresh-index
+        GlobalSecondaryIndexes:
+          - IndexName: email-index
+            KeySchema:
+              - { AttributeName: email, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+          - IndexName: refresh-index
+            KeySchema:
+              - { AttributeName: tokenHash, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+        # Refresh-token rows carry a per-item `ttl` attribute — DynamoDB
+        # sweeps expired sessions automatically.
+
+    RestaurantsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-restaurants
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: ownerId, AttributeType: S }      # owner-index
+          - { AttributeName: isVerified, AttributeType: N }   # verified-index
+        GlobalSecondaryIndexes:
+          - IndexName: owner-index
+            KeySchema:
+              - { AttributeName: ownerId, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+          - IndexName: verified-index
+            KeySchema:
+              - { AttributeName: isVerified, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+
+    RidersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-riders
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: userId, AttributeType: S }       # user-index
+          - { AttributeName: isVerified, AttributeType: N }   # verified-index
+        GlobalSecondaryIndexes:
+          - IndexName: user-index
+            KeySchema:
+              - { AttributeName: userId, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+          - IndexName: verified-index
+            KeySchema:
+              - { AttributeName: isVerified, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-orders
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: userId, AttributeType: S }        # user-orders
+          - { AttributeName: createdAt, AttributeType: S }     # (sort key ×4)
+          - { AttributeName: restaurantId, AttributeType: S }  # restaurant-orders
+          - { AttributeName: riderId, AttributeType: S }       # rider-orders
+          - { AttributeName: status, AttributeType: S }        # status-board
+          - { AttributeName: paymentStatus, AttributeType: S } # payment-status
+          - { AttributeName: paymentIntentInitiatedAt, AttributeType: S }
+        GlobalSecondaryIndexes:
+          - IndexName: user-orders
+            KeySchema:
+              - { AttributeName: userId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: restaurant-orders
+            KeySchema:
+              - { AttributeName: restaurantId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: rider-orders
+            KeySchema:
+              - { AttributeName: riderId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: status-board
+            KeySchema:
+              - { AttributeName: status, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: payment-status
+            KeySchema:
+              - { AttributeName: paymentStatus, KeyType: HASH }
+              - { AttributeName: paymentIntentInitiatedAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+        # Unpaid orders carry a per-item `ttl` (the 15-min payment window).
+
+    MenuItemsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-menu-items
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: restaurantId, AttributeType: S }
+        GlobalSecondaryIndexes:
+          - IndexName: restaurant-index
+            KeySchema:
+              - { AttributeName: restaurantId, KeyType: HASH }
+            Projection: { ProjectionType: ALL }
+
+    CartsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-carts
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+
+    AddressesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-addresses
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+
+    WebhookDedupeTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-webhook-dedupe
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: eventId, KeyType: HASH }
+        AttributeDefinitions:
+          - { AttributeName: eventId, AttributeType: S }
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+    # ────────────────────────────────────────────────────────
+    # Event bus: SNS topic (domain events; consumers subscribe
+    # from their own service stacks with filter policies)
+    # ────────────────────────────────────────────────────────
+
+    EventsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${sls:stage}-events
+
+    # ────────────────────────────────────────────────────────
+    # SQS work queues + DLQs (cross-service transport).
+    # Redrive replaces the old RabbitMQ retry/parking-lot: a
+    # message failing maxReceiveCount times lands in the DLQ.
+    # ────────────────────────────────────────────────────────
+
+    PaymentQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-payment-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
+
+    PaymentQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-payment
+        VisibilityTimeout: 180          # > 6× Lambda timeout
+        MessageRetentionPeriod: 345600  # 4 days
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt PaymentQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    OrderQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-order-dlq
+        MessageRetentionPeriod: 1209600
+
+    OrderQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-order
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 345600
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt OrderQueueDLQ.Arn
+          maxReceiveCount: 3
+
+  # ────────────────────────────────────────────────────────────
+  # Exports — consumed as ${cf:foodo-infra-<stage>.<name>} by
+  # the core-api stack and every backend service stack.
+  # ────────────────────────────────────────────────────────────
+
+  Outputs:
+    EventsTopicArn:
+      Value: !Ref EventsTopic
+      Export:
+        Name: ${self:service}-${sls:stage}-EventsTopicArn
+
+    UsersTable:
+      Value: ${self:service}-${sls:stage}-users
+      Export:
+        Name: ${self:service}-${sls:stage}-UsersTable
+
+    RestaurantsTable:
+      Value: ${self:service}-${sls:stage}-restaurants
+      Export:
+        Name: ${self:service}-${sls:stage}-RestaurantsTable
+
+    RidersTable:
+      Value: ${self:service}-${sls:stage}-riders
+      Export:
+        Name: ${self:service}-${sls:stage}-RidersTable
+
+    OrdersTable:
+      Value: ${self:service}-${sls:stage}-orders
+      Export:
+        Name: ${self:service}-${sls:stage}-OrdersTable
+
+    MenuItemsTable:
+      Value: ${self:service}-${sls:stage}-menu-items
+      Export:
+        Name: ${self:service}-${sls:stage}-MenuItemsTable
+
+    CartsTable:
+      Value: ${self:service}-${sls:stage}-carts
+      Export:
+        Name: ${self:service}-${sls:stage}-CartsTable
+
+    AddressesTable:
+      Value: ${self:service}-${sls:stage}-addresses
+      Export:
+        Name: ${self:service}-${sls:stage}-AddressesTable
+
+    WebhookDedupeTable:
+      Value: ${self:service}-${sls:stage}-webhook-dedupe
+      Export:
+        Name: ${self:service}-${sls:stage}-WebhookDedupeTable
+
+    PaymentQueueUrl:
+      Value: !Ref PaymentQueue
+      Export:
+        Name: ${self:service}-${sls:stage}-PaymentQueueUrl
+
+    PaymentQueueArn:
+      Value: !GetAtt PaymentQueue.Arn
+      Export:
+        Name: ${self:service}-${sls:stage}-PaymentQueueArn
+
+    OrderQueueUrl:
+      Value: !Ref OrderQueue
+      Export:
+        Name: ${self:service}-${sls:stage}-OrderQueueUrl
+
+    OrderQueueArn:
+      Value: !GetAtt OrderQueue.Arn
+      Export:
+        Name: ${self:service}-${sls:stage}-OrderQueueArn
+
+    UploadsBucketName:
+      Value: !Ref UploadsBucket
+      Export:
+        Name: ${self:service}-${sls:stage}-UploadsBucketName
+
+    UploadsBucketArn:
+      Value: !GetAtt UploadsBucket.Arn
+      Export:
+        Name: ${self:service}-${sls:stage}-UploadsBucketArn
+
+    VpcId:
+      Value: !Ref VPC
+      Export:
+        Name: ${self:service}-${sls:stage}-VpcId
+
+    PublicSubnetIds:
+      Value: !Join [',', [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+      Export:
+        Name: ${self:service}-${sls:stage}-PublicSubnetIds
+
+    PrivateSubnetIds:
+      Value: !Join [',', [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+      Export:
+        Name: ${self:service}-${sls:stage}-PrivateSubnetIds
+
+    CognitoUserPoolId:
+      Value: !Ref UserPool
+      Export:
+        Name: ${self:service}-${sls:stage}-CognitoUserPoolId
+
+    CognitoUserPoolClientId:
+      Value: !Ref UserPoolClient
+      Export:
+        Name: ${self:service}-${sls:stage}-CognitoUserPoolClientId
+
+    CognitoIssuerUrl:
+      Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+      Export:
+        Name: ${self:service}-${sls:stage}-CognitoIssuerUrl

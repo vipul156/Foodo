@@ -1,0 +1,103 @@
+# ─── Foodo auth service stack ────────────────────────────────
+# Registration / login / refresh are the token ISSUANCE endpoints —
+# they must stay public. logout, me, and socket-token carry their
+# own in-app isAuth guards, so they ALSO get gateway-level
+# protection (reject before invocation, defense in depth).
+#
+#   turbo run deploy --filter=@foodo/auth-service
+
+service: foodo-auth
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 512
+  timeout: 15
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    REFRESH_COOKIE_NAME: ${env:REFRESH_COOKIE_NAME, 'refresh_token'}
+    USERS_TABLE: ${cf:${self:custom.infra}.UsersTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.UsersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.UsersTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+functions:
+  http:
+    handler: dist/index.handler
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      # Token issuance stays PUBLIC at the gateway (login/register/
+      # refresh have no access token yet). logout/me/socket-token are
+      # guarded in-app; the explicit protected routes below reject
+      # unauthenticated calls before this Lambda runs.
+      - httpApi:
+          path: /api/auth/logout
+          method: post
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/auth/me
+          method: get
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/auth/socket-token
+          method: get
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /api/auth/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/auth
+          method: get
