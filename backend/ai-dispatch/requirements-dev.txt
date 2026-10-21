@@ -4,3 +4,6 @@
 boto3>=1.35.0             # Lambda runtime ships it; local runs need it
 uvicorn[standard]>=0.34.0 # local ASGI server ( ops surface only)
 moto[dynamodb]>=5.0.0     # in-memory DynamoDB for local testing
+
+pytest>=8.3.4             # test runner
+pytest-asyncio>=0.25.2    # asyncio_mode=auto in pytest.ini
