@@ -45,4 +45,14 @@ export const TABLE = {
   carts: () => table("CARTS_TABLE", "foodo-carts"),
   addresses: () => table("ADDRESSES_TABLE", "foodo-addresses"),
   webhookDedupe: () => table("WEBHOOK_DEDUPE_TABLE", "foodo-webhook-dedupe"),
+  // AI tier — owned by the arbiter / verification services but
+  // hosted in the foundation stack (durable business data).
+  arbitrationCases: () =>
+    table("ARBITRATION_CASES_TABLE", "foodo-arbitration-cases"),
+  refundLedger: () => table("REFUND_LEDGER_TABLE", "foodo-refund-ledger"),
+  verifications: () => table("VERIFICATIONS_TABLE", "foodo-verifications"),
+  vouchers: () => table("VOUCHERS_TABLE", "foodo-vouchers"),
+  reviewQueue: () => table("REVIEW_QUEUE_TABLE", "foodo-review-queue"),
+  // Shared fixed-window rate-limit counters (the platform has no Redis).
+  rateLimits: () => table("RATE_LIMITS_TABLE", "foodo-rate-limits"),
 } as const;

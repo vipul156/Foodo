@@ -50,7 +50,7 @@ const reconcileRazorpay = async (
     const captured = payments.items?.find((p) => p.status === "captured");
     await publishPaymentSuccess({
       orderId,
-      paymentId: captured?.id ?? rzpOrder.id,
+      providerPaymentId: captured?.id ?? rzpOrder.id,
       provider: "razorpay",
     });
     return "republished (captured on provider, webhook was missed)";
@@ -72,7 +72,7 @@ const reconcileStripe = async (
   if (session.payment_status === "paid") {
     await publishPaymentSuccess({
       orderId,
-      paymentId: session.id,
+      providerPaymentId: session.id,
       provider: "stripe",
     });
     return "republished (captured on provider, webhook was missed)";

@@ -44,6 +44,9 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}   # signed direct uploads (upload-signature)
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}  # ai-verification calls (proof of delivery)
+    # The AI verification tier lives on the same shared HTTP API.
+    AI_VERIFICATION_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
     RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
     RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}

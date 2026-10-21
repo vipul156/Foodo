@@ -12,6 +12,7 @@ import {
 } from "../controller/rider.js";
 import { uploadFile } from "@foodo/backend-common";
 import { getRiderImageSignature } from "../controller/upload.js";
+import { submitProofOfDelivery } from "../controller/pod.js";
 
 const router = Router();
 
@@ -37,10 +38,6 @@ router.put("/order/update", updateOrderStatus)
 
 // Proof of delivery — drop-off photo verified by the AI tier, verdict
 // attached to the delivery completion (advisory, never blocks).
-router.post("/order/pod", submitProofOfDelivery)
-
-// Proof of delivery — drop-off photo verified by the AI tier, verdict
-// attached to the delivery completion (advisory, never blocks).
-router.post("/order/pod", submitProofOfDelivery)
+router.post("/order/pod", submitProofOfDelivery);
 
 export { router as riderRouter };

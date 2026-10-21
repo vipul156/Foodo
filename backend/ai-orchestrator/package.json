@@ -1,0 +1,40 @@
+{
+  "name": "@foodo/ai-orchestrator",
+  "version": "1.0.0",
+  "description": "Bounded-autonomy support & refund arbitration agent (serverless Lambda — HTTP + SQS dispute consumer).",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "dev": "tsx --watch src/index.ts",
+    "lint": "prettier --check \"src/**/*.ts\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  },
+  "dependencies": {
+    "@foodo/backend-common": "workspace:*",
+    "@foodo/types": "workspace:*",
+    "@aws-sdk/lib-dynamodb": "catalog:",
+    "axios": "catalog:",
+    "cors": "catalog:",
+    "dotenv": "catalog:",
+    "express": "catalog:",
+    "express-rate-limit": "catalog:",
+    "opossum": "catalog:",
+    "serverless-http": "catalog:"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "catalog:",
+    "@types/cors": "catalog:",
+    "@types/dotenv": "catalog:",
+    "@types/express": "catalog:",
+    "@types/node": "catalog:",
+    "@types/opossum": "catalog:",
+    "tsx": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

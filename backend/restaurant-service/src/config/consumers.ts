@@ -3,6 +3,7 @@ import {
   assignRider,
   transitionRiderStatus,
   stampPaymentIntent,
+  stampProviderPaymentId,
   markOrderPaid,
   getRestaurantById,
 } from "@foodo/backend-common/dynamo";
@@ -26,11 +27,25 @@ import { publishRealtimeEvent, publishOrderEvent } from "./events.js";
 //   - assignRider: conditional on riderId = null AND ready_for_rider
 
 // ─── Payment success (was payment.consumer.ts) ───────────────
-const onPaymentSuccess = async (data: { orderId: string }) => {
+const onPaymentSuccess = async (data: {
+  orderId: string;
+  providerPaymentId?: string;
+  provider?: "razorpay" | "stripe";
+}) => {
   if (!data?.orderId) return;
 
   const order = await markOrderPaid(data.orderId);
   if (!order) return; // already paid (redelivery) or swept — no-op
+
+  // The captured provider id lands on the order so the refund path can
+  // resolve WHICH payment to refund without the caller naming it.
+  if (data.providerPaymentId && data.provider) {
+    await stampProviderPaymentId(
+      data.orderId,
+      data.provider,
+      data.providerPaymentId,
+    );
+  }
 
   // Payment confirmed — clear the cart BEFORE notifying anyone so any
   // cart refetch triggered by the sockets below sees the empty cart.
@@ -53,8 +68,13 @@ const onPaymentSuccess = async (data: { orderId: string }) => {
 };
 
 export const paymentQueueHandler = async (event: any) =>
-  handleSqsBatch(event, async (data: { orderId: string }) =>
-    onPaymentSuccess(data),
+  handleSqsBatch(
+    event,
+    async (data: {
+      orderId: string;
+      providerPaymentId?: string;
+      provider?: "razorpay" | "stripe";
+    }) => onPaymentSuccess(data),
   );
 
 // ─── Rider/domain events (was riderEvent.consumer.ts) ────────

@@ -55,7 +55,6 @@ catalog:
   cloudinary: ^2.10.0
   razorpay: ^2.9.6
   stripe: ^22.3.1
-  rate-limit-redis: ^6.0.1
   "@aws-sdk/client-lambda": ^3.1141.0
 
   # AWS serverless runtime (DynamoDB, SQS, SNS) — one version line across

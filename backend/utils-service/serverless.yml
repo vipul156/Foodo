@@ -46,6 +46,11 @@ provider:
     STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY, ''}
     STRIPE_WEBHOOK_SECRET: ${env:STRIPE_WEBHOOK_SECRET, ''}
     FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
+    CLOUDINARY_CLOUD_NAME: ${env:CLOUDINARY_CLOUD_NAME, ''}
+    CLOUDINARY_API_KEY: ${env:CLOUDINARY_API_KEY, ''}
+    CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    RATE_LIMIT_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
     WEBHOOK_DEDUPE_TABLE: ${cf:${self:custom.infra}.WebhookDedupeTable}
     EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
@@ -72,6 +77,12 @@ provider:
             - Fn::Sub:
                 - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
                 - TableName: ${cf:${self:custom.infra}.WebhookDedupeTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
         - Effect: Allow
           Action:
             - sns:Publish

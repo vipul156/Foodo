@@ -2,7 +2,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
+import cookieSession from "cookie-session";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
+import { photoRouter } from "./routers/photo.js";
 import paymentRouter from "./routers/payment.js";
 import refundRouter from "./routers/refund.js";
 

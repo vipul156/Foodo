@@ -12,12 +12,13 @@
 #   Cognito    user pool + web app client (provisioned for the future
 #              issuer migration; the JWT authorizer in core-api still
 #              verifies the app's own JWT_SECRET tokens today)
-#   DynamoDB   the 8 shared tables (single-table-per-entity, pk/sk)
+#   DynamoDB   the shared tables (single-table-per-entity, pk/sk):
+#              8 platform tables + 4 AI-tier tables
 #   SNS        the domain event bus (`events` topic)
-#   SQS        cross-service WORK queues (payment, order) + DLQs.
-#              Per-service fan-out queues now live in each service
-#              stack, which owns its SNS subscriptions + filter
-#              policies.
+#   SQS        cross-service WORK queues (payment, order, agent
+#              disputes) + DLQs. Per-service fan-out queues now live
+#              in each service stack, which owns its SNS
+#              subscriptions + filter policies.
 #
 # Everything here is deliberately boring: rarely changes, owns data.
 
@@ -499,6 +500,199 @@ resources:
           Enabled: true
 
     # ────────────────────────────────────────────────────────
+    # AI tier tables (arbiter + verification). Owned by the AI
+    # services but hosted in the foundation stack: they are
+    # durable business data, not ephemeral runtime state (the
+    # only table that lives with its service is realtime's
+    # connections registry).
+    # ────────────────────────────────────────────────────────
+
+    # Arbitration cases — the agent's audit record. One row per
+    # dispute, whatever the outcome. Support tooling and fraud
+    # reviewers read it as the single source of truth for "what
+    # did the agent know and why did it act".
+    #
+    #   PK: CASE#<caseId>   SK: CASE
+    #   GSI status-board   : status     → createdAt  (admin review queue)
+    #   GSI order-index    : orderId    → createdAt  (dispute lookup by order)
+    #
+    # Per-customer dispute counts live in the refund ledger (one row
+    # per customer) — the trust score reads that, so a second index
+    # over the same fact would only cost write amplification.
+    ArbitrationCasesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-arbitration-cases
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: status, AttributeType: S }      # status-board
+          - { AttributeName: orderId, AttributeType: S }     # order-index
+          - { AttributeName: createdAt, AttributeType: S }   # (sort key ×2)
+        GlobalSecondaryIndexes:
+          - IndexName: status-board
+            KeySchema:
+              - { AttributeName: status, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: order-index
+            KeySchema:
+              - { AttributeName: orderId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+        # No TTL: arbitration cases are audit records.
+
+    # Refund ledger — platform-level dispute accounting. One row
+    # per customer: cumulative refund totals + dispute counts. Feeds
+    # the agent's trust score (dispute rate) and gives fraud tooling
+    # a single-query view of a customer's refund history. The payment
+    # provider remains the source of truth for actual money movement.
+    #
+    #   PK: CUSTOMER#<customerId>   SK: LEDGER
+    RefundLedgerTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-refund-ledger
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+
+    # Goodwill vouchers issued by the arbiter when it refuses to move
+    # money (verified damage, but the customer's trust score is below
+    # the autonomous-refund threshold). The code is the PK, so a
+    # redelivered dispute can never mint a second live voucher, and
+    # review tooling can revoke (status flip) without a redeploy.
+    #
+    #   PK: VOUCHER#<code>   SK: VOUCHER
+    #   GSI customer-index : customerId → createdAt
+    VouchersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-vouchers
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: customerId, AttributeType: S } # customer-index
+          - { AttributeName: createdAt, AttributeType: S }  # (sort key)
+        GlobalSecondaryIndexes:
+          - IndexName: customer-index
+            KeySchema:
+              - { AttributeName: customerId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+
+    # Human-in-the-loop review queue. When an AI tier service cannot
+    # decide autonomously (ambiguous evidence, low trust, provider
+    # refusal) it parks a work item here and a human picks it up. The
+    # arbitration-cases / verification rows keep the reasoning trail;
+    # this table keeps the TODO (what a human must do next), joined by
+    # the case id as the item id.
+    #
+    #   PK: REVIEW#<id>   SK: REVIEW
+    #   GSI status-board : status → createdAt
+    ReviewQueueTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-review-queue
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: status, AttributeType: S }    # status-board
+          - { AttributeName: createdAt, AttributeType: S } # (sort key)
+        GlobalSecondaryIndexes:
+          - IndexName: status-board
+            KeySchema:
+              - { AttributeName: status, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+
+    # Verifications — packing checks + proof-of-delivery verdicts.
+    # The AI verdict is ephemeral; the photo is the legal record, so
+    # rows age out with the evidence retention window (90 days by
+    # default, covering chargeback windows and platform dispute SLAs).
+    #
+    #   PK: VERIFICATION#<id>   SK: VERIFICATION
+    #   GSI order-index      : orderId      → createdAt  (audit read)
+    #   GSI restaurant-index : restaurantId → createdAt  (fraud sweeps)
+    #   GSI rider-index      : riderId      → createdAt  (fraud sweeps)
+    VerificationsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-verifications
+        BillingMode: PAY_PER_REQUEST
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+          - { AttributeName: orderId, AttributeType: S }      # order-index
+          - { AttributeName: restaurantId, AttributeType: S } # restaurant-index
+          - { AttributeName: riderId, AttributeType: S }      # rider-index
+          - { AttributeName: createdAt, AttributeType: S }    # (sort key ×3)
+        GlobalSecondaryIndexes:
+          - IndexName: order-index
+            KeySchema:
+              - { AttributeName: orderId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: restaurant-index
+            KeySchema:
+              - { AttributeName: restaurantId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+          - IndexName: rider-index
+            KeySchema:
+              - { AttributeName: riderId, KeyType: HASH }
+              - { AttributeName: createdAt, KeyType: RANGE }
+            Projection: { ProjectionType: ALL }
+        # Verdicts carry a per-item `ttl` (evidence retention window).
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+    # Rate-limit counters — the AI tier's shared fixed-window
+    # limiter. The platform deliberately has no Redis, so the
+    # counters live in DynamoDB: one row per (prefix, key, window)
+    # with a TTL that lets the table self-clean.
+    #
+    #   PK: RL#<prefix>#<key>#<windowStartEpochMs>
+    RateLimitsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-rate-limits
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+    # ────────────────────────────────────────────────────────
     # Event bus: SNS topic (domain events; consumers subscribe
     # from their own service stacks with filter policies)
     # ────────────────────────────────────────────────────────
@@ -544,6 +738,26 @@ resources:
         MessageRetentionPeriod: 345600
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt OrderQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    # AI tier work queue. Dispute events raised outside the app
+    # (chat/email channels) land here instead of the old RabbitMQ
+    # `agent.disputes` queue; the arbiter Lambda consumes them and
+    # runs the same arbitration graph the HTTP path uses.
+    AgentDisputesQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-agent-disputes-dlq
+        MessageRetentionPeriod: 1209600
+
+    AgentDisputesQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-agent-disputes
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 345600
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt AgentDisputesQueueDLQ.Arn
           maxReceiveCount: 3
 
   # ────────────────────────────────────────────────────────────
@@ -597,6 +811,36 @@ resources:
       Export:
         Name: ${self:service}-${sls:stage}-WebhookDedupeTable
 
+    ArbitrationCasesTable:
+      Value: ${self:service}-${sls:stage}-arbitration-cases
+      Export:
+        Name: ${self:service}-${sls:stage}-ArbitrationCasesTable
+
+    RefundLedgerTable:
+      Value: ${self:service}-${sls:stage}-refund-ledger
+      Export:
+        Name: ${self:service}-${sls:stage}-RefundLedgerTable
+
+    VerificationsTable:
+      Value: ${self:service}-${sls:stage}-verifications
+      Export:
+        Name: ${self:service}-${sls:stage}-VerificationsTable
+
+    RateLimitsTable:
+      Value: ${self:service}-${sls:stage}-rate-limits
+      Export:
+        Name: ${self:service}-${sls:stage}-RateLimitsTable
+
+    VouchersTable:
+      Value: ${self:service}-${sls:stage}-vouchers
+      Export:
+        Name: ${self:service}-${sls:stage}-VouchersTable
+
+    ReviewQueueTable:
+      Value: ${self:service}-${sls:stage}-review-queue
+      Export:
+        Name: ${self:service}-${sls:stage}-ReviewQueueTable
+
     PaymentQueueUrl:
       Value: !Ref PaymentQueue
       Export:
@@ -616,6 +860,16 @@ resources:
       Value: !GetAtt OrderQueue.Arn
       Export:
         Name: ${self:service}-${sls:stage}-OrderQueueArn
+
+    AgentDisputesQueueUrl:
+      Value: !Ref AgentDisputesQueue
+      Export:
+        Name: ${self:service}-${sls:stage}-AgentDisputesQueueUrl
+
+    AgentDisputesQueueArn:
+      Value: !GetAtt AgentDisputesQueue.Arn
+      Export:
+        Name: ${self:service}-${sls:stage}-AgentDisputesQueueArn
 
     UploadsBucketName:
       Value: !Ref UploadsBucket

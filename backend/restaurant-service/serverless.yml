@@ -47,6 +47,9 @@ provider:
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, 'dev-only-change-me'}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
+    # The AI verification tier lives on the same shared HTTP API; the
+    # kitchen proxies packing checks there server-side.
+    AI_VERIFICATION_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
     USERS_TABLE: ${cf:${self:custom.infra}.UsersTable}
     RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}

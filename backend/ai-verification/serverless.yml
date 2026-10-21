@@ -1,0 +1,99 @@
+# ─── Foodo AI verification stack (visual verification) ──────
+# Stateless multimodal checks wired into the seller kitchen and the
+# rider drop-off flow:
+#   POST /api/verification/packing   (restaurant service proxies, holding
+#                                    the seller's session server-side)
+#   POST /api/verification/delivery  (rider service proxies)
+#   GET  /api/verification/order/:id (audit read for support tooling)
+#
+# Every endpoint axios-calls an LLM provider and uploads the photo to
+# Cloudinary — the evidence copy is the legal record. The service never
+# 5xx on AI failure: a dead AI tier degrades to "unverified" and the
+# packing gate / POD flow handle that verdict themselves.
+#
+#   turbo run deploy --filter=@foodo/ai-verification
+
+service: foodo-verification
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024           # 15MB base64 verification bodies
+  timeout: 30
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    GOOGLE_AI_API_KEY: ${env:GOOGLE_AI_API_KEY, ''}
+    GOOGLE_AI_MODEL: ${env:GOOGLE_AI_MODEL, ''}
+    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
+    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, ''}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}    # evidence storage (cloudinary SDK)
+    VERIFICATIONS_TABLE: ${cf:${self:custom.infra}.VerificationsTable}
+    RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.VerificationsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.VerificationsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+functions:
+  http:
+    handler: dist/http.handler
+    memorySize: 1024
+    timeout: 30
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      # internal-only in-app (x-internal-key): the restaurant/rider
+      # services proxy here server-side holding the human's session,
+      # so no gateway authorizer and no browser origin.
+      - httpApi:
+          path: /api/verification/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/verification
+          method: get

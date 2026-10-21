@@ -1,7 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
-import { Redis } from "ioredis";
+import { createDynamoRateLimitStore } from "@foodo/backend-common/dynamo";
 import { executeRefund, getRefundClaim } from "../controllers/refund.js";
 import { isInternal } from "../middlewares/isInternal.js";
 
@@ -10,16 +9,11 @@ import { isInternal } from "../middlewares/isInternal.js";
 // blast-radius guard: even a runaway agent loop can move at most
 // 30 refund attempts per minute, and the per-order + per-amount caps
 // in the controller bound total exposure.
-
-const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
-
-const refundStore = redis
-  ? new RedisStore({
-      sendCommand: (cmd: string, ...args: string[]) =>
-        redis.call(cmd, ...args) as Promise<any>,
-      prefix: "rl:refund:",
-    })
-  : undefined;
+//
+// The counter lives in DynamoDB (the platform has no Redis). The
+// in-memory default would give every concurrent Lambda container its
+// OWN counter — "30/min" would really mean "30/min per container" —
+// so the shared DynamoDB store is what makes the limit real.
 
 const refundLimiter = rateLimit({
   standardHeaders: true,
@@ -27,7 +21,13 @@ const refundLimiter = rateLimit({
   windowMs: 60_000,
   limit: 30,
   message: { message: "Refund rate exceeded" },
-  ...(refundStore ? { store: refundStore } : {}),
+  store: createDynamoRateLimitStore({
+    prefix: "refund",
+    windowMs: 60_000,
+    limit: 30,
+  }),
+  keyGenerator: (req) =>
+    (req.headers["x-forwarded-for"] as string) || req.ip || "unknown",
 });
 
 const router = Router();

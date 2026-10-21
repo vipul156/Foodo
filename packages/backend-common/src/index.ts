@@ -17,6 +17,9 @@
 // Permissive JWT middleware + role guards (restaurant/rider/admin/utils).
 export * from "./middlewares/isAuth.js";
 
+// Internal service-to-service auth via x-internal-key (AI tier).
+export * from "./middlewares/isInternal.js";
+
 // tryCatch (plain) + tryCatchStatus (admin's status-preserving variant)
 export * from "./middlewares/trycatch.js";
 

@@ -21,6 +21,7 @@ import {
   publishOrderEvent,
   publishRealtimeEvent,
 } from "../config/events.js";
+import { checkReadyGate } from "./verification.js";
 
 function releaseRider(riderId: unknown, orderId?: unknown) {
   if (!riderId) return;
@@ -390,6 +391,17 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   }
   if (restaurant.ownerId !== String(user.id)) {
     throw new Error("Unauthorized");
+  }
+
+  // Kitchen gate: a flagged (or unverified, AI down) packing check must
+  // be repacked/re-verified or explicitly overridden before the order
+  // can be handed to a rider. Unpaid/invalid transitions still fall
+  // through to the repo's own guards.
+  if (status === "ready_for_rider") {
+    const gateError = checkReadyGate(order);
+    if (gateError) {
+      return res.status(409).json({ message: gateError });
+    }
   }
 
   const updated = await setOrderStatus(orderId, status);

@@ -1,0 +1,142 @@
+# ─── Foodo AI arbiter stack (refund arbitration agent) ───────
+# Disputes arrive via two doors, both wired to the same graph:
+#   http            POST /api/agent/dispute (support form) — validates,
+#                   stores the evidence photo on Cloudinary and enqueues
+#                   a work item. No graph execution in the HTTP Lambda:
+#                   background work frozen after a response is the #1
+#                   Lambda bug, and the queue makes retries real.
+#   disputeConsumer runs the graph off the agent-disputes work queue
+#                   (chat/email channels enqueue directly; SQS redrive
+#                   owns retries, the DLQ catches poison messages).
+#
+# The review queue / vouchers tables are shared business data hosted in
+# foodo-infra — this stack only needs table-level IAM on them.
+#
+#   turbo run deploy --filter=@foodo/ai-orchestrator
+
+service: foodo-arbiter
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024           # 15MB base64 intake bodies + graph state
+  timeout: 30
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
+    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}   # validates INBOUND internal calls (queue reads)
+    # Sync cross-service reads (order facts, refund execution, rider
+    # telemetry) go through the shared HTTP API — internal endpoints
+    # (x-internal-key) are public at the gateway, gated in-app.
+    UTILS_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RIDER_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    ARBITRATION_CASES_TABLE: ${cf:${self:custom.infra}.ArbitrationCasesTable}
+    REFUND_LEDGER_TABLE: ${cf:${self:custom.infra}.RefundLedgerTable}
+    VOUCHERS_TABLE: ${cf:${self:custom.infra}.VouchersTable}
+    REVIEW_QUEUE_TABLE: ${cf:${self:custom.infra}.ReviewQueueTable}
+    RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+    AGENT_DISPUTES_QUEUE_URL: ${cf:${self:custom.infra}.AgentDisputesQueueUrl}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.ArbitrationCasesTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.ArbitrationCasesTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RefundLedgerTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.VouchersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.ReviewQueueTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+          Resource: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
+        - Effect: Allow
+          Action:
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
+
+functions:
+  http:
+    handler: dist/http.handler
+    memorySize: 1024
+    timeout: 30
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      # No gateway authorizer: dispute intake is user-driven (the
+      # platform's session identity stays with the caller), the review
+      # queue is in-app gated by x-internal-key, and case reads are
+      # polling endpoints for the support UI.
+      - httpApi:
+          path: /api/agent/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/arbiter
+          method: get
+
+  disputeConsumer:
+    handler: dist/disputeConsumer.handler
+    memorySize: 1024
+    timeout: 120               # vision call (30s ceiling) + tools
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      - sqs:
+          arn: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
+          batchSize: 5
+          reportBatchItemFailures: true
