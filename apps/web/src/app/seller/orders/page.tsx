@@ -210,7 +210,18 @@ function OrderCard({
         <div className="shrink-0 flex flex-col items-end gap-2">
           {nextStatus && (
             <button
-              onClick={() => onStatusUpdate(order.id, nextStatus)}
+              onClick={() => {
+                // "Verify & Pack" must go through the AI packing check
+                // first: the service blocks the ready_for_rider
+                // transition until the bag is verified (or an audited
+                // override is recorded). The parent flips the status
+                // once the dialog reports back via onVerified.
+                if (nextStatus === "ready_for_rider") {
+                  onVerifyPack(order);
+                  return;
+                }
+                onStatusUpdate(order.id, nextStatus);
+              }}
               disabled={isUpdating || isCancelling}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:brightness-110 transition-all disabled:opacity-50"
             >
@@ -463,6 +474,7 @@ export default function SellerOrdersPage() {
                     key={order.id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
+                    onVerifyPack={setVerifyOrder}
                     onCancel={handleCancelOrder}
                     isUpdating={updatingId === order.id}
                     isCancelling={cancellingId === order.id}
@@ -504,7 +516,7 @@ export default function SellerOrdersPage() {
           open={verifyOrder !== null}
           onClose={() => setVerifyOrder(null)}
           onVerified={() => {
-            if (verifyOrder) void handleVerified(verifyOrder._id);
+            if (verifyOrder) void handleVerified(verifyOrder.id);
           }}
         />
       </div>

@@ -2,7 +2,6 @@
 // Foodo — Restaurants Feature: TanStack Query API Hooks
 // ============================================================
 
-import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { restaurantApi } from "@/lib/api-client";
 import { uploadToCloudinary, type CloudinaryUploadParams } from "@/lib/cloudinary-upload";
@@ -212,9 +211,30 @@ export function useCreateMenuItem() {
     mutationFn: async (data: {
       name: string;
       description?: string;
+      price: string | number;
+      /** Direct-upload result (Cloudinary secure_url) — the AI photo
+       *  pipeline hands the already-enhanced URL straight through. */
+      image?: string;
+      /** Picked file → uploaded straight to Cloudinary via signed params */
+      imageFile?: File;
+    }) => {
+      const { imageFile, ...rest } = data;
+
+      let imageUrl = rest.image;
+      if (!imageUrl && imageFile) {
+        const sig = await restaurantApi.get<CloudinaryUploadParams>(
+          "/menu-item/upload-signature",
+        );
+        imageUrl = await uploadToCloudinary(imageFile, sig);
+      }
+
+      const res = await restaurantApi.post<{
+        message: string;
+        menuItem: IMenuItem;
+      }>("/menu-item/new", {
         name: data.name,
-        description: data.description,
-        price: data.price,
+        description: data.description ?? "",
+        price: Number(data.price),
         imageUrl,
       });
       return res;
@@ -232,6 +252,7 @@ export function useToggleMenuItem() {
 
   return useMutation({
     mutationFn: async (itemId: string) => {
+      const res = await restaurantApi.put<{
         message: string;
         menuItem: IMenuItem;
       }>(`/menu-item/toggle/${itemId}`);

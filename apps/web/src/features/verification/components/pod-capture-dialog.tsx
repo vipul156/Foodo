@@ -22,14 +22,12 @@ import {
 } from "lucide-react";
 
 interface PodCaptureDialogProps {
-  orderId: string | null;
   open: boolean;
   onClose: () => void;
   onCompleted: () => void;
 }
 
 export function PodCaptureDialog({
-  orderId,
   open,
   onClose,
   onCompleted,
@@ -42,7 +40,6 @@ export function PodCaptureDialog({
     flag: string | null;
     confidence: number;
     notes: string | null;
-    attached: boolean;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -74,7 +71,6 @@ export function PodCaptureDialog({
         flag: res.verification.flag,
         confidence: res.verification.confidence,
         notes: res.verification.notes,
-        attached: res.verification.attached,
       });
       onCompleted();
     } catch {

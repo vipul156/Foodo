@@ -55,24 +55,23 @@ export default function SellerMenuPage() {
   };
 
   const handleAddItem = async () => {
-    if (!name || !price || !imageFile) return;
-    // Image goes browser → Cloudinary directly (signed params from the
-    // service); the create call only carries the resulting URL.
+    if (!name || !price || !approvedPhoto) return;
+    // The photo already went browser → Cloudinary (via the AI pipeline's
+    // signed upload) and came back as a transformed URL — the create call
+    // only carries that URL.
     await createItem.mutateAsync({
       name,
       description,
       price,
-      imageFile,
+      image: approvedPhoto.enhancedUrl,
     });
     resetForm();
     refetch();
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+  const handlePhotoApproved = (photo: ApprovedPhoto) => {
+    setApprovedPhoto(photo);
+    setShowPhotoDialog(false);
   };
 
   const handleToggle = async (itemId: string) => {

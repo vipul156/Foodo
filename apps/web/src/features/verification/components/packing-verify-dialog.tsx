@@ -42,7 +42,7 @@ export function PackingVerifyDialog({
   onVerified,
 }: PackingVerifyDialogProps) {
   const restaurantId = order?.restaurantId ?? "";
-  const submitVerification = useSubmitPackingVerification(restaurantId);
+  const submitVerification = useSubmitPackingVerification();
   const overrideVerification = useOverridePackingVerification(restaurantId);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -78,7 +78,7 @@ export function PackingVerifyDialog({
     if (!order || !selectedFile) return;
     try {
       const res = await submitVerification.mutateAsync({
-        orderId: order._id,
+        orderId: order.id,
         file: selectedFile,
       });
       setVerdict(res.verification);
@@ -94,7 +94,7 @@ export function PackingVerifyDialog({
     if (!order || overrideNote.trim().length < 3) return;
     try {
       await overrideVerification.mutateAsync({
-        orderId: order._id,
+        orderId: order.id,
         note: overrideNote.trim(),
       });
       onVerified();
@@ -163,7 +163,7 @@ export function PackingVerifyDialog({
       }
       description={
         order
-          ? `Snap the open bag — the kitchen AI checks it against the ticket (#${order._id.slice(-6).toUpperCase()}).`
+          ? `Snap the open bag — the kitchen AI checks it against the ticket (#${order.id.slice(-6).toUpperCase()}).`
           : "Snap the open bag for an AI check against the ticket."
       }
       footer={

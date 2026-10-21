@@ -4,13 +4,17 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { restaurantApi, riderApi } from "@/lib/api-client";
-import type { IOrder, IVerificationResponse } from "@/types";
+import type {
+  IPackingVerification,
+  IVerificationResponse,
+  VerificationStatus,
+} from "@/types";
 
 // ─── Seller: Submit Packing Snapshot ─────────────────────────
 // POST /order/verification/:orderId/packing — multipart-free: the photo
 // is pre-downscaled to a JPEG data URI and sent as JSON.
 
-export function useSubmitPackingVerification(restaurantId: string) {
+export function useSubmitPackingVerification() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -23,10 +27,11 @@ export function useSubmitPackingVerification(restaurantId: string) {
         throw new Error("Photo too large after compression — try again");
       }
 
-      return restaurantApi.post<{ success: boolean; verification: IVerificationResponse; order: IOrder }>(
-        `/order/verification/${orderId}/packing`,
-        { image },
-      );
+      return restaurantApi.post<{
+        success: boolean;
+        verification: IVerificationResponse;
+        packingVerification: IPackingVerification | null;
+      }>(`/order/verification/${orderId}/packing`, { image });
     },
     onSuccess: () => {
       // Broad "orders" prefix invalidation also refreshes any single-order
@@ -45,10 +50,11 @@ export function useOverridePackingVerification(restaurantId: string) {
 
   return useMutation({
     mutationFn: async ({ orderId, note }: { orderId: string; note: string }) => {
-      return restaurantApi.put<{ success: boolean; message: string; order: IOrder }>(
-        `/order/verification/${orderId}/override`,
-        { note },
-      );
+      return restaurantApi.put<{
+        success: boolean;
+        message: string;
+        packingVerification: IPackingVerification | null;
+      }>(`/order/verification/${orderId}/override`, { note });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders", "restaurant", restaurantId] });
@@ -63,20 +69,11 @@ export function useGetPackingVerification(orderId: string) {
   return useQuery({
     queryKey: ["verification", "packing", orderId],
     queryFn: async () => {
-      const res = await restaurantApi.get<{
+      return restaurantApi.get<{
         success: boolean;
-        verification: {
-          status: "verified" | "flagged" | "unverified";
-          flag: string | null;
-          confidence: number;
-          missing: string[];
-          override: { at: string; byUserId: string; note: string } | null;
-          verifiedAt: string | null;
-          evidenceUrl: string | null;
-        } | null;
+        verification: IPackingVerification | null;
         orderStatus: string;
       }>(`/order/verification/${orderId}`);
-      return res;
     },
     enabled: !!orderId,
     staleTime: 0,
@@ -86,6 +83,8 @@ export function useGetPackingVerification(orderId: string) {
 // ─── Rider: Submit Proof of Delivery ─────────────────────────
 // POST /rider/order/pod — completes the delivery WITH the AI-verified
 // drop-off photo attached. Returns the verdict for the confirmation UI.
+// The order is implied server-side (the rider's own current delivery),
+// so no orderId is sent.
 
 export function useSubmitProofOfDelivery() {
   const queryClient = useQueryClient();
@@ -104,13 +103,13 @@ export function useSubmitProofOfDelivery() {
         success: boolean;
         message: string;
         verification: {
-          status: "verified" | "flagged" | "unverified";
+          status: VerificationStatus;
           flag: string | null;
           confidence: number;
           notes: string | null;
           evidenceUrl: string | null;
           provider: string | null;
-          attached: boolean;
+          deduped: boolean;
         };
       }>("/order/pod", { image });
     },

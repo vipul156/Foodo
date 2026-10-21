@@ -292,7 +292,6 @@ export default function RiderDashboardPage() {
 
         {/* Proof-of-delivery capture (AI-verified drop-off photo) */}
         <PodCaptureDialog
-          orderId={currentOrder?._id ?? null}
           open={podOpen}
           onClose={() => setPodOpen(false)}
           onCompleted={() => {
