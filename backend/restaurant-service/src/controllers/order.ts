@@ -424,14 +424,26 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
   });
 
   if (status === "ready_for_rider") {
-    await publishEvent("order:ready_for_rider", {
+    const readyPayload = {
       orderId: updated.id,
       restaurantId: updated.restaurantId,
       location: {
         type: "Point",
         coordinates: restaurant.autoLocation.coordinates,
       },
-    });
+    };
+    // Work queue — the rider matcher's direct consumer (existing path).
+    await publishEvent("order:ready_for_rider", readyPayload);
+    // SNS fanout — the AI dispatch swarm subscribes with its own queue
+    // (FilterPolicy on the event attribute). The work queue is the
+    // rider assignment path and already succeeded; losing the fanout
+    // only degrades dispatch to a later round, so log-and-continue.
+    const fanned = await publishOrderEvent("order:ready_for_rider", readyPayload);
+    if (!fanned) {
+      console.warn(
+        `Ready-order fanout to dispatch failed (order ${updated.id}) — the swarm will not see this order`,
+      );
+    }
   }
 
   if (status === "cancelled" && updated.riderId) {

@@ -1,0 +1,89 @@
+# ─── Foodo AI menu parser stack ──────────────────────────────
+# Stateless vision service: menu photo URL → structured parse draft for
+# the seller review grid, then bulk-publish proxy into the restaurant
+# service (data ownership stays with the domain service).
+#
+#   turbo run deploy --filter=ai-menu-parser (or: serverless deploy here)
+
+service: foodo-ai-menu-parser
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+  pythonRequirements:
+    # Linux pip in Docker → correct aarch64 wheels for pydantic-core.
+    dockerizePip: true
+    slim: true
+    noDeploy:
+      - boto3
+      - botocore
+      - s3transfer
+      - jmespath
+      - urllib3
+      - python-dateutil
+      - six
+
+provider:
+  name: aws
+  runtime: python3.12
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024
+  timeout: 90              # Gemini structured-vision calls are slow
+  logRetentionInDays: 14
+  environment:
+    STAGE: ${self:custom.stage}
+    LOG_LEVEL: ${env:MENU_PARSER_LOG_LEVEL, 'INFO'}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
+    GEMINI_MODEL: ${env:GEMINI_MODEL, 'gemini-2.5-flash'}
+    # Bulk publish forwards the seller session to the restaurant
+    # service through the shared HTTP API.
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:UpdateItem
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+
+functions:
+  http:
+    handler: app/handlers/http.handler
+    memorySize: 1024
+    timeout: 90
+    events:
+      # Seller surface: the shared JWT authorizer (cookie session) blocks
+      # unauthenticated traffic; require_user re-verifies in-app.
+      - httpApi:
+          path: /api/menu-parser/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /health/menu-parser
+          method: get

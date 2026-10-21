@@ -1,0 +1,168 @@
+# ─── Foodo AI dispatch swarm stack ───────────────────────────
+# Event-driven assigner for ready orders:
+#   http            ops surface only (snapshot / simulate / health) —
+#                   internal endpoints, gated in-app by x-internal-key.
+#   dispatchConsumer runs the LangGraph swarm off the service's OWN
+#                   dispatch-orders queue, fed by the foodo-events SNS
+#                   topic with a filter on order:ready_for_rider (raw
+#                   delivery). Idempotency + batching pool live in
+#                   DISPATCH_STATE_TABLE, enrichment reads ORDERS_TABLE,
+#                   the rider roster comes from RIDERS_TABLE.
+#
+# Decisions fan out on SNS (dispatch.decision) for analytics/dashboards.
+#
+#   turbo run deploy --filter=ai-dispatch (or: serverless deploy here)
+
+service: foodo-ai-dispatch
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+  pythonRequirements:
+    # Windows/cross-OS workstations cannot build the linux-aarch64 wheels
+    # the Lambda runtime needs — pip runs inside a Linux container to
+    # produce a Lambda-compatible bundle. Docker is a build tool here,
+    # never a deploy artifact.
+    dockerizePip: true
+    slim: true
+    noDeploy:
+      - boto3
+      - botocore
+      - s3transfer
+      - jmespath
+      - urllib3
+      - python-dateutil
+      - six
+
+provider:
+  name: aws
+  runtime: python3.12
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024
+  timeout: 30
+  logRetentionInDays: 14
+  environment:
+    STAGE: ${self:custom.stage}
+    LOG_LEVEL: ${env:DISPATCH_LOG_LEVEL, 'INFO'}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
+    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
+    # Sync cross-service reads (kitchen stats proxy, realtime emit) ride
+    # the shared HTTP API; roster/enrichment are direct table reads.
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RIDER_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    REALTIME_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    DISPATCH_STATE_TABLE: ${cf:${self:custom.infra}.DispatchStateTable}
+    ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+    RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.DispatchStateTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RidersTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+functions:
+  http:
+    handler: app/handlers/http.handler
+    memorySize: 512
+    timeout: 30
+    events:
+      # No gateway authorizer: snapshot/simulate are internal-key gated
+      # in-app (fail-closed), health is the platform probe.
+      - httpApi:
+          path: /api/dispatch/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/dispatch
+          method: get
+
+  dispatchConsumer:
+    handler: app/handlers/dispatchConsumer.handler
+    memorySize: 1024
+    timeout: 180               # LLM nodes + enrichment per record
+    events:
+      - sqs:
+          arn: !GetAtt DispatchOrdersQueue.Arn
+          batchSize: 5
+          reportBatchItemFailures: true
+
+resources:
+  Resources:
+    # Inbound fan-out: dispatch-owned queue + DLQ + SNS filter
+    # subscription (ready-order events only).
+    DispatchOrdersQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-dispatch-orders-dlq
+        MessageRetentionPeriod: 1209600
+
+    DispatchOrdersQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-dispatch-orders
+        VisibilityTimeout: 240   # > consumer timeout (180)
+        MessageRetentionPeriod: 345600
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt DispatchOrdersQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    DispatchOrdersQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref DispatchOrdersQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt DispatchOrdersQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
+
+    DispatchOrdersSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt DispatchOrdersQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          event:
+            - order:ready_for_rider

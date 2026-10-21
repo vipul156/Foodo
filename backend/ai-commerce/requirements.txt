@@ -1,0 +1,24 @@
+# ─── ai-commerce runtime (Lambda python3.12, arm64) ──────────
+fastapi>=0.115.6
+pydantic>=2.10.4
+pydantic-settings>=2.7.0
+pyjwt>=2.10.1
+python-multipart>=0.0.20
+
+# — LangChain / LangGraph stack (pip resolves a consistent set) —
+langchain-core>=0.3.28
+langchain-anthropic>=0.3.3
+langgraph>=0.2.62
+
+# — Infra —
+mangum>=0.17.0            # ASGI → Lambda HTTP adapter (≡ serverless-http)
+httpx>=0.28.1             # async HTTP with connection pooling
+tenacity>=9.0.0           # retries with exponential backoff
+
+# — Shared monorepo package (DynamoDB/SNS/SQS/ratelimit primitives) —
+../../packages/pycommon
+
+# boto3/botocore are NOT bundled (Lambda runtime ships them — see
+# noDeploy in serverless.yml). For local dev: pip install -r requirements-dev.txt
+# Mongo (motor), Redis and RabbitMQ (pika) clients removed with the
+# serverless migration.

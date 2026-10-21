@@ -1,0 +1,15 @@
+# ─── ai-menu-parser runtime (Lambda python3.12, arm64) ───────
+fastapi>=0.115.6
+pydantic>=2.10.4
+pydantic-settings>=2.7.0
+pyjwt>=2.10.1
+
+mangum>=0.17.0            # ASGI → Lambda HTTP adapter (≡ serverless-http)
+httpx>=0.28.1
+tenacity>=9.0.0
+
+# — Shared monorepo package (DynamoDB/SNS/SQS/ratelimit primitives) —
+../../packages/pycommon
+
+# boto3/botocore are NOT bundled (Lambda runtime ships them — see
+# noDeploy in serverless.yml). For local dev: pip install -r requirements-dev.txt

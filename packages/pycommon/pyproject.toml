@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foodo-pycommon"
+version = "0.1.0"
+description = "Shared Python utilities for Foodo serverless services (DynamoDB, SNS/SQS, rate limiting) — the python analog of @foodo/backend-common."
+requires-python = ">=3.10"
+# boto3 ships inside the Lambda Python runtime; bundling it (and botocore,
+# urllib3, ...) would only add MBs per service. Local development installs
+# it via pip (services' requirements.txt keep it out too — point them at
+# this package and install boto3 once in the venv).
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["pycommon*"]
