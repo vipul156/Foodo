@@ -24,6 +24,21 @@ dependencies = [
     "tenacity>=9.0.0",
 ]
 
+[tool.pyrefly]
+# Pyrefly config for the shared package. The settings repeat the
+# monorepo-root pyrefly.toml on purpose: Pyrefly only gained layered
+# configs (`extends`) in 1.4, and this file has to work with the older
+# binary too.
+preset = "basic"
+python-version = "3.12"
+
+# The package root is its own import root, so `from pycommon.x import y`
+# resolves. Services install this package editable — a runtime finder
+# shim in site-packages that type checkers cannot follow — so the root
+# has to be on the search path explicitly.
+search-path = ["."]
+project-includes = ["**/*.py"]
+
 [tool.setuptools.packages.find]
 include = ["pycommon*"]
 

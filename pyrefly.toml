@@ -1,0 +1,36 @@
+# Pyrefly configuration for the Python tier of the monorepo.
+#
+# This file is the monorepo-wide default. Each Python package repeats
+# these settings in its own config (backend/ai-*/, packages/pycommon):
+# the packages are checked independently, and Pyrefly only gained
+# layered configs (`extends`) in 1.4, so a package config has to stand
+# on its own.
+#
+# Why the shared package needs an explicit search path: `pycommon` is
+# installed with `pip install -e ../../packages/pycommon` (see each
+# service's requirements-dev.txt). A setuptools editable install is a
+# *runtime* finder shim in site-packages, so type checkers cannot follow
+# it — they only resolve imports from a real package directory on the
+# search path. Without this, every `from pycommon.x import y` reports
+# "Cannot find module `pycommon.x`".
+
+# Checking depth. The repo has no type-check gate yet and the default
+# preset surfaces a pile of pre-existing errors (LangGraph's `StateT`
+# bound, `Decimal.as_tuple().exponent`, ...). `basic` keeps the editor at
+# the depth it had before this config existed — high-confidence errors
+# such as missing imports. Opt into more from the CLI with
+# `pyrefly check --preset strict`.
+preset = "basic"
+
+# The Lambda runtime is python3.12 — pin it so the check does not drift
+# with whichever interpreter happens to be selected in the editor.
+python-version = "3.12"
+
+# Roots from which first-party imports are resolved. Relative to this file.
+search-path = ["packages/pycommon"]
+
+# A root-level `pyrefly check` covers the shared package only. The
+# services are checked from their own directory (each has its own
+# pyrefly.toml), because their `app` package must resolve to that
+# service and not to the first service on a shared search path.
+project-includes = ["packages/pycommon"]
