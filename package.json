@@ -36,6 +36,7 @@
     "serverless": "catalog:",
     "serverless-esbuild": "catalog:",
     "serverless-prune-plugin": "catalog:",
+    "serverless-python-requirements": "catalog:",
     "esbuild": "catalog:",
     "turbo": "^2.5.8",
     "typescript": "^5.9.3"

@@ -75,6 +75,12 @@ catalog:
   serverless: ^3.38.0
   serverless-esbuild: ^1.54.0
   serverless-prune-plugin: ^2.0.2
+  # Bundles the Python deps into the Lambda zip for ai-commerce,
+  # ai-dispatch and ai-menu-parser. Those services declare it in
+  # serverless.yml but have no package.json of their own, so it has to
+  # live here — Serverless resolves plugins from the service directory
+  # upwards, and the repo root's node_modules is on that path.
+  serverless-python-requirements: ^6.1.2
   esbuild: ^0.25.0
 
 # @types/multer still depends on the Express-4 type packages internally,
