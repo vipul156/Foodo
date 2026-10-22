@@ -11,8 +11,9 @@ from __future__ import annotations
 import base64
 import re
 
+from pycommon.logging import get_logger
+
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.core.resilience import BreakerOpen, call_with_resilience, pools
 
 log = get_logger(__name__)

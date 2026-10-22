@@ -15,9 +15,10 @@ import re
 import time
 import uuid
 
+from pycommon.logging import get_logger
+
 from app.clients.gemini import VisionError, parse_menu_image
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.schemas.menu import (
     NormalizedItem,
     ParsedCategory,

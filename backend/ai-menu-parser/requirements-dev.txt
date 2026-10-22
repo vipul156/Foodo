@@ -1,2 +1,9 @@
+# Local development only — never bundled into the Lambda package.
+-r requirements.txt
+
+# The shared monorepo package, editable: local edits to
+# packages/pycommon take effect without a reinstall.
+-e ../../packages/pycommon
+
 pytest>=8.3.4
 pytest-asyncio>=0.25.2

@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import time
 
+from fastapi import HTTPException, status
+
 from pycommon.aws import table
 
 _TABLE = ("RATE_LIMITS_TABLE", "foodo-rate-limits")
@@ -54,3 +56,20 @@ def consume(key: str, limit: int, *, window_s: int = 60, prefix: str = "generic"
     except Exception as exc:  # noqa: BLE001 — fail open, never brick the flow
         print(f"[pycommon] rate limiter failed open ({prefix}:{key}): {exc}")
         return True
+
+
+def enforce_rate_limit(
+    key: str,
+    limit: int,
+    *,
+    window_s: int = 60,
+    prefix: str = "generic",
+    message: str = "Too many requests — slow down",
+) -> None:
+    """Take one hit against ``limit``; raise 429 when the caller is over cap.
+
+    The counter is shared across warm containers, so the cap is
+    platform-wide rather than per-container.
+    """
+    if not consume(key, limit, window_s=window_s, prefix=prefix):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, message)

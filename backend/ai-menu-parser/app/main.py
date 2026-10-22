@@ -11,47 +11,39 @@ Boot sequence:
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health_router, router
+from pycommon.app import create_app, health_router
+from pycommon.logging import configure_logging, get_logger
+
+from app.api.routes import router
 from app.core.config import get_settings
-from app.core.logging import configure_logging, get_logger
 from app.core.resilience import pools
 
 settings = get_settings()
 log = get_logger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _startup(app: FastAPI) -> None:
     configure_logging(settings.log_level)
     log.info("ai-menu-parser up on port %s (model=%s)", settings.port, settings.gemini_model)
-    yield
+
+
+async def _shutdown(app: FastAPI) -> None:
     await pools.aclose()
     log.info("ai-menu-parser shut down cleanly")
 
 
-app = FastAPI(
+app = create_app(
     title="Foodo ai-menu-parser",
     description=(
         "Multimodal vision menu parsing: layout/column detection, "
         "entity-price association, dietary attribute tagging, and "
         "normalized JSON output for a human-in-the-loop review grid."
     ),
-    version="1.0.0",
-    lifespan=lifespan,
+    settings=settings,
+    routers=(router, health_router(settings.app_name)),
+    allow_methods=("GET", "POST"),
+    startup=_startup,
+    shutdown=_shutdown,
 )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.frontend_url],
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-
-app.include_router(router)
-app.include_router(health_router)

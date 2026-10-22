@@ -19,8 +19,9 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from pycommon.logging import get_logger
+
 from app.core.config import get_settings
-from app.core.logging import get_logger
 
 log = get_logger(__name__)
 settings = get_settings()

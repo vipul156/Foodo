@@ -1,9 +1,13 @@
 # Local development only — never bundled into the Lambda package.
 -r requirements.txt
 
+# The shared monorepo package, editable: local edits to
+# packages/pycommon take effect without a reinstall.
+-e ../../packages/pycommon
+
 boto3>=1.35.0             # Lambda runtime ships it; local runs need it
 uvicorn[standard]>=0.34.0 # local ASGI server ( ops surface only)
-moto[dynamodb]>=5.0.0     # in-memory DynamoDB for local testing
+moto[dynamodb,sns,sqs]>=5.0.0  # in-memory AWS for the integration tests
 
 pytest>=8.3.4             # test runner
 pytest-asyncio>=0.25.2    # asyncio_mode=auto in pytest.ini

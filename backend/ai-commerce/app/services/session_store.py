@@ -17,10 +17,10 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from pycommon.aws import table
+from pycommon.aws import from_dynamo, table, to_dynamo
+from pycommon.logging import get_logger
 
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.schemas.commerce import DraftOrderState
 
 log = get_logger(__name__)
@@ -54,6 +54,11 @@ class SessionStore:
         now = _now_iso()
         session_id = f"c{int(time.time() * 1000)}-{user_id[:8]}"
         doc = {
+            # The key attributes — without them the PutItem is rejected
+            # ("Missing the key pk"), so no session could ever be
+            # created and every new conversation would fail.
+            "pk": f"SESSION#{user_id}",
+            "sk": f"SESSION#{session_id}",
             "user_id": user_id,
             "session_id": session_id,
             "draft": DraftOrderState(session_id=session_id).model_dump(mode="json"),
@@ -65,7 +70,9 @@ class SessionStore:
             "sessionId": session_id,
             "expiresAt": self._ttl(),
         }
-        _sessions().put_item(Item=doc)
+        # The draft carries prices (floats) — DynamoDB has no float type,
+        # so the cast is mandatory, not cosmetic.
+        _sessions().put_item(Item=to_dynamo(doc))
         return doc
 
     async def get(self, user_id: str, session_id: str) -> dict[str, Any] | None:
@@ -74,7 +81,9 @@ class SessionStore:
             .get_item(Key={"pk": f"SESSION#{user_id}", "sk": f"SESSION#{session_id}"})
             .get("Item")
         )
-        return item or None
+        # Numbers come back as Decimal; the API contract wants floats
+        # (a Decimal serializes to a JSON STRING).
+        return from_dynamo(item) if item else None
 
     async def save(
         self,
@@ -98,8 +107,10 @@ class SessionStore:
                 "#ts": "userUpdatedAt",
             },
             ExpressionAttributeValues={
-                ":d": draft,
-                ":s": scratch,
+                # The draft carries prices (floats) — DynamoDB has no
+                # float type, so the cast is mandatory, not cosmetic.
+                ":d": to_dynamo(draft),
+                ":s": to_dynamo(scratch),
                 ":h": history[-settings.history_window * 2 :],
                 ":u": now,
                 ":e": self._ttl(),
@@ -115,7 +126,7 @@ class SessionStore:
             ScanIndexForward=False,  # newest first
             Limit=limit,
         )
-        return (_to_doc(item) for item in out.get("Items", []))
+        return (_to_doc(from_dynamo(item)) for item in out.get("Items", []))
 
     async def delete(self, user_id: str, session_id: str) -> int:
         existing = await self.get(user_id, session_id)

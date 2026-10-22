@@ -10,14 +10,14 @@ the seller's import flow.
 
 from __future__ import annotations
 
-from fastapi import HTTPException, status
-
-from pycommon.ratelimit import consume
+from pycommon.ratelimit import enforce_rate_limit as _enforce
 
 
 async def enforce_rate_limit(key: str, limit: int, window_s: int = 60) -> None:
-    if not consume(key, limit, window_s=window_s, prefix="menu-parser"):
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Too many parse requests — please wait a minute",
-        )
+    _enforce(
+        key,
+        limit,
+        window_s=window_s,
+        prefix="menu-parser",
+        message="Too many parse requests — please wait a minute",
+    )

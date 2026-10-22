@@ -13,7 +13,6 @@ the menuitems collection — data ownership stays with the domain service.
 from __future__ import annotations
 
 import base64
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -89,11 +88,3 @@ async def bulk_publish(
         skipped=list(data.get("skipped", [])),
         restaurant_id=request.restaurant_id,
     )
-
-
-health_router = APIRouter(tags=["ops"])
-
-
-@health_router.get("/health")
-async def health() -> dict:
-    return {"status": "UP", "service": settings.app_name, "timestamp": time.time()}

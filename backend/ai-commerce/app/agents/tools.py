@@ -18,8 +18,9 @@ from typing import Any, Awaitable, Callable
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from pycommon.logging import get_logger
+
 from app.clients.platform import PlatformClient, PlatformUnavailable
-from app.core.logging import get_logger
 from app.schemas.commerce import PastOrderRef
 
 log = get_logger(__name__)

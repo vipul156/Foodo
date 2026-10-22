@@ -5,8 +5,8 @@ this handler serves only the observability endpoints (snapshot, simulate,
 health) behind the shared API Gateway.
 """
 
-from mangum import Mangum
+from pycommon.http import lambda_handler
 
 from app.main import app
 
-handler = Mangum(app, lifespan="auto")
+handler = lambda_handler(app)

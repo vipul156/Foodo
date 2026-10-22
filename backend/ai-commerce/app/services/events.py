@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pycommon.aws import publish_domain_event
+from pycommon.events import publish_event
 
 
 def publish_commerce_event(event_type: str, payload: dict[str, Any]) -> None:
     """Never raises — analytics-grade fanout only."""
-    publish_domain_event(f"commerce.{event_type}", payload)
+    publish_event("commerce", event_type, payload)

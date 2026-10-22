@@ -10,8 +10,9 @@ a deterministic geometric + SLA computation — no LLM in this loop
 
 from __future__ import annotations
 
+from pycommon.logging import get_logger
+
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.schemas.dispatch import BatchMember, BatchProposal
 from app.services.geo import haversine_km
 

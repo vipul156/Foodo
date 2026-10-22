@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from decimal import Decimal
 from typing import Any, Callable
 
 import boto3
@@ -77,6 +78,52 @@ def table(env_var: str, fallback: str):
     local development works without IaC exports."""
     name = os.environ.get(env_var) or fallback
     return _get_resource().Table(name)
+
+
+def to_dynamo(value: Any) -> Any:
+    """Make a Python structure safe for the boto3 DynamoDB serializer.
+
+    DynamoDB has no float type: the resource serializer REJECTS ``float``
+    outright ("Float types are not supported. Use Decimal types instead."),
+    and it rejects the WHOLE item — one float nested three levels deep
+    fails a write whose sibling keys are all fine.
+
+    Python floats are everywhere in this codebase (prices, coordinates,
+    ratios), so every write that can carry one must go through here.
+
+    Floats become ``Decimal(repr(value))`` — ``repr`` is the shortest
+    round-trippable form, so ``12.98`` stays ``12.98`` instead of
+    becoming ``12.980000000000000426``. ``Decimal``, ``int``, ``str``,
+    ``bool`` and ``None`` pass through untouched; dicts and lists are
+    walked recursively.
+    """
+    if isinstance(value, float):
+        return Decimal(repr(value))
+    if isinstance(value, dict):
+        return {key: to_dynamo(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_dynamo(item) for item in value]
+    return value
+
+
+def from_dynamo(value: Any) -> Any:
+    """Convert a DynamoDB item back into plain Python numbers.
+
+    The mirror of :func:`to_dynamo`. DynamoDB has no float type, so every
+    number comes back as ``Decimal`` — and pydantic serializes a
+    ``Decimal`` as a JSON STRING, which would hand the UI ``"249.5"``
+    where it expects ``249.5``.
+
+    Integral values come back as ``int`` (a DynamoDB ``N`` of ``2`` is
+    ``Decimal('2')``); fractional ones as ``float``.
+    """
+    if isinstance(value, Decimal):
+        return int(value) if value.as_tuple().exponent >= 0 else float(value)
+    if isinstance(value, dict):
+        return {key: from_dynamo(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [from_dynamo(item) for item in value]
+    return value
 
 
 # ─── Events (SNS) ────────────────────────────────────────────

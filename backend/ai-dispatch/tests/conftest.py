@@ -11,10 +11,6 @@ production validator.
 fallbacks for a developer/CI machine with no `.env`.
 """
 
-import os
+from pycommon.testing import seed_test_env
 
-os.environ.setdefault("INTERNAL_SERVICE_KEY", "test-internal-service-key")
-
-# boto3 needs a region to build a client (tests never leave the process).
-os.environ.setdefault("AWS_REGION", "ap-south-1")
-os.environ.setdefault("AWS_DEFAULT_REGION", "ap-south-1")
+seed_test_env()

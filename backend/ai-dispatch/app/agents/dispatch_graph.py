@@ -21,16 +21,18 @@ from typing import Any, TypedDict
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import END, StateGraph
 
+from pycommon.logging import get_logger
+
 from app.agents.batching_agent import evaluate_batch
 from app.agents.fleet_agent import eta_minutes, rank_candidates
 from app.agents.kitchen_agent import predict
 from app.agents.weather_agent import get_weather_reflex
 from app.clients.platform import PlatformClient
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.schemas.dispatch import (
     AssignmentDecision,
     BatchMember,
+    BatchProposal,
     FleetSnapshot,
     OrderReadyEvent,
     WeatherReflex,
@@ -48,10 +50,16 @@ class DispatchState(TypedDict):
     kitchen: dict[str, Any]
     fleet: FleetSnapshot
     weather: WeatherReflex
-    batch: dict[str, Any] | None
+    batch: BatchProposal | None
     decision: AssignmentDecision | None
     trace: list[dict[str, Any]]
     errors: list[str]
+    # LangGraph DROPS any key the state schema does not declare, so both
+    # of these must be listed here or the nodes never see them:
+    #   drop_coords   — the delivery drop point (falls back to the pickup)
+    #   pending_pool  — the companion orders parked for cross-time batching
+    drop_coords: tuple[float, float] | None
+    pending_pool: list[dict[str, Any]]
 
 
 # ─── Nodes ───────────────────────────────────────────────────
@@ -147,7 +155,7 @@ async def batching_node(state: DispatchState) -> dict[str, Any]:
     started = time.perf_counter()
     pending: list[dict[str, Any]] = state.get("pending_pool") or []
     event: OrderReadyEvent = state["event"]
-    batch: dict[str, Any] | None = None
+    batch: BatchProposal | None = None
 
     if pending:
         primary = BatchMember(
@@ -182,7 +190,9 @@ async def batching_node(state: DispatchState) -> dict[str, Any]:
                 secondary_prep_minutes=candidate.get("prep_minutes", 15.0),
             )
             if proposal is not None:
-                batch = proposal.model_dump()
+                # Keep the MODEL: decide_node reads it by attribute and
+                # the decision envelope validates it into the same type.
+                batch = proposal
                 break
 
     return {

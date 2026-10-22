@@ -11,14 +11,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import Request
+from pycommon.deps import get_cookie_header  # noqa: F401 (re-export)
 
 from app.clients.platform import PlatformClient
-
-
-def get_cookie_header(request: Request) -> str:
-    """Raw Cookie header for server-side forwarding (empty when absent)."""
-    return request.headers.get("cookie", "")
 
 
 @lru_cache

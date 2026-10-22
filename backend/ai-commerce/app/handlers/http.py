@@ -5,8 +5,8 @@ the gateway authorizer blocks unauthenticated traffic before the
 container boots. No queue consumers: this service is pure HTTP.
 """
 
-from mangum import Mangum
+from pycommon.http import lambda_handler
 
 from app.main import app
 
-handler = Mangum(app, lifespan="auto")
+handler = lambda_handler(app)

@@ -3,33 +3,28 @@
 Every knob is an environment variable with a sensible default; nothing is
 hardcoded elsewhere in the codebase. Startup fails fast on misconfiguration
 via required-field validation instead of an env crash at request time.
+
+The shared shape (identity-plane secrets, resilience defaults, fail-fast
+posture) lives in ``pycommon.config``; this file is only what is specific
+to ai-commerce.
 """
 
-from functools import lru_cache
+from __future__ import annotations
 
-from pydantic import Field, ValidationInfo, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+
+from pycommon.config import BaseServiceSettings, cached_settings
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
+class Settings(BaseServiceSettings):
     # ─── Service identity ────────────────────────────────────────
     app_name: str = "ai-commerce"
     port: int = 3009
-    environment: str = "development"
-    frontend_url: str = "http://localhost:3000"
-    log_level: str = "INFO"
-
-    # ─── Secrets (mirrors the Node identity plane) ───────────────
-    jwt_secret: str = ""
-    cookie_secret: str = ""
 
     # ─── Sibling services (REST, internal-key protected) ─────────
     auth_service_url: str = "http://localhost:3001"
     restaurant_service_url: str = "http://localhost:3003"
     utils_service_url: str = "http://localhost:3005"
-    internal_service_key: str = ""
 
     # ─── LLM provider (LangChain) ────────────────────────────────
     anthropic_api_key: str = ""
@@ -49,32 +44,21 @@ class Settings(BaseSettings):
     semantic_match_threshold: float = 0.35  # min cosine similarity
 
     # ─── Resilience ──────────────────────────────────────────────
-    breaker_failure_threshold: int = 5
-    breaker_reset_timeout_s: float = 15.0
-    internal_timeout_s: float = 5.0
     max_graph_steps: int = 40  # LangGraph recursion bound per user turn
 
     # ─── Rate limiting (per user, per minute) ────────────────────
     rate_limit_turns: int = 15
 
-    @field_validator("internal_service_key", "jwt_secret", "cookie_secret")
+    @field_validator("jwt_secret", "cookie_secret")
     @classmethod
-    def _require_secrets(cls, v: str, info: "ValidationInfo") -> str:
-        field_name = info.field_name
+    def _require_identity_secrets(cls, v: str, info) -> str:  # type: ignore[no-untyped-def]
         if not v:
             label = {
-                "internal_service_key": "INTERNAL_SERVICE_KEY",
                 "jwt_secret": "JWT_SECRET",
                 "cookie_secret": "COOKIE_SECRET",
-            }.get(field_name, field_name)
+            }.get(info.field_name, info.field_name)
             raise ValueError(f"{label} must be set — fail-closed without it")
         return v
 
-    @property
-    def is_prod(self) -> bool:
-        return self.environment == "production"
 
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+get_settings = cached_settings(Settings)

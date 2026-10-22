@@ -8,8 +8,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import time
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.core.config import get_settings
@@ -42,14 +40,3 @@ async def simulate(request: Request, event: OrderReadyEvent) -> dict:
     await service.handle_event(event.model_dump(by_alias=True))
     return {"success": True, "message": "dispatch graph executed"}
 
-
-health_router = APIRouter(tags=["ops"])
-
-
-@health_router.get("/health")
-async def health() -> dict:
-    return {
-        "status": "UP",
-        "service": settings.app_name,
-        "timestamp": time.time(),
-    }

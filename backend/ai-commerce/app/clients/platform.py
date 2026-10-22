@@ -21,8 +21,9 @@ from typing import Any
 
 import httpx
 
+from pycommon.logging import get_logger
+
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.core.resilience import BreakerOpen, call_with_resilience, pools
 from app.core.security import service_headers
 

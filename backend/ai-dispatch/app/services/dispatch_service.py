@@ -19,13 +19,14 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from pycommon.aws import table
+from pycommon.aws import from_dynamo, table, to_dynamo
+from pycommon.logging import get_logger
 
 from app.agents.dispatch_graph import build_graph
 from app.clients.platform import PlatformClient
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.schemas.dispatch import DecisionEnvelope, DispatchHealth, OrderReadyEvent
+from app.services.events import publish_decision
 
 log = get_logger(__name__)
 settings = get_settings()
@@ -147,7 +148,10 @@ class DispatchService:
                     "dropoff": dropoff,
                     "prep_minutes": float(final["kitchen"]["predicted_prep_minutes"]),
                     "parked_at": time.time(),
-                    "ttlEpoch": int(time.time()) + settings.pool_ttl_s,
+                    # MUST be `expiresAt` — that is the attribute the IaC
+                    # enables DynamoDB's TTL sweep on. A row keyed by any
+                    # other name is never swept and the pool grows forever.
+                    "expiresAt": int(time.time()) + settings.pool_ttl_s,
                 }
             )
         else:
@@ -157,7 +161,7 @@ class DispatchService:
                 # Remove the paired companion from the pool.
                 if decision.batch:
                     self._delete_pool_row(
-                        ready.restaurant_id, decision.batch["secondary_order_id"]
+                        ready.restaurant_id, decision.batch.secondary_order_id
                     )
 
         log.info(
@@ -201,7 +205,14 @@ class DispatchService:
         try:
             response = _state().query(
                 KeyConditionExpression="pk = :pool",
-                ExpressionAttributeValues={":pool": f"POOL#{restaurant_id}"},
+                # DynamoDB's TTL sweep is lazy (up to 48h), so an expired
+                # row can still be returned — filter it out here rather
+                # than batching a companion that has already timed out.
+                FilterExpression="attribute_not_exists(expiresAt) OR expiresAt > :now",
+                ExpressionAttributeValues={
+                    ":pool": f"POOL#{restaurant_id}",
+                    ":now": int(time.time()),
+                },
                 Limit=_POOL_KEY_MAX,
             )
             return [
@@ -212,7 +223,7 @@ class DispatchService:
                     "dropoff": row.get("dropoff") or {},
                     "prep_minutes": float(row.get("prep_minutes", 15.0)),
                 }
-                for row in response.get("Items", [])
+                for row in from_dynamo(response.get("Items", []))
                 if row.get("order_id") != exclude_order_id
             ]
         except Exception as exc:  # noqa: BLE001
@@ -221,13 +232,19 @@ class DispatchService:
 
     def _put_pool_row(self, row: dict[str, Any]) -> None:
         try:
+            # The row carries coordinates and prep minutes — floats, which
+            # DynamoDB refuses (it has no float type). Without the cast
+            # the write fails and the pool silently stays EMPTY, so
+            # cross-time batching never happens.
             _state().put_item(
-                Item={
-                    "pk": f"POOL#{row['restaurant_id']}",
-                    "sk": f"ORDER#{row['order_id']}",
-                    **row,
-                    "updatedAt": _iso(),
-                }
+                Item=to_dynamo(
+                    {
+                        "pk": f"POOL#{row['restaurant_id']}",
+                        "sk": f"ORDER#{row['order_id']}",
+                        **row,
+                        "updatedAt": _iso(),
+                    }
+                )
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("pool put failed (order=%s): %s", row.get("order_id"), exc)
@@ -261,8 +278,14 @@ class DispatchService:
         pool_rows: list[dict[str, Any]] = []
         try:
             response = _state().scan(
-                FilterExpression="begins_with(pk, :pool)",
-                ExpressionAttributeValues={":pool": "POOL#"},
+                FilterExpression=(
+                    "begins_with(pk, :pool) AND "
+                    "(attribute_not_exists(expiresAt) OR expiresAt > :now)"
+                ),
+                ExpressionAttributeValues={
+                    ":pool": "POOL#",
+                    ":now": int(time.time()),
+                },
                 Limit=100,
             )
             pool_rows = [
@@ -274,7 +297,7 @@ class DispatchService:
                     "prep_minutes": row.get("prep_minutes"),
                     "parked_at": row.get("parked_at"),
                 }
-                for row in response.get("Items", [])
+                for row in from_dynamo(response.get("Items", []))
             ]
         except Exception as exc:  # noqa: BLE001
             log.warning("pool snapshot unavailable: %s", exc)

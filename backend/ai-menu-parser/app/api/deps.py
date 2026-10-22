@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from fastapi import Request
+from pycommon.deps import get_cookie_header  # noqa: F401 (re-export)
 
 from app.core.security import Identity, require_user  # noqa: F401 (re-export)
-
-
-def get_cookie_header(request: Request) -> str:
-    return request.headers.get("cookie", "")

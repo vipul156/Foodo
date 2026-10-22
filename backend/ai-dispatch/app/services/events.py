@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pycommon.aws import publish_domain_event
+from pycommon.events import publish_event
 
 
 def publish_decision(envelope: dict[str, Any]) -> None:
     """Fanout one dispatch decision — never raises, never blocks."""
-    publish_domain_event("dispatch.decision", envelope)
+    publish_event("dispatch", "decision", envelope)

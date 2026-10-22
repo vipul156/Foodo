@@ -1,25 +1,23 @@
-"""Typed, fail-fast configuration for the dispatch swarm (serverless)."""
+"""Typed, fail-fast configuration for the dispatch swarm (serverless).
 
-from functools import lru_cache
+The shared shape (identity-plane secrets, resilience defaults, fail-fast
+posture) lives in ``pycommon.config``; this file is only what is specific
+to the dispatch swarm.
+"""
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from __future__ import annotations
+
+from pycommon.config import BaseServiceSettings, cached_settings
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
+class Settings(BaseServiceSettings):
     # ─── Service identity ────────────────────────────────────────
     app_name: str = "ai-dispatch"
-    environment: str = "development"
-    log_level: str = "INFO"
-    frontend_url: str = "http://localhost:3000"
 
     # ─── Sibling services (shared HTTP API in prod) ──────────────
     restaurant_service_url: str = "http://localhost:3003"
     rider_service_url: str = "http://localhost:3004"
     realtime_service_url: str = "http://localhost:3002"
-    internal_service_key: str = ""
 
     # ─── LLM (used ONLY inside bounded nodes) ────────────────────
     anthropic_api_key: str = ""
@@ -44,29 +42,13 @@ class Settings(BaseSettings):
     surge_cooloff_min: int = 10          # per-restaurant surge cooldown
 
     # ─── Resilience ──────────────────────────────────────────────
-    breaker_failure_threshold: int = 5
-    breaker_reset_timeout_s: float = 15.0
     internal_timeout_s: float = 4.0
+    weather_timeout_s: float = 6.0        # external weather API budget
     max_graph_steps: int = 24
 
     # ─── Serverless state (DynamoDB; TTL sweeps) ─────────────────
     idempotency_ttl_s: int = 300         # ready-event claim lifetime
     pool_ttl_s: int = 7200               # broadcast pool row lifetime
 
-    @field_validator("internal_service_key")
-    @classmethod
-    def _require_internal_key(cls, v: str) -> str:
-        if not v:
-            raise ValueError(
-                "INTERNAL_SERVICE_KEY must be set — dispatch actions are fail-closed"
-            )
-        return v
 
-    @property
-    def is_prod(self) -> bool:
-        return self.environment == "production"
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+get_settings = cached_settings(Settings)

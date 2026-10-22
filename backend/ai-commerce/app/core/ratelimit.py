@@ -10,9 +10,7 @@ outage never bricks the conversational surface.
 
 from __future__ import annotations
 
-from fastapi import HTTPException, status
-
-from pycommon.ratelimit import consume
+from pycommon.ratelimit import enforce_rate_limit as _enforce
 
 from app.core.config import get_settings
 
@@ -21,9 +19,9 @@ settings = get_settings()
 
 async def enforce_rate_limit(key: str, limit: int | None = None) -> None:
     """Fixed 60s window; raises 429 when the shared counter is over cap."""
-    cap = limit or settings.rate_limit_turns
-    if not consume(key, cap, prefix="commerce"):
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Too many requests — slow down",
-        )
+    _enforce(
+        key,
+        limit or settings.rate_limit_turns,
+        prefix="commerce",
+        message="Too many requests — slow down",
+    )

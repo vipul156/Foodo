@@ -15,14 +15,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import get_cookie_header, get_platform
 from app.clients.platform import PlatformClient
-from app.core.config import get_settings
 from app.core.ratelimit import enforce_rate_limit
 from app.core.security import Identity, require_user
 from app.schemas.commerce import AgentTurnRequest, AgentTurnResponse, CheckoutCard
 from app.services.orchestrator import Orchestrator, SessionLimitReached, SessionNotFound
 from app.services.session_store import SessionStore
 
-settings = get_settings()
 router = APIRouter(prefix="/api/commerce", tags=["commerce"])
 
 # Singletons (process-wide); the platform client is shared, the store rides
@@ -141,16 +139,3 @@ async def delete_session(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     return {"success": True}
 
-
-# ─── GET /health — liveness (no auth; behind the LB) ─────────
-
-health_router = APIRouter(tags=["ops"])
-
-
-@health_router.get("/health")
-async def health() -> dict:
-    return {
-        "status": "UP",
-        "service": settings.app_name,
-        "timestamp": __import__("time").time(),
-    }

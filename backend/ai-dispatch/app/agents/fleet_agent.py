@@ -11,7 +11,8 @@ candidate pools of hundreds.
 
 from __future__ import annotations
 
-from app.core.logging import get_logger
+from pycommon.logging import get_logger
+
 from app.schemas.dispatch import RiderCandidate
 from app.services.geo import bearing_degrees, haversine_km
 

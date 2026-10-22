@@ -1,23 +1,23 @@
-"""Typed, fail-fast configuration for the AI menu parser."""
+"""Typed, fail-fast configuration for the AI menu parser.
 
-from functools import lru_cache
+The shared shape (identity-plane secrets, resilience defaults, fail-fast
+posture) lives in ``pycommon.config``; this file is only what is specific
+to the menu parser.
+"""
+
+from __future__ import annotations
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from pycommon.config import BaseServiceSettings, cached_settings
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
+class Settings(BaseServiceSettings):
     # ─── Service identity ────────────────────────────────────────
     app_name: str = "ai-menu-parser"
     port: int = 3011
-    environment: str = "development"
-    log_level: str = "INFO"
-    frontend_url: str = "http://localhost:3000"
 
     # ─── Sibling services ────────────────────────────────────────
-    internal_service_key: str = ""
     restaurant_service_url: str = "http://localhost:3003"
 
     # ─── Vision provider (Gemini, structured JSON mode) ──────────
@@ -35,27 +35,15 @@ class Settings(BaseSettings):
     max_bulk_items: int = 300  # per bulk-publish call
 
     # ─── Resilience ──────────────────────────────────────────────
-    breaker_failure_threshold: int = 5
     breaker_reset_timeout_s: float = 30.0
-    internal_timeout_s: float = 5.0
     rate_limit_parse_per_min: int = 5  # per seller — vision calls cost money
 
-    @field_validator("internal_service_key", "gemini_api_key")
+    @field_validator("gemini_api_key")
     @classmethod
-    def _require_secrets(cls, v: str, info) -> str:  # type: ignore[no-untyped-def]
+    def _require_gemini_key(cls, v: str) -> str:
         if not v:
-            label = {
-                "internal_service_key": "INTERNAL_SERVICE_KEY",
-                "gemini_api_key": "GEMINI_API_KEY",
-            }.get(info.field_name, info.field_name)
-            raise ValueError(f"{label} must be set — fail-closed without it")
+            raise ValueError("GEMINI_API_KEY must be set — fail-closed without it")
         return v
 
-    @property
-    def is_prod(self) -> bool:
-        return self.environment == "production"
 
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+get_settings = cached_settings(Settings)

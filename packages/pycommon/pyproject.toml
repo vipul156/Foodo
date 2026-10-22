@@ -5,13 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "foodo-pycommon"
 version = "0.1.0"
-description = "Shared Python utilities for Foodo serverless services (DynamoDB, SNS/SQS, rate limiting) — the python analog of @foodo/backend-common."
+description = "Shared Python utilities for Foodo serverless services (FastAPI skeleton, config, logging, resilience, security, DynamoDB/SNS/SQS, rate limiting) — the python analog of @foodo/backend-common."
 requires-python = ">=3.10"
 # boto3 ships inside the Lambda Python runtime; bundling it (and botocore,
 # urllib3, ...) would only add MBs per service. Local development installs
-# it via pip (services' requirements.txt keep it out too — point them at
-# this package and install boto3 once in the venv).
-dependencies = []
+# it via pip (the services' requirements.txt keep it out too).
+#
+# The web-tier deps below are already declared by every consuming service
+# (ai-commerce, ai-dispatch, ai-menu-parser) — pip resolves them once, so
+# listing them here adds no bytes to the Lambda bundle.
+dependencies = [
+    "fastapi>=0.115.6",
+    "httpx>=0.28.1",
+    "mangum>=0.17.0",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.0",
+    "pyjwt>=2.10.1",
+    "tenacity>=9.0.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["pycommon*"]
+
+[tool.setuptools.package-data]
+# PEP 561: without this marker a type checker cannot see the package's
+# inline annotations, and every consumer falls back to `Any`.
+pycommon = ["py.typed"]

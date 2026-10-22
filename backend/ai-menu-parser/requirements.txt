@@ -8,8 +8,13 @@ mangum>=0.17.0            # ASGI → Lambda HTTP adapter (≡ serverless-http)
 httpx>=0.28.1
 tenacity>=9.0.0
 
-# — Shared monorepo package (DynamoDB/SNS/SQS/ratelimit primitives) —
-../../packages/pycommon
+# — Shared monorepo package (FastAPI skeleton, config, logging, resilience,
+#   security, DynamoDB/SNS/SQS, rate limiting) —
+#   NOT a pip requirement: pip resolves local paths against the current
+#   working directory and the Dockerized Lambda build never sees the
+#   monorepo. It is packed into the artifact instead, by the
+#   serverless-vendor-pycommon plugin (repo-root scripts/).
+#   For local development install it editable — see requirements-dev.txt.
 
 # boto3/botocore are NOT bundled (Lambda runtime ships them — see
 # noDeploy in serverless.yml). For local dev: pip install -r requirements-dev.txt
