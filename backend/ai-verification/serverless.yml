@@ -44,12 +44,13 @@ provider:
   environment:
     NODE_ENV: production
     STAGE: ${self:custom.stage}
-    GOOGLE_AI_API_KEY: ${env:GOOGLE_AI_API_KEY, ''}
-    GOOGLE_AI_MODEL: ${env:GOOGLE_AI_MODEL, ''}
+    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
+    GEMINI_MODEL: ${env:GEMINI_MODEL, 'gemini-2.5-flash'}
     ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
-    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, ''}
+    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}    # evidence storage (cloudinary SDK)
+    FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
     VERIFICATIONS_TABLE: ${cf:${self:custom.infra}.VerificationsTable}
     RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
     EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}

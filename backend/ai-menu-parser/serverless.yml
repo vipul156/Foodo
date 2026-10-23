@@ -52,6 +52,11 @@ provider:
   environment:
     STAGE: ${self:custom.stage}
     LOG_LEVEL: ${env:MENU_PARSER_LOG_LEVEL, 'INFO'}
+    # Same identity plane as the Node services: the gateway authorizer
+    # only checks that a token exists, require_user re-verifies the
+    # session cookie in-app with these secrets.
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
+    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     GEMINI_MODEL: ${env:GEMINI_MODEL, 'gemini-2.5-flash'}

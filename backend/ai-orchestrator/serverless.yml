@@ -48,6 +48,13 @@ provider:
     ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
     ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}   # validates INBOUND internal calls (queue reads)
+    # Dispute evidence (the photo is the case's legal record). The shared
+    # uploader signs with the three separate names — CLOUDINARY_URL is
+    # NOT read here, and missing credentials 503 the intake.
+    CLOUDINARY_CLOUD_NAME: ${env:CLOUDINARY_CLOUD_NAME, ''}
+    CLOUDINARY_API_KEY: ${env:CLOUDINARY_API_KEY, ''}
+    CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
+    FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
     # Sync cross-service reads (order facts, refund execution, rider
     # telemetry) go through the shared HTTP API — internal endpoints
     # (x-internal-key) are public at the gateway, gated in-app.

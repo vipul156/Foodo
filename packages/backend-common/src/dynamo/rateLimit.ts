@@ -50,8 +50,15 @@ interface CounterRow {
 export function createDynamoRateLimitStore(
   options: DynamoRateLimitOptions,
 ): Store {
+  // Two env names exist across the stacks: utils-service exports
+  // RATE_LIMIT_TABLE, the AI stacks export RATE_LIMITS_TABLE. Reading
+  // both keeps the counter on the provisioned table instead of falling
+  // through to the bare default name (which does not exist).
   const tableName =
-    options.tableName ?? process.env.RATE_LIMIT_TABLE ?? "foodo-rate-limits";
+    options.tableName ??
+    process.env.RATE_LIMIT_TABLE ??
+    process.env.RATE_LIMITS_TABLE ??
+    "foodo-rate-limits";
   const windowMs = options.windowMs;
 
   const windowKey = (key: string, now: number) => {
