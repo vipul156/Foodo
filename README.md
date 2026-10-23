@@ -302,6 +302,7 @@ flowchart LR
 | **1** | `infra/` | `foodo-infra` | VPC (2 AZs, S3 + DynamoDB gateway endpoints, opt-in NAT), private S3 uploads bucket, Cognito pool + web client, **8 DynamoDB tables**, SNS event bus, SQS work queues (payment, order) + DLQs |
 | **2** | `core/` | `foodo-core-api` | Shared HTTP API (single base URL + CORS) and the central JWT REQUEST authorizer Lambda |
 | **3** | `backend/<svc>/` | `foodo-<svc>` | Functions, per-service IAM, own fan-out queues + SNS subscriptions + filter policies, and the WebSocket API (realtime only) |
+| **3b** | `backend/ai-*/` | `foodo-ai-*` | AI tier deployed alongside the domain services: commerce agent, dispatch swarm, menu parser, support orchestrator, visual verification — same HTTP API, own IAM |
 | **+** | `apps/web/` | `foodo-web` | Next.js via SST Ion / OpenNext on CloudFront, with a reverse-proxy origin to the HTTP API |
 
 ### ▶️ Deploy commands
@@ -309,7 +310,9 @@ flowchart LR
 ```bash
 pnpm deploy:infra       # VPC, S3, Cognito, DynamoDB, SNS, SQS   (rarely changes)
 pnpm deploy:core        # shared HTTP API + JWT authorizer       (rarely changes)
-pnpm deploy:services    # ALL six service stacks (turbo, parallel)
+pnpm deploy:services    # ALL 11 service stacks: 6 domain + 5 AI (turbo, parallel)
+pnpm deploy:ai          # only the AI stacks (ai-commerce, ai-dispatch, ai-menu-parser,
+                        #                   ai-orchestrator, ai-verification)
 pnpm deploy:frontend    # Next.js via SST Ion / OpenNext
 
 pnpm deploy:all         # everything: infra → core → services → seed → frontend

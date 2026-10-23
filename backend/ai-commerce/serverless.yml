@@ -5,7 +5,7 @@
 # per-user rate limits in the shared rate-limits counter table, and
 # turn events fan out on the platform SNS topic.
 #
-#   turbo run deploy --filter=ai-commerce (or: serverless deploy here)
+#   turbo run deploy --filter=@foodo/ai-commerce (or: serverless deploy here)
 
 service: foodo-ai-commerce
 frameworkVersion: "3"

@@ -62,7 +62,8 @@ pnpm run format:check    # prettier --check
 
 pnpm run deploy:infra    # 1
 pnpm run deploy:core     # 2
-pnpm run deploy:services # 3
+pnpm run deploy:services # 3 — domain services + AI stacks
+pnpm run deploy:ai       # 3b — AI stacks only
 pnpm run deploy:frontend # 4
 pnpm run deploy:all      # all four, in order
 

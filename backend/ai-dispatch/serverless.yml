@@ -11,7 +11,7 @@
 #
 # Decisions fan out on SNS (dispatch.decision) for analytics/dashboards.
 #
-#   turbo run deploy --filter=ai-dispatch (or: serverless deploy here)
+#   turbo run deploy --filter=@foodo/ai-dispatch (or: serverless deploy here)
 
 service: foodo-ai-dispatch
 frameworkVersion: "3"

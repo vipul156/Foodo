@@ -76,6 +76,7 @@ gateway.
 1. infra     → foodo-infra-<stage>        tables, topic, queues, VPC, S3, Cognito
 2. core      → foodo-core-api-<stage>     HTTP API + jwtAuthorizer
 3. services → foodo-{auth,restaurant,rider,admin,utils,realtime}-<stage>
+   AI tier → foodo-{ai-commerce,ai-dispatch,ai-menu-parser,ai-orchestrator,verification}-<stage>
 4. frontend → foodo-web                   CloudFront + Next SSR
 ```
 
@@ -85,6 +86,7 @@ Root scripts enforce it:
 pnpm run deploy:infra
 pnpm run deploy:core
 pnpm run deploy:services
+pnpm run deploy:ai       # AI stacks only
 pnpm run deploy:frontend
 pnpm run deploy:all      # all four in order
 ```

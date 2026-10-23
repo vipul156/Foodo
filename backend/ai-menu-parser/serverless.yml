@@ -3,7 +3,7 @@
 # the seller review grid, then bulk-publish proxy into the restaurant
 # service (data ownership stays with the domain service).
 #
-#   turbo run deploy --filter=ai-menu-parser (or: serverless deploy here)
+#   turbo run deploy --filter=@foodo/ai-menu-parser (or: serverless deploy here)
 
 service: foodo-ai-menu-parser
 frameworkVersion: "3"

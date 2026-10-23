@@ -1,0 +1,12 @@
+{
+  "name": "@foodo/ai-commerce",
+  "version": "1.0.0",
+  "description": "Foodo AI conversational commerce service (serverless Lambda — Python 3.12 + LangGraph). No build step: the Python deps are bundled by serverless-python-requirements at deploy time.",
+  "private": true,
+  "scripts": {
+    "build": "node -e \"process.stdout.write('no build step: serverless-python-requirements bundles app/ at deploy time\\n')\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  }
+}

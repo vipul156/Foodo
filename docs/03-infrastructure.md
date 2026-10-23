@@ -375,7 +375,8 @@ uses 256 MB / 120 s.
 ```bash
 pnpm run deploy:infra       # 1 — must be first
 pnpm run deploy:core        # 2
-pnpm run deploy:services    # 3
+pnpm run deploy:services    # 3 — 6 domain services + the 5 AI stacks
+pnpm run deploy:ai          # 3b — AI stacks only
 pnpm run deploy:frontend    # 4
 pnpm run deploy:all         # all four, in order
 
