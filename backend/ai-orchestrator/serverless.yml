@@ -146,4 +146,4 @@ functions:
       - sqs:
           arn: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
           batchSize: 5
-          reportBatchItemFailures: true
+          functionResponseType: ReportBatchItemFailures

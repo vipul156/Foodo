@@ -215,4 +215,4 @@ functions:
       - sqs:
           arn: !GetAtt RealtimeQueue.Arn
           batchSize: 5
-          reportBatchItemFailures: true
+          functionResponseType: ReportBatchItemFailures

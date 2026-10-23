@@ -123,7 +123,9 @@ functions:
       - sqs:
           arn: !GetAtt DispatchOrdersQueue.Arn
           batchSize: 5
-          reportBatchItemFailures: true
+          # v3 spelling — turns on the event source mapping's
+          # ReportBatchItemFailures so only failed records are retried.
+          functionResponseType: ReportBatchItemFailures
 
 resources:
   Resources:

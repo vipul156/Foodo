@@ -240,7 +240,7 @@ functions:
       - sqs:
           arn: ${cf:${self:custom.infra}.PaymentQueueArn}
           batchSize: 5
-          reportBatchItemFailures: true
+          functionResponseType: ReportBatchItemFailures
 
   riderEventsConsumer:
     handler: dist/riderEventsConsumer.handler
@@ -253,4 +253,4 @@ functions:
       - sqs:
           arn: !GetAtt RiderEventsQueue.Arn
           batchSize: 5
-          reportBatchItemFailures: true
+          functionResponseType: ReportBatchItemFailures
