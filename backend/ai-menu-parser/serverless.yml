@@ -47,7 +47,7 @@ provider:
   region: ${self:custom.region}
   stage: ${self:custom.stage}
   memorySize: 1024
-  timeout: 90              # Gemini structured-vision calls are slow
+  timeout: 90              # structured-vision calls are slow
   logRetentionInDays: 14
   environment:
     STAGE: ${self:custom.stage}
@@ -58,8 +58,11 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
-    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
-    GEMINI_MODEL: ${env:GEMINI_MODEL, 'gemini-2.5-flash'}
+    # OpenAI-compatible vision model (required — the app fails closed).
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
     # Bulk publish forwards the seller session to the restaurant
     # service through the shared HTTP API.
     RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}

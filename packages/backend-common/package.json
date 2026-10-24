@@ -26,6 +26,10 @@
     "./dynamo": {
       "types": "./dist/dynamo/index.d.ts",
       "default": "./dist/dynamo/index.js"
+    },
+    "./llm": {
+      "types": "./dist/llm/index.d.ts",
+      "default": "./dist/llm/index.js"
     }
   },
   "scripts": {

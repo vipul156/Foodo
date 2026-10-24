@@ -34,7 +34,7 @@ enforcement the model cannot bypass.**
   │ (gate owner) │   ┌─────────────────────┐            │
   └──────┬───────┘   │  ai-verification    │            │
          │           │  :3007 (internal)   │            │
-  ┌──────┴───────┐   │  Gemini→Claude chain │           │
+  ┌──────┴───────┐   │  OpenAI-compat model │           │
   │ rider service│──▶│  evidence→Cloudinary │           │
   │ (POD proxy)  │   └──────────┬──────────┘            │
   └──────┬───────┘              │ verification.events (fanout) ──▶ fraud/analytics
@@ -64,7 +64,8 @@ enforcement the model cannot bypass.**
 
 Single-purpose AI tier for image verdicts. Owns:
 
-- The **provider chain**: Gemini Flash (primary) → Claude Haiku (fallback)
+- The **vision provider**: ONE OpenAI-compatible model, picked by
+  `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY`
 - The **evidence store**: Cloudinary copies of every verification photo
 - The **verdict ledger**: `Verification` collection (TTL-bounded, 90 days)
 
@@ -92,27 +93,27 @@ session, so authentication and authorization stay in the domain owner.
   "missing": ["Diet Coke"],
   "unexpected": [],
   "notes": "Drink cup absent from bag",
-  "provider": "gemini",
+  "provider": "openai",
   "evidence": { "url": "https://res.cloudinary.com/...", "publicId": "..." }
 }
 ```
 
-`status: "unverified"` is the honest degradation state: both AI providers
-were down or unconfigured. The verdict is still persisted and published so
+`status: "unverified"` is the honest degradation state: the vision model
+was down or unconfigured. The verdict is still persisted and published so
 consumers see the gap rather than a silent pass.
 
 ### 2.4 Key design decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| **Provider chain with per-provider circuit breakers** | One vendor outage trips only that vendor (opossum, 50% threshold / 15s reset, volumeThreshold 3). The fallback serves immediately; credentials-absent providers are skipped without firing breakers. |
+| **Single provider behind one circuit breaker** | Any OpenAI-compatible endpoint serves; the base URL is the only vendor-specific value. An outage trips the vision breaker (opossum, 50% threshold / 15s reset, volumeThreshold 3). An unconfigured deployment returns `unverified` without firing it. |
 | **Deterministic flag derivation** | Flag codes (`MISSING_ITEM_*`) are computed in TypeScript from parsed lists. The model never invents workflow state; prompts demand strict JSON and parsing is defensive (fences, prose, wrong shapes → null). |
 | **Prompt-injection fencing** | In-image text (receipts, notes) is declared untrusted content in the system prompt. No tool calls, no code execution — model output is JSON-or-nothing. |
 | **Image hygiene before egress** | MIME allow-list (jpeg/png/webp), hard byte cap (`AI_MAX_IMAGE_BYTES`, default 5MB), base64 charset+length sanity. Invalid input → `null` verdict without a provider call. |
 | **Evidence before verdict** | Photo → Cloudinary through the shared external-egress breaker. Failure stores `url: null` and continues — the dispute record notes the gap instead of blocking the kitchen. |
 | **Idempotency cooldown (60s)** | Same order+type verdict returned as-is within the window: double-taps and client retries never double-spend AI tokens or fork the audit trail. |
 | **TTL evidence retention (90d)** | `expiresAt` + Mongo TTL index keeps the collection bounded forever; matches chargeback/dispute SLAs. |
-| **Temperature 0 + JSON mode** | `responseMimeType: application/json` (Gemini) and system-prompt JSON discipline (Claude) for reproducible classifications. |
+| **Temperature 0 + JSON mode** | `response_format: json_object` on every call plus system-prompt JSON discipline for reproducible classifications (the hint is not a schema, so parsing stays defensive). |
 | **Event fanout** | Every verdict publishes to `verification.events` (fanout, durable). Fraud scoring, seller scorecards, and push consumers bind their own queues — the request path never knows about them. |
 
 ### 2.5 Integration: the ready_for_rider gate (restaurant service)
@@ -253,7 +254,7 @@ Escalation produces:
 
 | Tool | Type | Source | Failure mode |
 |------|------|--------|--------------|
-| `vision.triage` | LLM | Claude Haiku (pool B) | → `unclear` severity → HITL |
+| `vision.triage` | LLM | OpenAI-compatible model (pool B) | → `unclear` severity → HITL |
 | `telemetry.audit` | internal | rider service | → empty flags, confidence 0.5, continues |
 | `trust.assess` | internal + local | restaurant service + ledger | → signals `ORDER_HISTORY_UNAVAILABLE`, scores on ledger only |
 | `payment.refund` | internal | utils (Razorpay/Stripe) | → refund outcome `ok:false` → auto-escalate |
@@ -297,8 +298,8 @@ new retrieval tools plug in; the graph and policy remain untouched.
 
 | Failure | Behavior |
 |---------|----------|
-| Gemini down | Claude Haiku serves; both breakers trip independently |
-| Both AI providers down | Verdict `unverified` + `AI_UNAVAILABLE`; kitchen gate blocks until override or recovery; POD stays advisory; arbitration escalates to HITL |
+| Vision model down | Verdict `unverified` + `AI_UNAVAILABLE`; kitchen gate blocks until override or recovery; POD stays advisory; arbitration escalates to HITL |
+| Vision model unconfigured | Same degradation, without a provider call or a breaker change |
 | Cloudinary down | Evidence stored with `url: null`; verdict still returns; auditable gap |
 | RabbitMQ down | Services boot and serve; publishers drop events with logs (analytics-only); consumers re-attach with exponential backoff + jitter; poison messages dead-letter after 3 redeliveries |
 | Rider/restaurant/admin service down | Tool failures degrade gracefully (empty telemetry, escalation-with-local-record); case ends `failed` only on unrecoverable node crashes — never silently vanishes |
@@ -349,11 +350,11 @@ RABBITMQ_URL=amqp://localhost
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
-# AI providers (configure at least one; both recommended)
-GEMINI_API_KEY=your-gemini-key
-GEMINI_MODEL=gemini-2.5-flash
-ANTHROPIC_API_KEY=your-anthropic-key
-ANTHROPIC_MODEL=claude-haiku-4-5
+# Vision model (OpenAI-compatible; unconfigured = unverified)
+LLM_PROVIDER=openai
+LLM_MODEL=your-vision-model
+LLM_API_KEY=your-llm-api-key
+# LLM_BASE_URL=                 # vLLM / LiteLLM / custom gateway
 # Optional tuning
 AI_TIMEOUT_MS=12000
 AI_MAX_IMAGE_BYTES=5242880
@@ -373,8 +374,11 @@ RESTAURANT_SERVICE_URL=http://localhost:3001
 RIDER_SERVICE_URL=http://localhost:3004
 ADMIN_SERVICE_URL=http://localhost:3006
 UTILS_SERVICE_URL=http://localhost:3005
-ANTHROPIC_API_KEY=your-anthropic-key
-ANTHROPIC_MODEL=claude-haiku-4-5
+# Reasoning model (OpenAI-compatible; unset = deterministic fallback)
+LLM_PROVIDER=openai
+LLM_MODEL=your-reasoning-model
+LLM_API_KEY=your-llm-api-key
+# LLM_BASE_URL=
 # Autonomy bounds
 AGENT_MAX_AUTO_REFUND=500
 AGENT_VOUCHER_CAP=150
@@ -406,7 +410,7 @@ AI_ORCHESTRATOR_URL=http://localhost:3008
 2. Browser downscales photo → `POST /api/order/verification/:id/packing`
 3. Restaurant service verifies ownership, builds the expected ticket from
    the order, proxies to `ai-verification` (breaker-wrapped, 20s pool)
-4. Gemini flags `MISSING_ITEM_DIET_COKE` (0.94) — evidence lands in
+4. The vision model flags `MISSING_ITEM_DIET_COKE` (0.94) — evidence lands in
    Cloudinary + verdict persisted + event published
 5. Kitchen screen banner: *"Possibly missing: Diet Coke"*
 6. Staff adds the drink, re-shoots → `verified` → order flips to
@@ -441,11 +445,11 @@ everything the agent saw, in order, with latencies.
 ## 7. Testing Strategy (recommended next steps)
 
 1. **Contract tests** — verdict JSON shape for both endpoints (golden
-   responses per provider), gate 409s, override validation
+   responses per model), gate 409s, override validation
 2. **Decision-table tests** — the `decide()` function is pure: table-drive
    every row of §3.3 including boundary trust scores
-3. **Fault injection** — kill Gemini mock → Claude fallback; kill both →
-   `unverified` + gate behavior; kill utils → refund → escalation
+3. **Fault injection** — kill the vision mock → `unverified` + gate
+   behavior; kill utils → refund → escalation
 4. **Load** — packing bursts (60s cooldown effectiveness), dispute intake
    at rate-limit ceiling, breaker half-open probes under sustained failure
 5. **Red-team the agent** — prompt-injection images ("ignore previous

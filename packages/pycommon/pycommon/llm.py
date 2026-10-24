@@ -14,8 +14,8 @@ code change. Anthropic is deliberately not wired here: its native
 message/tool schema differs from OpenAI's and no service calls it.
 
 LangChain imports are deliberately lazy: pycommon is vendored into services
-that never touch this module (ai-menu-parser calls Gemini over raw REST),
-and importing their package must not require the langchain stack.
+that never build a chat model (ai-menu-parser posts to the endpoint over
+raw HTTP), and importing their package must not require langchain.
 
 Caveat worth knowing before switching: ``max_tokens`` is honoured by the
 servers above, but OpenAI's own o-series / gpt-5 models want

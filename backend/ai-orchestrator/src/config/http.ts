@@ -1,5 +1,13 @@
 import axios, { AxiosRequestConfig } from "axios";
 import CircuitBreaker from "opossum";
+import {
+  authHeaders,
+  buildChatJsonPayload,
+  chatCompletionsUrl,
+  extractChatJson,
+  resolveLlmConfig,
+  type LlmUsage,
+} from "@foodo/backend-common/llm";
 
 // ─── Isolated egress pools ───────────────────────────────────
 // POOL A — internal service calls (order facts, refunds via utils).
@@ -74,24 +82,15 @@ export const getInternalHeaders = () => ({
   "x-internal-key": process.env.INTERNAL_SERVICE_KEY || "",
 });
 
-// ─── Pool B: LLM providers ───────────────────────────────────
-// Claude Haiku: fast, cheap, vision-capable — used for complaint
-// parsing, photo triage, and escalation summaries. temperature 0 for
-// reproducible classifications; JSON-only outputs, defensively parsed.
+// ─── Pool B: LLM (OpenAI-compatible) ─────────────────────────
+// One transport for every vendor: LLM_PROVIDER / LLM_MODEL / LLM_API_KEY
+// (+ LLM_BASE_URL) pick the endpoint and the model, which must accept
+// image_url content parts and response_format=json_object. temperature 0
+// for reproducible classifications; JSON-only outputs, defensively parsed.
 
-const llmClient = axios.create({
-  timeout: LLM_TIMEOUT_MS,
-  headers: {
-    "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
-    "anthropic-version": "2023-06-01",
-    "content-type": "application/json",
-  },
-});
+const llmClient = axios.create({ timeout: LLM_TIMEOUT_MS });
 
-export interface LlmUsage {
-  prompt: number;
-  completion: number;
-}
+export type { LlmUsage };
 
 interface LlmArgs {
   system: string;
@@ -100,50 +99,26 @@ interface LlmArgs {
   maxTokens?: number;
 }
 
-async function callClaude(args: LlmArgs): Promise<{ json: Record<string, unknown> | null; usage: LlmUsage | null }> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { json: null, usage: null };
+async function callLlmRaw(
+  args: LlmArgs,
+): Promise<{ json: Record<string, unknown> | null; usage: LlmUsage | null }> {
+  // Unconfigured deployment: no endpoint, so skip egress entirely.
+  const cfg = resolveLlmConfig();
+  if (!cfg) return { json: null, usage: null };
 
-  const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5";
+  const response = await llmClient.post(
+    chatCompletionsUrl(cfg),
+    buildChatJsonPayload(cfg, args),
+    { headers: authHeaders(cfg) },
+  );
 
-  const content: unknown[] = [];
-  if (args.imageBase64) {
-    content.push({
-      type: "image",
-      source: { type: "base64", media_type: "image/jpeg", data: args.imageBase64 },
-    });
-  }
-  content.push({ type: "text", text: args.userText });
-
-  const response = await llmClient.post("https://api.anthropic.com/v1/messages", {
-    model,
-    max_tokens: args.maxTokens ?? 700,
-    temperature: 0,
-    system: args.system,
-    messages: [{ role: "user", content }],
-  });
-
-  const blocks = response.data?.content;
-  const text = Array.isArray(blocks)
-    ? blocks.map((b: { text?: string }) => b?.text ?? "").join("")
-    : "";
-
-  return {
-    json: extractJson(text),
-    usage: response.data?.usage
-      ? {
-          prompt: Number(response.data.usage.input_tokens) || 0,
-          completion: Number(response.data.usage.output_tokens) || 0,
-        }
-      : null,
-  };
+  return extractChatJson(response.data);
 }
 
-const llmBreaker = breakerWrap<[LlmArgs], { json: Record<string, unknown> | null; usage: LlmUsage | null }>(
-  "llm-claude",
-  LLM_TIMEOUT_MS,
-  callClaude,
-);
+const llmBreaker = breakerWrap<
+  [LlmArgs],
+  { json: Record<string, unknown> | null; usage: LlmUsage | null }
+>("llm-chat", LLM_TIMEOUT_MS, callLlmRaw);
 
 export const callLlm = async (args: LlmArgs) => {
   try {
@@ -153,20 +128,3 @@ export const callLlm = async (args: LlmArgs) => {
     return { json: null, usage: null };
   }
 };
-
-function extractJson(text: string): Record<string, unknown> | null {
-  if (!text) return null;
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced?.[1] ?? text).trim();
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  try {
-    const parsed = JSON.parse(candidate.slice(start, end + 1));
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}

@@ -6,8 +6,9 @@
 #   POST /api/verification/delivery  (rider service proxies)
 #   GET  /api/verification/order/:id (audit read for support tooling)
 #
-# Every endpoint axios-calls an LLM provider and uploads the photo to
-# Cloudinary — the evidence copy is the legal record. The service never
+# Every endpoint calls an OpenAI-compatible vision model and uploads the
+# photo to Cloudinary — the evidence copy is the legal record. The
+# service never
 # 5xx on AI failure: a dead AI tier degrades to "unverified" and the
 # packing gate / POD flow handle that verdict themselves.
 #
@@ -44,10 +45,11 @@ provider:
   environment:
     NODE_ENV: production
     STAGE: ${self:custom.stage}
-    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
-    GEMINI_MODEL: ${env:GEMINI_MODEL, 'gemini-2.5-flash'}
-    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
-    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
+    # OpenAI-compatible vision model; unset model/key = "unverified".
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}    # evidence storage (cloudinary SDK)
     FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}

@@ -18,13 +18,13 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-#: Isolate egress by dependency class: the Gemini vision API vs. internal
-#: services. A slow vision call must never starve the internal pool.
+#: Isolate egress by dependency class: the vision model endpoint vs.
+#: internal services. A slow vision call must never starve the internal pool.
 POLICY = ResiliencePolicy(
     pools=(
         PoolSpec(
-            "gemini",
-            settings.gemini_timeout_s,
+            "vision",
+            settings.llm_timeout_s,
             max_connections=10,
             max_keepalive_connections=4,
         ),

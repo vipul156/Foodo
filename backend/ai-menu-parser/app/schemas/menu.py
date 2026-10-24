@@ -1,6 +1,6 @@
 """Menu parse contracts — the typed boundary around the vision model.
 
-The Gemini response MUST validate against ParsedMenu before any
+The vision model's response MUST validate against ParsedMenu before any
 downstream code sees it. Normalization (price cleanup, dietary flags,
 category naming) is deterministic Python; the model proposes, Pydantic
 disposes.
@@ -32,7 +32,7 @@ _ALLERGEN_ALIASES: dict[str, str] = {
     "fish": "fish", "anchovy": "fish", "tuna": "fish", "salmon": "fish",
 }
 
-# ─── Vision output schema (the JSON contract Gemini fills) ───
+# ─── Vision output schema (the JSON contract the model fills) ───
 
 
 class SpiceLevel(str, Enum):

@@ -17,7 +17,7 @@ import base64
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.deps import get_cookie_header, require_user
-from app.clients.gemini import VisionError
+from app.clients.vision import VisionError
 from app.core.config import get_settings
 from app.core.ratelimit import enforce_rate_limit
 from app.core.security import Identity, service_headers

@@ -1,11 +1,11 @@
-"""ai-menu-parser — Multimodal Menu Digitization (FastAPI + Gemini).
+"""ai-menu-parser — Multimodal Menu Digitization (FastAPI + vision model).
 
 Turns a smartphone photo of a printed menu into a validated, normalized
 category/item tree for the human-in-the-loop review grid, then proxies
 the owner-approved array to the restaurant service's bulk endpoint.
 
 Boot sequence:
-  1. Configure logging (fail-fast settings: GEMINI_API_KEY required)
+  1. Configure logging (fail-fast settings: a vision model is required)
   2. Serve HTTP — stateless service, no database of its own
 """
 
@@ -26,7 +26,7 @@ log = get_logger(__name__)
 
 async def _startup(app: FastAPI) -> None:
     configure_logging(settings.log_level)
-    log.info("ai-menu-parser up on port %s (model=%s)", settings.port, settings.gemini_model)
+    log.info("ai-menu-parser up on port %s (model=%s)", settings.port, settings.llm.model)
 
 
 async def _shutdown(app: FastAPI) -> None:

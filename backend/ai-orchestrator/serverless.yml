@@ -45,8 +45,11 @@ provider:
   environment:
     NODE_ENV: production
     STAGE: ${self:custom.stage}
-    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
-    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
+    # OpenAI-compatible reasoning model; unset = deterministic fallback.
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
     # Validates INBOUND internal calls (queue reads). No fallback, on
     # purpose: the settings refuse to boot without it, so an empty value
     # would deploy an arbiter that 500s on intake, case reads and health.

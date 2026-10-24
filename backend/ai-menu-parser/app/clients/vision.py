@@ -1,9 +1,12 @@
-"""Gemini Flash vision client — structured JSON extraction from menu photos.
+"""OpenAI-compatible vision client — structured JSON extraction from menu photos.
 
-The model is configured with a response schema (JSON mode) so output is a
-typed menu tree, not free text. Parsing is defensive: fences, prose, and
-malformed shapes degrade to a clear error — never a partial DB write
-(that's the review grid's job anyway).
+One model, any vendor: ``LLM_PROVIDER`` / ``LLM_MODEL`` / ``LLM_API_KEY``
+(plus ``LLM_BASE_URL`` for a self-hosted gateway) pick the endpoint, which
+must accept ``image_url`` content parts and ``response_format=json_object``.
+The prompt pins the JSON contract, so output is a typed menu tree, not free
+text. Parsing is defensive: fences, prose, and malformed shapes degrade to
+a clear error — never a partial DB write (that's the review grid's job
+anyway).
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from __future__ import annotations
 import base64
 import re
 
+from pycommon.llm import LlmSettings
 from pycommon.logging import get_logger
 
 from app.core.config import get_settings
@@ -24,63 +28,9 @@ class VisionError(Exception):
     """The vision engine failed or returned unusable output."""
 
 
-# The JSON contract Gemini must fill — mirrors ParsedMenu exactly.
-# responseSchema forces structure; the system prompt adds the semantic
-# rules (multi-column layouts, dotted-leader prices, veg markers).
-_RESPONSE_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
-        "categories": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "description": {"type": "string"},
-                                "price": {"type": "number"},
-                                "currency": {"type": "string"},
-                                "is_veg": {
-                                    "type": "object",
-                                    "nullable": True,
-                                    "enum": [True, False, None],
-                                },
-                                "spicy_level": {
-                                    "type": "string",
-                                    "enum": ["none", "mild", "medium", "hot", "unknown"],
-                                },
-                                "allergens": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "string",
-                                        "enum": [
-                                            "dairy", "gluten", "nuts", "eggs",
-                                            "soy", "shellfish", "fish",
-                                        ],
-                                    },
-                                },
-                            },
-                            "required": ["name", "price"],
-                        },
-                    },
-                },
-                "required": ["name", "items"],
-            },
-        },
-        "menu_language": {"type": "string"},
-        "parse_warnings": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["categories"],
-}
-
 SYSTEM_PROMPT = """You are a menu-digitization engine for a food delivery platform. \
-Extract EVERY dish from this printed/handwritten menu photo into the required JSON \
-structure. You must:
+Extract EVERY dish from this printed/handwritten menu photo into the JSON \
+object described below. You must:
 
 1. LAYOUT: Detect multi-column layouts and group each item under its printed \
 section header (Starters, Main Course, Breads, Beverages...). Use the printed \
@@ -99,7 +49,65 @@ cashew/almond→nuts, egg→eggs).
 never invent descriptions.
 5. HONESTY: If a price is illegible, use your best reading and add a note to \
 parse_warnings like "price unclear for X". Never skip dishes you can see. \
-Do not add dishes that are not printed."""
+Do not add dishes that are not printed.
+
+Return ONLY this JSON object (no prose, no markdown fences):
+{
+  "categories": [
+    {
+      "name": "<printed section header>",
+      "items": [
+        {
+          "name": "<dish name>",
+          "description": "<printed description or empty string>",
+          "price": <number>,
+          "currency": "<INR|USD|...>",
+          "is_veg": <true|false|null>,
+          "spicy_level": "<none|mild|medium|hot|unknown>",
+          "allergens": ["<dairy|gluten|nuts|eggs|soy|shellfish|fish>"]
+        }
+      ]
+    }
+  ],
+  "menu_language": "<primary language of the menu>",
+  "parse_warnings": ["<anything you could not read cleanly>"]
+}"""
+
+
+def _headers(cfg: LlmSettings) -> dict[str, str]:
+    """JSON content type plus a bearer token when the provider needs one."""
+    headers = {"content-type": "application/json"}
+    if cfg.api_key:  # keyless local runtimes (ollama/lmstudio) leave this empty
+        headers["authorization"] = f"Bearer {cfg.api_key}"
+    return headers
+
+
+def _build_payload(cfg: LlmSettings, encoded: str, mime_type: str) -> dict:
+    """Chat Completions payload asking for a JSON object back."""
+    return {
+        "model": cfg.model,
+        "temperature": 0,
+        "max_tokens": cfg.max_tokens,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{encoded}",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": "Digitize this menu photo and return the JSON object.",
+                    },
+                ],
+            },
+        ],
+    }
 
 
 def extract_public_id_from_cloudinary_url(url: str) -> str | None:
@@ -142,7 +150,8 @@ async def parse_menu_image(
     import time
 
     started = time.perf_counter()
-    if settings.gemini_api_key == "":
+    cfg = settings.llm
+    if not cfg.is_configured:  # settings already fail closed; belt and braces
         raise VisionError("vision provider not configured")
 
     # ─── Image fetch (from Cloudinary URL) with hygiene checks ──
@@ -163,44 +172,20 @@ async def parse_menu_image(
     mime_type = sniffed
 
     encoded = base64.b64encode(image_bytes).decode()
-
-    # ─── Structured vision call ─────────────────────────────────
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": encoded,
-                        }
-                    },
-                    {"text": SYSTEM_PROMPT},
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMime": "application/json",
-            "responseSchema": _RESPONSE_SCHEMA,
-            "temperature": 0,
-            "maxOutputTokens": settings.gemini_max_output_tokens,
-        },
-    }
+    payload = _build_payload(cfg, encoded, mime_type)
+    headers = _headers(cfg)
 
     async def _call() -> dict:
-        response = await pools.gemini.post(
-            (
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{settings.gemini_model}:generateContent"
-            ),
-            params={"key": settings.gemini_api_key},
+        response = await pools.vision.post(
+            f"{cfg.endpoint}/chat/completions",
+            headers=headers,
             json=payload,
         )
         response.raise_for_status()
         return response.json()
 
     try:
-        raw = await call_with_resilience("gemini-vision", _call, retries=1)
+        raw = await call_with_resilience("vision-chat", _call, retries=1)
     except BreakerOpen as exc:
         raise VisionError("vision engine overloaded — try again shortly") from exc
     except Exception as exc:  # noqa: BLE001
@@ -211,7 +196,7 @@ async def parse_menu_image(
     if parsed is None:
         raise VisionError("vision engine returned unusable output")
     meta = {
-        "provider": f"gemini:{settings.gemini_model}",
+        "provider": f"{cfg.provider}:{cfg.model}",
         "duration_ms": int((time.perf_counter() - started) * 1000),
         "image_bytes": len(image_bytes),
     }
@@ -230,14 +215,18 @@ def _sniff_image_type(data: bytes) -> str | None:
 
 
 def _extract_text(raw: dict) -> str:
-    candidates = raw.get("candidates") or []
-    for candidate in candidates:
-        content = candidate.get("content") or {}
-        parts = content.get("parts") or []
-        texts = [p.get("text", "") for p in parts if isinstance(p, dict)]
-        text = "".join(texts)
-        if text.strip():
-            return text
+    """Read `choices[0].message.content` (string or text parts)."""
+    choices = raw.get("choices") or []
+    for choice in choices:
+        content = (choice.get("message") or {}).get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            text = "".join(
+                part.get("text", "") for part in content if isinstance(part, dict)
+            )
+            if text.strip():
+                return text
     return ""
 
 

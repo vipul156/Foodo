@@ -1,7 +1,7 @@
 """Parser orchestration — vision output → normalized review draft.
 
 Pipeline:
-  Gemini (JSON mode) → ParsedMenu validation → deterministic
+  Vision model (JSON mode) → ParsedMenu validation → deterministic
   normalization (category casing, veg inference from names, price
   sanity) → ParseDraft for the interactive review grid.
 
@@ -17,7 +17,7 @@ import uuid
 
 from pycommon.logging import get_logger
 
-from app.clients.gemini import VisionError, parse_menu_image
+from app.clients.vision import VisionError, parse_menu_image
 from app.core.config import get_settings
 from app.schemas.menu import (
     NormalizedItem,

@@ -1,16 +1,26 @@
 import axios from "axios";
 import CircuitBreaker from "opossum";
+import {
+  authHeaders,
+  buildChatJsonPayload,
+  chatCompletionsUrl,
+  extractChatJson,
+  resolveLlmConfig,
+  type LlmConfig,
+} from "@foodo/backend-common/llm";
 
 // ─── Multimodal Visual Verification Engine ──────────────────
-// A single deterministic entry point (verifyImage) over a provider
-// chain: Gemini Flash (primary) → Claude Haiku (fallback) → null.
+// A single deterministic entry point (verifyImage) over ONE
+// OpenAI-compatible vision model selected by LLM_PROVIDER / LLM_MODEL /
+// LLM_API_KEY (plus LLM_BASE_URL for a custom endpoint) — OpenAI, Groq,
+// OpenRouter, Together, Ollama, vLLM...
 //
 // Design rules:
 //   1. NEVER throw — the caller gets `null` and decides policy. A dead
 //      AI tier must degrade the feature (mark unverified), never take
 //      down packing or delivery flows.
-//   2. Each provider sits behind its OWN opossum breaker — one vendor
-//      outage trips only that vendor; the other keeps serving.
+//   2. The provider sits behind its own opossum breaker, so an outage
+//      trips fast instead of piling up sockets.
 //   3. Structured output only: prompts demand strict JSON, parsing is
 //      defensive (markdown fences, stray prose, wrong shapes are all
 //      rejected → null). Model text is never trusted as code/UI.
@@ -155,26 +165,6 @@ Return STRICT JSON with exactly this shape:
 ${INJECTION_FENCE}`;
 }
 
-// ─── Defensive JSON extraction ───────────────────────────────
-
-function extractJson(text: string): Record<string, unknown> | null {
-  if (!text) return null;
-  // Strip markdown fences and surrounding prose
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced?.[1] ?? text).trim();
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  try {
-    const parsed = JSON.parse(candidate.slice(start, end + 1));
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 const asStringArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
@@ -256,96 +246,40 @@ function buildDeliveryResult(
   };
 }
 
-// ─── Provider: Gemini Flash (primary) ────────────────────────
+// ─── Provider: OpenAI-compatible chat completions ────────────
+// One client shape for every vendor; the base URL is the only thing that
+// changes (see @foodo/backend-common/llm).
 
-const geminiClient = axios.create({ timeout: AI_TIMEOUT_MS });
+const llmClient = axios.create({ timeout: AI_TIMEOUT_MS });
 
-async function callGemini(image: ParsedImage, prompt: string): Promise<Record<string, unknown> | null> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
-
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-
-  const response = await geminiClient.post(url, {
-    contents: [
-      {
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: image.mimeType, data: image.base64 } },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0,
-      maxOutputTokens: 800,
-      responseMimeType: "application/json",
-    },
-  });
-
-  const parts = response.data?.candidates?.[0]?.content?.parts;
-  const text = Array.isArray(parts)
-    ? parts.map((p: { text?: string }) => p?.text ?? "").join("")
-    : "";
-  return extractJson(text);
+async function callVision(
+  cfg: LlmConfig,
+  image: ParsedImage,
+  prompt: string,
+): Promise<Record<string, unknown> | null> {
+  const response = await llmClient.post(
+    chatCompletionsUrl(cfg),
+    buildChatJsonPayload(cfg, {
+      system: prompt,
+      userText: "Verify this photo and return the JSON object.",
+      imageBase64: image.base64,
+      imageMimeType: image.mimeType,
+      maxTokens: 800,
+    }),
+    { headers: authHeaders(cfg) },
+  );
+  return extractChatJson(response.data).json;
 }
 
-const geminiBreaker = breakerWrap<[ParsedImage, string], Record<string, unknown> | null>(
-  "gemini-flash",
-  callGemini,
-);
-
-// ─── Provider: Claude Haiku (fallback) ───────────────────────
-
-const claudeClient = axios.create({
-  timeout: AI_TIMEOUT_MS,
-  headers: {
-    "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
-    "anthropic-version": "2023-06-01",
-    "content-type": "application/json",
-  },
-});
-
-async function callClaude(image: ParsedImage, prompt: string): Promise<Record<string, unknown> | null> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return null;
-
-  const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5";
-  const response = await claudeClient.post("https://api.anthropic.com/v1/messages", {
-    model,
-    max_tokens: 800,
-    temperature: 0,
-    system: prompt,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: image.mimeType, data: image.base64 },
-          },
-          { type: "text", text: "Verify this photo and return the JSON object." },
-        ],
-      },
-    ],
-  });
-
-  const blocks = response.data?.content;
-  const text = Array.isArray(blocks)
-    ? blocks.map((b: { text?: string }) => b?.text ?? "").join("")
-    : "";
-  return extractJson(text);
-}
-
-const claudeBreaker = breakerWrap<[ParsedImage, string], Record<string, unknown> | null>(
-  "claude-haiku",
-  callClaude,
-);
+const visionBreaker = breakerWrap<
+  [LlmConfig, ParsedImage, string],
+  Record<string, unknown> | null
+>("vision-llm", callVision);
 
 // ─── Orchestrator ────────────────────────────────────────────
-// Chain: Gemini → Claude → null. A provider without credentials is
-// skipped instantly (call returns null without firing the breaker), so
-// deployments configure only the vendors they have keys for.
+// One provider, one attempt. An unconfigured deployment returns null
+// without touching the breaker, so the caller marks the photo unverified
+// exactly like a provider outage.
 
 export const verifyImage = async (
   rawImage: unknown,
@@ -354,39 +288,28 @@ export const verifyImage = async (
   const image = parseImage(rawImage);
   if (!image) return null;
 
+  const cfg = resolveLlmConfig();
+  if (!cfg) return null;
+
   const prompt =
     context.mode === "packing"
       ? packingPrompt(context.expectedItems ?? [])
       : deliveryPrompt(context.deliveryAddress ?? null);
 
   try {
-    const parsed = await geminiBreaker.fire(image, prompt);
+    const parsed = await visionBreaker.fire(cfg, image, prompt);
     if (parsed) {
       return context.mode === "packing"
-        ? buildPackingResult(parsed, "gemini")
-        : buildDeliveryResult(parsed, "gemini");
+        ? buildPackingResult(parsed, cfg.provider)
+        : buildDeliveryResult(parsed, cfg.provider);
     }
   } catch (err) {
     console.error(
-      "Gemini verification failed, trying fallback:",
+      "Vision verification failed:",
       err instanceof Error ? err.message : err,
     );
   }
 
-  try {
-    const parsed = await claudeBreaker.fire(image, prompt);
-    if (parsed) {
-      return context.mode === "packing"
-        ? buildPackingResult(parsed, "claude")
-        : buildDeliveryResult(parsed, "claude");
-    }
-  } catch (err) {
-    console.error(
-      "Claude verification failed:",
-      err instanceof Error ? err.message : err,
-    );
-  }
-
-  // Both tiers down (or no credentials) — caller decides policy.
+  // Provider down (or no credentials) — caller decides policy.
   return null;
 };

@@ -37,7 +37,7 @@ code executes; explicit user authentication completes.**
 │                                                           │
 │  LangGraph turn graph (bounded ReAct loop)                │
 │   ┌─────────────────────────────────────────────────┐     │
-│   │ agent node (Claude, tools bound, temp 0)        │     │
+│   │ agent node (LLM, tools bound, temp 0)          │     │
 │   │   ⇅ tool_calls (strict Pydantic schemas)        │     │
 │   │ tools node (deterministic execution + trace)    │     │
 │   └─────────────────────────────────────────────────┘     │

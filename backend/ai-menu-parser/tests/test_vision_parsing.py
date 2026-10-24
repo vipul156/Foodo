@@ -1,8 +1,8 @@
-"""Gemini client tests — defensive parsing + image hygiene."""
+"""Vision client tests — defensive parsing + image hygiene."""
 
 from __future__ import annotations
 
-from app.clients.gemini import _parse_json, _sniff_image_type, extract_public_id_from_cloudinary_url
+from app.clients.vision import _parse_json, _sniff_image_type, extract_public_id_from_cloudinary_url
 
 
 def test_parse_plain_json():
