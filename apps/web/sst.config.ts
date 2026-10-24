@@ -129,7 +129,9 @@ export default $config({
 
     return {
       siteUrl: site.url,
-      distributionId: site.nodes.cdn?.id,
+      // The Cdn component exposes its distribution through `nodes` (SST v4);
+      // there is no `id` accessor on the component itself.
+      distributionId: site.nodes.cdn?.nodes.distribution.id,
     };
   },
 });
