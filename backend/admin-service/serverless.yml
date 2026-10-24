@@ -48,7 +48,15 @@ provider:
     REVIEW_QUEUE_TABLE: ${cf:${self:custom.infra}.ReviewQueueTable}
     # Dispatch swarm ops read. ai-dispatch gates its snapshot with
     # `x-internal-key`; it lives on the same shared HTTP API.
-    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    #
+    # No fallback, on purpose: an empty key reads as "not configured"
+    # here (503) and as "wrong key" at the swarm (403). Both are runtime
+    # symptoms of a deploy that had no secret to hand out, so the stack
+    # refuses to deploy instead of shipping a view that can never load.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
+    # The one API every service attaches to (core's HttpApiUrl). The
+    # /api/dispatch route carries no gateway authorizer — the key above
+    # is the only door, which is why the two must come from one secret.
     DISPATCH_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
   httpApi:
     id: ${cf:${self:custom.coreApi}.HttpApiId}

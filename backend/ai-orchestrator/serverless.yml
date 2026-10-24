@@ -47,7 +47,10 @@ provider:
     STAGE: ${self:custom.stage}
     ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
     ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
-    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}   # validates INBOUND internal calls (queue reads)
+    # Validates INBOUND internal calls (queue reads). No fallback, on
+    # purpose: the settings refuse to boot without it, so an empty value
+    # would deploy an arbiter that 500s on intake, case reads and health.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
     # Dispute evidence (the photo is the case's legal record). The shared
     # uploader signs with the three separate names — CLOUDINARY_URL is
     # NOT read here, and missing credentials 503 the intake.

@@ -63,7 +63,10 @@ provider:
   environment:
     STAGE: ${self:custom.stage}
     LOG_LEVEL: ${env:DISPATCH_LOG_LEVEL, 'INFO'}
-    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    # No fallback, on purpose: pycommon's settings validate at import and
+    # raise without a key, so an empty value deploys a stack whose every
+    # route (health included) 500s. Fail at deploy, not on first request.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
     ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
     ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
     # Sync cross-service reads (kitchen stats proxy, realtime emit) ride

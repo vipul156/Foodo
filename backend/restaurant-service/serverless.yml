@@ -45,7 +45,11 @@ provider:
     STAGE: ${self:custom.stage}
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
-    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, 'dev-only-change-me'}
+    # Same secret as every sibling stack. The old `dev-only-change-me`
+    # fallback was a published value on a money path (it gates the
+    # payment claim) and guaranteed a 403 mismatch with any service that
+    # used the real key, so the value is now required, not defaulted.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
     # The AI verification tier lives on the same shared HTTP API; the
     # kitchen proxies packing checks there server-side.
