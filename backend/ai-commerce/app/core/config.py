@@ -14,6 +14,7 @@ from __future__ import annotations
 from pydantic import Field, field_validator
 
 from pycommon.config import BaseServiceSettings, cached_settings
+from pycommon.llm import LlmSettings
 
 
 class Settings(BaseServiceSettings):
@@ -26,9 +27,13 @@ class Settings(BaseServiceSettings):
     restaurant_service_url: str = "http://localhost:3003"
     utils_service_url: str = "http://localhost:3005"
 
-    # ─── LLM provider (LangChain) ────────────────────────────────
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-haiku-4-5"
+    # ─── LLM provider (OpenAI-compatible endpoints only) ─────────
+    # LLM_PROVIDER picks the vendor; the presets in pycommon.llm carry
+    # the base URL, anything else needs LLM_BASE_URL.
+    llm_provider: str = "openai"
+    llm_model: str = ""         # e.g. llama-3.3-70b-versatile on Groq
+    llm_api_key: str = ""
+    llm_base_url: str = ""      # required for vLLM / TGI / custom gateways
     llm_timeout_s: float = 30.0
     llm_max_tokens: int = 1024
 
@@ -48,6 +53,18 @@ class Settings(BaseServiceSettings):
 
     # ─── Rate limiting (per user, per minute) ────────────────────
     rate_limit_turns: int = 15
+
+    @property
+    def llm(self) -> LlmSettings:
+        """Resolved provider config for pycommon.llm.build_chat_model."""
+        return LlmSettings.resolve(
+            provider=self.llm_provider,
+            model=self.llm_model,
+            api_key=self.llm_api_key,
+            base_url=self.llm_base_url,
+            max_tokens=self.llm_max_tokens,
+            timeout_s=self.llm_timeout_s,
+        )
 
     @field_validator("jwt_secret", "cookie_secret")
     @classmethod

@@ -18,7 +18,6 @@ from __future__ import annotations
 import time
 from typing import Any, TypedDict
 
-from langchain_anthropic import ChatAnthropic
 from langgraph.graph import END, StateGraph
 
 from pycommon.logging import get_logger

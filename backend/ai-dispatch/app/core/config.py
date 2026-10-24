@@ -8,6 +8,7 @@ to the dispatch swarm.
 from __future__ import annotations
 
 from pycommon.config import BaseServiceSettings, cached_settings
+from pycommon.llm import LlmSettings
 
 
 class Settings(BaseServiceSettings):
@@ -20,8 +21,12 @@ class Settings(BaseServiceSettings):
     realtime_service_url: str = "http://localhost:3002"
 
     # ─── LLM (used ONLY inside bounded nodes) ────────────────────
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-haiku-4-5"
+    # LLM_PROVIDER picks the vendor (openai-compatible endpoints only);
+    # presets carry the base URL, anything else needs LLM_BASE_URL.
+    llm_provider: str = "openai"
+    llm_model: str = ""         # e.g. llama-3.3-70b-versatile on Groq
+    llm_api_key: str = ""
+    llm_base_url: str = ""      # required for vLLM / TGI / custom gateways
     llm_timeout_s: float = 20.0
     llm_max_tokens: int = 600
 
@@ -49,6 +54,18 @@ class Settings(BaseServiceSettings):
     # ─── Serverless state (DynamoDB; TTL sweeps) ─────────────────
     idempotency_ttl_s: int = 300         # ready-event claim lifetime
     pool_ttl_s: int = 7200               # broadcast pool row lifetime
+
+    @property
+    def llm(self) -> LlmSettings:
+        """Resolved provider config for pycommon.llm.build_chat_model."""
+        return LlmSettings.resolve(
+            provider=self.llm_provider,
+            model=self.llm_model,
+            api_key=self.llm_api_key,
+            base_url=self.llm_base_url,
+            max_tokens=self.llm_max_tokens,
+            timeout_s=self.llm_timeout_s,
+        )
 
 
 get_settings = cached_settings(Settings)

@@ -9,6 +9,7 @@ The Python analog of ``@foodo/backend-common``:
   deps.py       shared FastAPI dependencies
   events.py     namespaced domain-event fanout
   http.py       Mangum Lambda entrypoint
+  llm.py        provider-agnostic chat-model factory (OpenAI-compatible)
   logging.py    central logging configuration
   ratelimit.py  DynamoDB fixed-window rate limiter
   resilience.py egress pools + per-dependency circuit breakers

@@ -252,8 +252,12 @@ ORDER_EXCHANGE=order.events
 DISPATCH_EXCHANGE=dispatch.events
 DISPATCH_QUEUE=dispatch.orders
 
-ANTHROPIC_API_KEY=            # optional — kitchen nudge only
-ANTHROPIC_MODEL=claude-haiku-4-5
+# Kitchen nudge only — optional; unset keeps the swarm heuristic-only.
+# Any OpenAI-compatible vendor (groq, openai, openrouter, together,
+# fireworks, deepseek, ollama, lmstudio); anything else needs LLM_BASE_URL.
+LLM_PROVIDER=openai
+LLM_MODEL=
+LLM_API_KEY=
 
 RIDER_SEARCH_RADIUS_KM=10
 BATCH_RADIUS_M=500

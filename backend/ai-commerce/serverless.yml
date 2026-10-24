@@ -59,8 +59,11 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
-    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
-    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
+    # Provider switch (pycommon.llm): any OpenAI-compatible endpoint.
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
     # Sibling reads/writes ride the shared HTTP API (cookie-forwarded
     # identity plane; utils' payment create is the money path).
     AUTH_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}

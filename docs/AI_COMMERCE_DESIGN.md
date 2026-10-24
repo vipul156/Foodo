@@ -305,8 +305,11 @@ MONGO_URI=mongodb://localhost:27017/foodo
 RESTAURANT_SERVICE_URL=http://localhost:3003
 UTILS_SERVICE_URL=http://localhost:3005
 
-ANTHROPIC_API_KEY=your-anthropic-key
-ANTHROPIC_MODEL=claude-haiku-4-5
+# Any OpenAI-compatible vendor (groq, openai, openrouter, together,
+# fireworks, deepseek, ollama, lmstudio); anything else needs LLM_BASE_URL.
+LLM_PROVIDER=openai
+LLM_MODEL=
+LLM_API_KEY=
 
 SESSION_TTL_MIN=60
 SESSION_MAX_TURNS=30

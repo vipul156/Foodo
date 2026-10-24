@@ -7,7 +7,7 @@ python-multipart>=0.0.20
 
 # — LangChain / LangGraph stack (pip resolves a consistent set) —
 langchain-core>=0.3.28
-langchain-anthropic>=0.3.3
+langchain-openai>=0.3.0  # OpenAI-compatible vendors: Groq, OpenRouter, Ollama, vLLM
 langgraph>=0.2.62
 
 # — Infra —

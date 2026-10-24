@@ -260,16 +260,11 @@ class DispatchService:
     # ─── LLM (kitchen refinement only) ───────────────────────
 
     def _get_llm(self):
-        if self._llm is None and settings.anthropic_api_key:
-            from langchain_anthropic import ChatAnthropic
+        """Lazily build the configured model; None keeps the run heuristic-only."""
+        if self._llm is None and settings.llm.is_configured:
+            from pycommon.llm import build_chat_model
 
-            self._llm = ChatAnthropic(
-                model=settings.anthropic_model,
-                api_key=settings.anthropic_api_key,
-                temperature=0,
-                max_tokens=settings.llm_max_tokens,
-                timeout=settings.llm_timeout_s,
-            )
+            self._llm = build_chat_model(settings.llm)
         return self._llm
 
     # ─── Ops surface ─────────────────────────────────────────

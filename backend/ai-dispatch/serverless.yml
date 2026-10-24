@@ -67,8 +67,11 @@ provider:
     # raise without a key, so an empty value deploys a stack whose every
     # route (health included) 500s. Fail at deploy, not on first request.
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
-    ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY, ''}
-    ANTHROPIC_MODEL: ${env:ANTHROPIC_MODEL, 'claude-haiku-4-5'}
+    # Provider switch (pycommon.llm): any OpenAI-compatible endpoint.
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
     # Sync cross-service reads (kitchen stats proxy, realtime emit) ride
     # the shared HTTP API; roster/enrichment are direct table reads.
     RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}

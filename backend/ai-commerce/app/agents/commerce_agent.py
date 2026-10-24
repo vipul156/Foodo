@@ -18,7 +18,7 @@ import json
 import time
 from typing import Any, Literal, TypedDict
 
-from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -27,6 +27,7 @@ from langchain_core.messages import (
 )
 from langgraph.graph import END, StateGraph
 
+from pycommon.llm import build_chat_model
 from pycommon.logging import get_logger
 
 from app.agents.tools import TOOL_FUNCS, TOOL_SPECS, ToolContext
@@ -88,19 +89,19 @@ size, confirm a swap)."""
 
 # ─── LLM ─────────────────────────────────────────────────────
 
-_llm: ChatAnthropic | None = None
+_llm: BaseChatModel | None = None
 
 
-def get_llm() -> ChatAnthropic:
+def get_llm() -> BaseChatModel:
+    """One model per warm container.
+
+    LLM_PROVIDER picks the vendor (groq, openai, openrouter, ollama, or
+    anything reachable through LLM_BASE_URL) — all over the OpenAI
+    Chat Completions wire format.
+    """
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(
-            model=settings.anthropic_model,
-            api_key=settings.anthropic_api_key,
-            temperature=0,
-            max_tokens=settings.llm_max_tokens,
-            timeout=settings.llm_timeout_s,
-        )
+        _llm = build_chat_model(settings.llm)
     return _llm
 
 

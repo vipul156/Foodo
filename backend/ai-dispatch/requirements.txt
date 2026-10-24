@@ -5,7 +5,7 @@ pydantic-settings>=2.7.0
 
 # — LangChain / LangGraph —
 langchain-core>=0.3.28
-langchain-anthropic>=0.3.3
+langchain-openai>=0.3.0  # OpenAI-compatible vendors: Groq, OpenRouter, Ollama, vLLM
 langgraph>=0.2.62
 
 # — Infra —
