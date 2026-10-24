@@ -46,6 +46,10 @@ provider:
     # can't decide alone. A table, not a service hop — the admin work list
     # is one query against the shared data plane.
     REVIEW_QUEUE_TABLE: ${cf:${self:custom.infra}.ReviewQueueTable}
+    # Dispatch swarm ops read. ai-dispatch gates its snapshot with
+    # `x-internal-key`; it lives on the same shared HTTP API.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    DISPATCH_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
   httpApi:
     id: ${cf:${self:custom.coreApi}.HttpApiId}
   iam:

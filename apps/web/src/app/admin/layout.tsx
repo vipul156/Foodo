@@ -21,6 +21,7 @@ import {
   Settings,
   Menu,
   Inbox,
+  Waypoints,
 } from "lucide-react";
 
 const NAV_ITEMS: SidebarItem[] = [
@@ -29,6 +30,7 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: "/admin/riders", label: "Riders", icon: Bike },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/reviews", label: "Review queue", icon: Inbox },
+  { href: "/admin/dispatch", label: "Dispatch", icon: Waypoints },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];

@@ -10,6 +10,7 @@ import {
   getPlatformStats,
 } from "../controllers/admin.js";
 import { getPendingReviews, resolveReview } from "../controllers/reviews.js";
+import { getDispatchSnapshot } from "../controllers/dispatch.js";
 import { isAuth, isAdmin } from "@foodo/backend-common";
 
 const router = Router();
@@ -32,5 +33,9 @@ router.patch("/verify/restaurant/:id", verifyRestaurant);
 // parks unresolved cases in.
 router.get("/reviews", getPendingReviews);
 router.patch("/reviews/:id/resolve", resolveReview);
+
+// Dispatch swarm: ready orders the AI couldn't hand to a rider, plus the
+// swarm's own container counters.
+router.get("/dispatch", getDispatchSnapshot);
 
 export { router as adminRoutes };
