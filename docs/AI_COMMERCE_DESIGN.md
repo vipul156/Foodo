@@ -2,7 +2,7 @@
 
 **Foodo Platform — Feature #2 (conversational ordering)**
 Status: Implemented on branch `feature/visual-verification`
-Service: `ai-commerce` (port 3009, Python 3.12 / FastAPI / LangGraph)
+Service: `ai-commerce` (port 3009, Python 3.14 / FastAPI / LangGraph)
 
 > Companion doc to `docs/AI_SYSTEMS_DESIGN.md` (features #2 and #4 — visual
 > verification and refund arbitration). A second agent service,

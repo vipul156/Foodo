@@ -9,7 +9,7 @@
 # only gained layered configs (`extends`) in 1.4, and this file has to
 # work with the older binary too.
 preset = "basic"
-python-version = "3.12"
+python-version = "3.14"
 
 # The shared monorepo package. It is installed editable (a runtime finder
 # shim in site-packages that type checkers cannot follow), so its root

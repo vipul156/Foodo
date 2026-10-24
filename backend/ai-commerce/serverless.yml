@@ -46,7 +46,7 @@ custom:
 
 provider:
   name: aws
-  runtime: python3.12
+  runtime: python3.14
   architecture: arm64
   region: ${self:custom.region}
   stage: ${self:custom.stage}

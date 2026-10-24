@@ -117,7 +117,7 @@ flowchart TB
 
     WS["WebSocket API<br/>(foodo-realtime)"]
 
-    subgraph SVC["Service stacks · Lambda · ARM64 · Node.js 20"]
+    subgraph SVC["Service stacks · Lambda · ARM64 · Node.js 24"]
         direction LR
         AUTH[auth]
         REST[restaurant]
@@ -220,7 +220,7 @@ Foodo originally ran as Node.js/Express microservices on one shared MongoDB, wit
 
 | What we had | What it became |
 |---|---|
-| Express services on EC2/Vagrant | **Lambda per domain** (ARM64, Node.js 20), individually packaged |
+| Express services on EC2/Vagrant | **Lambda per domain** (ARM64, Node.js 24), individually packaged |
 | Shared MongoDB (Mongoose + native driver) | **8 DynamoDB tables** (single-table-per-entity) in the foundation stack, accessed via `@aws-sdk/client-dynamodb` + `lib-dynamodb` |
 | RabbitMQ queues + pub/sub | **SQS work queues** (payment, order) with DLQs, plus an **SNS** event bus with filtered subscriptions |
 | Socket.IO server | **API Gateway WebSocket API** + Lambda handlers + a `connections` table + an event consumer broadcasting via the Management API |
@@ -388,7 +388,7 @@ All access goes through each table's indexes where needed. Every service also ge
 | | |
 |---|---|
 | **Stack / entry** | `foodo-auth` · `dist/index.handler` |
-| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s |
+| **Runtime** | ARM64 · Node.js 24 · 512 MB · 15 s |
 | **Data** | `users` table: `GetItem`, `PutItem`, `UpdateItem`, `Query` + indexes `email-index`, `refresh-index` |
 | **Events** | Publishes to the SNS `events` topic (e.g. on registration) |
 | **Sessions** | Refresh-token rows carry a per-item `ttl`, so DynamoDB sweeps expired sessions automatically |
@@ -404,7 +404,7 @@ All access goes through each table's indexes where needed. Every service also ge
 | | |
 |---|---|
 | **Stack / entry** | `foodo-restaurant` · `http`, `paymentConsumer`, `riderEventsConsumer` |
-| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s (30 s for consumers) |
+| **Runtime** | ARM64 · Node.js 24 · 512 MB · 15 s (30 s for consumers) |
 | **Data** | `restaurants`, `orders`, `menu-items`, `carts`, `addresses`: `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query` + indexes |
 
 **Event wiring**
@@ -423,7 +423,7 @@ All access goes through each table's indexes where needed. Every service also ge
 | | |
 |---|---|
 | **Stack / entry** | `foodo-rider` · `http`, `orderReadyConsumer`, `riderEventsConsumer` |
-| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s (30 s for consumers) |
+| **Runtime** | ARM64 · Node.js 24 · 512 MB · 15 s (30 s for consumers) |
 | **Data** | `riders`, `orders`, `restaurants`: `GetItem`, `PutItem`, `UpdateItem`, `Query` + indexes |
 
 The rider router applies `isAuth` + `isRider` to the **entire** `/api/rider` surface (including rider registration, preserved from current app semantics), so a single protected catch-all covers it at the gateway.
@@ -443,7 +443,7 @@ The rider router applies `isAuth` + `isRider` to the **entire** `/api/rider` sur
 | | |
 |---|---|
 | **Stack / entry** | `foodo-admin` · `dist/index.handler` |
-| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s |
+| **Runtime** | ARM64 · Node.js 24 · 512 MB · 15 s |
 | **Data** | `users`, `restaurants`, `riders`, `orders`: `GetItem`, `UpdateItem`, `Query`, `Scan` + indexes |
 
 The admin router applies `isAuth` + `isAdmin` to every route, so one protected catch-all (`/api/admin/{proxy+}`) covers the surface. The old native-driver pattern is replaced by SDK v3 queries against the shared foundation tables.
@@ -457,7 +457,7 @@ The admin router applies `isAuth` + `isAdmin` to every route, so one protected c
 | | |
 |---|---|
 | **Stack / entry** | `foodo-utils` · `http`, `reconciliation` |
-| **Runtime** | ARM64 · Node.js 20 · 512 MB · 15 s (reconcile: 256 MB · 120 s) |
+| **Runtime** | ARM64 · Node.js 24 · 512 MB · 15 s (reconcile: 256 MB · 120 s) |
 | **Data** | `orders`, `webhook-dedupe`: `GetItem`, `UpdateItem`, `PutItem`, `Query` |
 | **Events** | Publishes to the SNS `events` topic and sends to the shared `payment` SQS queue |
 
@@ -474,7 +474,7 @@ The admin router applies `isAuth` + `isAdmin` to every route, so one protected c
 | | |
 |---|---|
 | **Stack / entry** | `foodo-realtime` · `wsRouter`, `eventConsumer` |
-| **Runtime** | ARM64 · Node.js 20 · 256 MB · 30 s |
+| **Runtime** | ARM64 · Node.js 24 · 256 MB · 30 s |
 | **Owns** | Its own **WebSocket API + stage**, its own **`connections` table** (ephemeral runtime state, not in the shared data tier) and its own inbound **`emit`** queue + unfiltered SNS subscription |
 | **Frontend URL** | `foodo-realtime-<stage>-WebSocketUrl` export (`wss://…`) |
 
@@ -897,7 +897,7 @@ Nothing runs inside the VPC yet, so `params.default.natGateways` is `0` (prod: `
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Compute** | AWS Lambda (ARM64, Node.js 20) | Every service, individually packaged per stack |
+| **Compute** | AWS Lambda (ARM64, Node.js 24) | Every service, individually packaged per stack |
 | **API** | API Gateway v2 **HTTP API** | Single shared platform API (one base URL, CORS, route attachment by id) |
 | | API Gateway v2 **WebSocket API** | Realtime: `$connect/$disconnect/$default` + Management API broadcasts |
 | | **REQUEST authorizer** (`foodo-jwt`) | Verifies the HS256 token from session cookie or Bearer header |

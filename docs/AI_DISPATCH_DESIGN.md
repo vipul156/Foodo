@@ -2,7 +2,7 @@
 
 **Foodo Platform — Multi-Agent Dispatch & Kitchen Orchestrator**
 Status: Implemented on branch `feature/visual-verification`
-Service: `ai-dispatch` (port 3010, Python 3.12 / FastAPI / LangGraph / aio-pika)
+Service: `ai-dispatch` (port 3010, Python 3.14 / FastAPI / LangGraph / aio-pika)
 
 > Companion doc to `docs/AI_COMMERCE_DESIGN.md` (conversational ordering)
 > and `docs/AI_SYSTEMS_DESIGN.md` (visual verification + refund

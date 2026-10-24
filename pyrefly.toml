@@ -22,9 +22,9 @@
 # `pyrefly check --preset strict`.
 preset = "basic"
 
-# The Lambda runtime is python3.12 — pin it so the check does not drift
+# The Lambda runtime is python3.14 — pin it so the check does not drift
 # with whichever interpreter happens to be selected in the editor.
-python-version = "3.12"
+python-version = "3.14"
 
 # Roots from which first-party imports are resolved. Relative to this file.
 search-path = ["packages/pycommon"]

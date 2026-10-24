@@ -1,4 +1,4 @@
-# ─── ai-dispatch runtime (Lambda python3.12, arm64) ──────────
+# ─── ai-dispatch runtime (Lambda python3.14, arm64) ──────────
 fastapi>=0.115.6
 pydantic>=2.10.4
 pydantic-settings>=2.7.0

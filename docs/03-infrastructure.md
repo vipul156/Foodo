@@ -11,7 +11,7 @@ Two foundation stacks: `infra` (network + data + events + identity) and `core`
 
 ```
 service: foodo-infra
-provider: aws / nodejs20.x / ap-south-1
+provider: aws / nodejs24.x / ap-south-1
 ```
 
 ### 1.1 VPC — `10.0.0.0/16`
@@ -332,7 +332,7 @@ custom:
   prune: { automatic: true, number: 3 }
 
 provider:
-  runtime: nodejs20.x
+  runtime: nodejs24.x
   architecture: arm64
   memorySize: 512
   timeout: 15
