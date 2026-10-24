@@ -25,7 +25,13 @@ plugins:
   - ../../scripts/serverless-vendor-pycommon.js
 
 package:
-  individually: true
+  # One artifact for the whole service, on purpose: both functions share
+  # the same handler tree and the same 3.8k-file dependency tree, so
+  # per-function zips meant building the identical 12 MB zip twice per
+  # deploy (plus a full Windows copy of .serverless/requirements for each
+  # module). Shared packaging also lets the plugin junction the static
+  # cache instead of copying it.
+  individually: false
   patterns:
     # Local test/pytest runs leave bytecode compiled for the developer's
     # interpreter; shipping it only bloats the artifact (and shadows the
@@ -59,6 +65,11 @@ custom:
       - '**/*.py[c|o]'
       - '**/__pycache__*'
     slimPatternsAppendDefaults: false
+    # Dependencies ride a Lambda layer instead of being injected into the
+    # function zip: packaging then reuses the cached layer archive
+    # (<requirements hash>_arm64_slspyc.zip) and neither function zip has
+    # to be rebuilt over 3.8k files on every deploy.
+    layer: true
     # pip would byte-compile every module into the Windows bind-mounted
     # cache folder (~55x slower than container-local writes), only for
     # `slim` to delete all .pyc files again. Exact pins in
@@ -140,6 +151,10 @@ functions:
     handler: app/handlers/http.handler
     memorySize: 512
     timeout: 30
+    # The plugin only DECLARES the layer (see pythonRequirements.layer);
+    # each function has to attach it or the deps are simply not there.
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
     events:
       # No gateway authorizer: snapshot/simulate are internal-key gated
       # in-app (fail-closed), health is the platform probe.
@@ -154,6 +169,8 @@ functions:
     handler: app/handlers/dispatchConsumer.handler
     memorySize: 1024
     timeout: 180               # LLM nodes + enrichment per record
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
     events:
       - sqs:
           arn: !GetAtt DispatchOrdersQueue.Arn

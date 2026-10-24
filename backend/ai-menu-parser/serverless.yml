@@ -17,7 +17,11 @@ plugins:
   - ../../scripts/serverless-vendor-pycommon.js
 
 package:
-  individually: true
+  # Shared artifact: the deps ride the layer below, so one function does
+  # not need a per-function zip of the dependency tree rebuilt per deploy.
+  # Shared packaging also lets the plugin junction the static cache
+  # instead of copying it into `.serverless` on every run.
+  individually: false
   patterns:
     # Local test/pytest runs leave bytecode compiled for the developer's
     # interpreter; shipping it only bloats the artifact (and shadows the
@@ -48,6 +52,11 @@ custom:
       - '**/*.py[c|o]'
       - '**/__pycache__*'
     slimPatternsAppendDefaults: false
+    # Dependencies ride a Lambda layer instead of being injected into the
+    # function zip: packaging reuses the cached layer archive
+    # (<requirements hash>_arm64_slspyc.zip) and the hot artifact stays
+    # small, so code-only deploys upload a fraction of the old zip.
+    layer: true
     # pip would byte-compile every module into the Windows bind-mounted
     # cache folder (~55x slower than container-local writes), only for
     # `slim` to delete all .pyc files again. Exact pins in
@@ -109,6 +118,10 @@ functions:
     handler: app/handlers/http.handler
     memorySize: 1024
     timeout: 90
+    # The plugin only DECLARES the layer (see pythonRequirements.layer);
+    # each function has to attach it or the deps are simply not there.
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
     events:
       # Seller surface: the shared JWT authorizer (cookie session) blocks
       # unauthenticated traffic; require_user re-verifies in-app.
