@@ -118,31 +118,53 @@ class BreakerRegistry:
 
 
 class EgressPools:
-    """httpx clients — one per pool spec, isolated by dependency class."""
+    """httpx clients — one per pool spec, isolated by dependency class.
+
+    A pool is created on first use and rebuilt automatically after
+    :meth:`aclose`. Mangum runs the ASGI lifespan — and therefore a
+    service's shutdown hook — once per invocation while the container's
+    event loop persists, so a client closed at the end of one request is
+    used again by the next. Caching that closed client there is what made
+    every request after the first fail with httpx's "Cannot send a
+    request, as the client has been closed."
+    """
 
     def __init__(self, policy: ResiliencePolicy) -> None:
-        self._clients: dict[str, httpx.AsyncClient] = {
-            spec.name: httpx.AsyncClient(
-                timeout=httpx.Timeout(spec.timeout_s),
-                limits=httpx.Limits(
-                    max_connections=spec.max_connections,
-                    max_keepalive_connections=spec.max_keepalive_connections,
-                ),
-            )
-            for spec in policy.pools
-        }
+        self._specs: dict[str, PoolSpec] = {spec.name: spec for spec in policy.pools}
+        self._clients: dict[str, httpx.AsyncClient] = {}
+
+    @staticmethod
+    def _build(spec: PoolSpec) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(spec.timeout_s),
+            limits=httpx.Limits(
+                max_connections=spec.max_connections,
+                max_keepalive_connections=spec.max_keepalive_connections,
+            ),
+        )
 
     def __getattr__(self, item: str) -> httpx.AsyncClient:
-        try:
-            return self._clients[item]
-        except KeyError:
+        # Only concrete pool names reach here; dunders/internals must miss
+        # so copy/pickle/inspection keep working rather than recursing.
+        if item.startswith("_"):
+            raise AttributeError(item)
+        specs = self.__dict__.get("_specs") or {}
+        if item not in specs:
             raise AttributeError(
                 f"no egress pool named {item!r} "
-                f"(configured: {sorted(self._clients)})"
-            ) from None
+                f"(configured: {sorted(specs)})"
+            )
+        clients = self.__dict__.setdefault("_clients", {})
+        client = clients.get(item)
+        if client is None or client.is_closed:
+            client = self._build(specs[item])
+            clients[item] = client
+        return client
 
     async def aclose(self) -> None:
-        for client in self._clients.values():
+        clients = list(self._clients.values())
+        self._clients.clear()
+        for client in clients:
             await client.aclose()
 
 
