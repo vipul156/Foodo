@@ -31,6 +31,12 @@ custom:
     # Linux pip in Docker → correct aarch64 wheels for pydantic-core.
     dockerizePip: true
     slim: true
+    # pip would byte-compile every module into the Windows bind-mounted
+    # cache folder (~55x slower than container-local writes), only for
+    # `slim` to delete all .pyc files again. Exact pins in
+    # requirements.txt keep the static cache warm between deploys.
+    pipCmdExtraArgs:
+      - --no-compile
     noDeploy:
       - boto3
       - botocore

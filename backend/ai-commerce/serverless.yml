@@ -33,8 +33,15 @@ custom:
     # Linux pip in Docker → correct aarch64 wheels for the compiled
     # deps (pydantic-core, langchain stack). Docker is a build tool
     # only; the shipped artifact is the standard Lambda zip.
+    # Exact pins in requirements.txt keep this cache warm; a changed
+    # requirements.txt is the only trigger for a fresh pip install.
     dockerizePip: true
     slim: true
+    # pip would byte-compile every module into the Windows bind-mounted
+    # cache folder (~55x slower than container-local writes), only for
+    # `slim` to delete all .pyc files again.
+    pipCmdExtraArgs:
+      - --no-compile
     noDeploy:
       - boto3
       - botocore
