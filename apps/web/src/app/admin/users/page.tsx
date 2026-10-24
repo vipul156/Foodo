@@ -55,22 +55,24 @@ export default function AdminUsersPage() {
   const [role, setRole] = useState<string | undefined>(undefined);
   const [query, setQuery] = useState("");
 
-  const {
-    data: users,
-    isLoading,
-    isError,
-  } = useGetAllUsers(role);
+  const { data: users, isLoading, isError } = useGetAllUsers(role);
+
+  // Session rows in the users table carry no profile fields — never count or
+  // render them as accounts (they also lack an id, which breaks React keys).
+  const accounts = useMemo(
+    () => (users ?? []).filter((u) => Boolean(u.id) && Boolean(u.role)),
+    [users],
+  );
 
   const filtered = useMemo(() => {
-    if (!users) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter(
+    if (!q) return accounts;
+    return accounts.filter(
       (u) =>
         u.name?.toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q),
     );
-  }, [users, query]);
+  }, [accounts, query]);
 
   return (
     <RoleGuard allowedRoles={["admin"]}>
@@ -80,7 +82,7 @@ export default function AdminUsersPage() {
           <h2 className="text-xl font-bold tracking-tight">Users</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {users
-              ? `${users.length} account${users.length !== 1 ? "s" : ""}${role ? ` · ${role}s` : ""}`
+              ? `${accounts.length} account${accounts.length !== 1 ? "s" : ""}${role ? ` · ${role}s` : ""}`
               : "Everyone registered on the platform"}
           </p>
         </div>
