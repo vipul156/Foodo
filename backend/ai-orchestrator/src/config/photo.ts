@@ -1,4 +1,7 @@
-import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
+import {
+  uploadToCloudinary,
+  resolveUploadFolder,
+} from "@foodo/backend-common/cloudinary";
 
 // ─── Dispute evidence (Cloudinary) ───────────────────────────
 // The photo is the dispute's legal record, so it MUST outlive a
@@ -18,7 +21,9 @@ import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
 // punishing the customer for an infra glitch. Retrying is cheap; a
 // dropped-evidence auto-refund is not.
 
-const EVIDENCE_FOLDER = "foodo/disputes/evidence";
+const EVIDENCE_FOLDER = "disputes/evidence";
+// ↑ joined with CLOUDINARY_FOLDER (default "foodo") at call time, so the
+// namespace is per-stack env, not a constant baked into the bundle.
 
 export interface StoredEvidence {
   /** Cloudinary secure_url — the durable copy. */
@@ -28,7 +33,7 @@ export interface StoredEvidence {
 export async function storeDisputeEvidence(dataUri: string): Promise<StoredEvidence> {
   const secureUrl = await uploadToCloudinary({
     fileContent: dataUri,
-    folder: EVIDENCE_FOLDER,
+    folder: resolveUploadFolder(EVIDENCE_FOLDER),
     tags: ["foodo", "dispute", "evidence"],
   });
   return { photoUrl: secureUrl };

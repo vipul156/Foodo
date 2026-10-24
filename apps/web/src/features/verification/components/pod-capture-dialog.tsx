@@ -11,6 +11,8 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AiModal } from "@/components/shared/ai-modal";
+import { useToast } from "@/components/ui/toaster";
+import { ApiError } from "@/lib/api-client";
 import { useSubmitProofOfDelivery } from "@/features/verification/api";
 import {
   Camera,
@@ -33,8 +35,10 @@ export function PodCaptureDialog({
   onCompleted,
 }: PodCaptureDialogProps) {
   const submitPod = useSubmitProofOfDelivery();
+  const { addToast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     status: string;
     flag: string | null;
@@ -49,6 +53,7 @@ export function PodCaptureDialog({
     setSelectedFile(null);
     setPreviewUrl(null);
     setResult(null);
+    setError(null);
   };
 
   const handleClose = () => {
@@ -59,11 +64,13 @@ export function PodCaptureDialog({
   const handleSelect = (file: File | null) => {
     setSelectedFile(file);
     setResult(null);
+    setError(null);
     setPreviewUrl(file ? URL.createObjectURL(file) : null);
   };
 
   const handleSubmit = async () => {
     if (!selectedFile) return;
+    setError(null);
     try {
       const res = await submitPod.mutateAsync({ file: selectedFile });
       setResult({
@@ -73,8 +80,15 @@ export function PodCaptureDialog({
         notes: res.verification.notes,
       });
       onCompleted();
-    } catch {
-      // error surfaced by the mutation hook
+    } catch (err) {
+      // The delivery itself may have completed server-side; the rider
+      // still needs to know why the confirmation did not go through.
+      const message =
+        err instanceof ApiError && err.message
+          ? err.message
+          : "Could not confirm delivery — check your connection and retry";
+      setError(message);
+      addToast({ message, variant: "error", duration: 6000 });
     }
   };
 
@@ -147,6 +161,15 @@ export function PodCaptureDialog({
       ) : (
         /* ── Capture state ── */
         <>
+          {error && (
+            <div
+              role="alert"
+              className="mb-2 rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
+            >
+              <p className="font-medium">Confirmation failed</p>
+              <p className="text-xs text-destructive/90">{error}</p>
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"

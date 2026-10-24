@@ -12,6 +12,8 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AiModal } from "@/components/shared/ai-modal";
+import { useToast } from "@/components/ui/toaster";
+import { ApiError } from "@/lib/api-client";
 import {
   useSubmitPackingVerification,
   useOverridePackingVerification,
@@ -44,10 +46,12 @@ export function PackingVerifyDialog({
   const restaurantId = order?.restaurantId ?? "";
   const submitVerification = useSubmitPackingVerification();
   const overrideVerification = useOverridePackingVerification(restaurantId);
+  const { addToast } = useToast();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<IVerificationResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [showOverride, setShowOverride] = useState(false);
   const [overrideNote, setOverrideNote] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +62,7 @@ export function PackingVerifyDialog({
     setSelectedFile(null);
     setPreviewUrl(null);
     setVerdict(null);
+    setError(null);
     setShowOverride(false);
     setOverrideNote("");
   };
@@ -70,12 +75,22 @@ export function PackingVerifyDialog({
   const handleSelect = (file: File | null) => {
     setSelectedFile(file);
     setVerdict(null);
+    setError(null);
     setShowOverride(false);
     setPreviewUrl(file ? URL.createObjectURL(file) : null);
   };
 
+  // A failed check must never be silent: the seller cannot tell a dead
+  // verifier from a rejected photo, and either way the bag stays sealed.
+  const reportFailure = (err: unknown, fallback: string) => {
+    const message = err instanceof ApiError && err.message ? err.message : fallback;
+    setError(message);
+    addToast({ message, variant: "error", duration: 6000 });
+  };
+
   const handleVerify = async () => {
     if (!order || !selectedFile) return;
+    setError(null);
     try {
       const res = await submitVerification.mutateAsync({
         orderId: order.id,
@@ -85,13 +100,17 @@ export function PackingVerifyDialog({
       if (res.verification.status === "verified") {
         onVerified();
       }
-    } catch {
-      // error surfaced by the mutation hook
+    } catch (err) {
+      reportFailure(
+        err,
+        "Could not verify the bag — check your connection and try again",
+      );
     }
   };
 
   const handleOverride = async () => {
     if (!order || overrideNote.trim().length < 3) return;
+    setError(null);
     try {
       await overrideVerification.mutateAsync({
         orderId: order.id,
@@ -99,8 +118,8 @@ export function PackingVerifyDialog({
       });
       onVerified();
       handleClose();
-    } catch {
-      // error surfaced by the mutation hook
+    } catch (err) {
+      reportFailure(err, "Could not record the override — try again");
     }
   };
 
@@ -217,6 +236,25 @@ export function PackingVerifyDialog({
       </div>
 
       {banner()}
+
+      {/* Failure banner — the exact reason the check did not run */}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="space-y-1">
+            <p className="font-medium">Verification didn't run</p>
+            <p className="text-xs text-destructive/90">{error}</p>
+            <p className="text-xs text-muted-foreground">
+              {verdict
+                ? "Retake the photo and try again, or ship anyway with a note."
+                : "Retry the check. The order stays blocked until a verdict is on file."}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Photo capture */}
       <input

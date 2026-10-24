@@ -52,6 +52,8 @@ provider:
     LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}    # evidence storage (cloudinary SDK)
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/verification.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
     FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
     VERIFICATIONS_TABLE: ${cf:${self:custom.infra}.VerificationsTable}
     RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
@@ -66,6 +68,7 @@ provider:
           Action:
             - dynamodb:GetItem
             - dynamodb:PutItem
+            - dynamodb:UpdateItem # rate-limit counters increment in place
             - dynamodb:Query
           Resource:
             - Fn::Sub:

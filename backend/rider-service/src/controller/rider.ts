@@ -1,6 +1,9 @@
 import { AuthRequest, tryCatch } from "@foodo/backend-common";
 import { dataUri } from "@foodo/backend-common/files";
-import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
+import {
+  uploadToCloudinary,
+  resolveUploadFolder,
+} from "@foodo/backend-common/cloudinary";
 import {
   createRider,
   claimRiderForOrder,
@@ -51,7 +54,7 @@ export const createRiderController = tryCatch(async (req: AuthRequest, res) => {
 
     pictureUrl = await uploadToCloudinary({
       fileContent: fileBuffer.content,
-      folder: "foodo/riders/kyc",
+      folder: resolveUploadFolder("riders/kyc"),
       tags: ["foodo", "rider", "kyc"],
     });
   }

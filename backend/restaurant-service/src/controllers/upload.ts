@@ -1,5 +1,9 @@
 import type { Request, Response } from "express";
-import { tryCatch, createCloudinaryUploadSignature } from "@foodo/backend-common";
+import {
+  tryCatch,
+  createCloudinaryUploadSignature,
+  resolveUploadFolder,
+} from "@foodo/backend-common";
 
 // ─── Cloudinary signed-upload endpoint ───────────────────────
 // The seller's browser fetches these signed params (auth-checked by the
@@ -8,12 +12,13 @@ import { tryCatch, createCloudinaryUploadSignature } from "@foodo/backend-common
 // Signing is local HMAC-SHA1 (<1ms); utils-service is out of the loop.
 //
 // Folders are fixed server-side per resource type so a client can never
-// sign an upload into someone else's namespace.
+// sign an upload into someone else's namespace. The root namespace comes
+// from CLOUDINARY_FOLDER, so moving a stack's assets is an env change.
 
 export const getMenuItemImageSignature = tryCatch(
   async (req: Request, res: Response) => {
     const params = createCloudinaryUploadSignature({
-      folder: "foodo/menu-items",
+      folder: resolveUploadFolder("menu-items"),
       tags: ["foodo", "menu-item"],
       transformation: "w_1200,h_1200,c_limit,q_auto",
     });
@@ -25,7 +30,7 @@ export const getMenuItemImageSignature = tryCatch(
 export const getRestaurantImageSignature = tryCatch(
   async (req: Request, res: Response) => {
     const params = createCloudinaryUploadSignature({
-      folder: "foodo/restaurants",
+      folder: resolveUploadFolder("restaurants"),
       tags: ["foodo", "restaurant"],
       transformation: "w_1600,c_limit,q_auto",
     });

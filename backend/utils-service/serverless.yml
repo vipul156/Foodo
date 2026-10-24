@@ -46,9 +46,15 @@ provider:
     STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY, ''}
     STRIPE_WEBHOOK_SECRET: ${env:STRIPE_WEBHOOK_SECRET, ''}
     FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
+    # Signed direct uploads + delivery URLs. Either the URL shorthand or
+    # the three separate names works; both forms are resolved by the
+    # shared helper so signer and URL math agree.
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
     CLOUDINARY_CLOUD_NAME: ${env:CLOUDINARY_CLOUD_NAME, ''}
     CLOUDINARY_API_KEY: ${env:CLOUDINARY_API_KEY, ''}
     CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/dishes/<seller>.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     RATE_LIMIT_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}

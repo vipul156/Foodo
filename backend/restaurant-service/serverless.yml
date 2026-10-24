@@ -50,7 +50,9 @@ provider:
     # payment claim) and guaranteed a 403 mismatch with any service that
     # used the real key, so the value is now required, not defaulted.
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
-    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}    # signed direct uploads (parsed by the shared signer)
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/menu-items.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
     # The AI verification tier lives on the same shared HTTP API; the
     # kitchen proxies packing checks there server-side.
     AI_VERIFICATION_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
@@ -159,6 +161,11 @@ resources:
 functions:
   http:
     handler: dist/http.handler
+    # The packing gate proxies to ai-verification and aborts at
+    # VERIFICATION_TIMEOUT_MS (25s default). The function has to outlive
+    # that abort, or a slow vision call kills the Lambda and the seller
+    # gets a dead 502 instead of the explanation.
+    timeout: 30
     package:
       patterns:
         - "!**"

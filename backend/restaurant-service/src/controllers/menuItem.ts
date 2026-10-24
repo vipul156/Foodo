@@ -12,7 +12,10 @@ import {
   deleteMenuItem as deleteMenuItemRow,
 } from "../dynamo/cart.js";
 import { dataUri } from "@foodo/backend-common/files";
-import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
+import {
+  uploadToCloudinary,
+  resolveUploadFolder,
+} from "@foodo/backend-common/cloudinary";
 import {
   setCacheablePublic,
   setCacheablePrivate,
@@ -45,7 +48,7 @@ export const createMenuItemController = tryCatch(
       }
       imageUrl = await uploadToCloudinary({
         fileContent: fileBuffer.content,
-        folder: "foodo/menu-items",
+        folder: resolveUploadFolder("menu-items"),
         tags: ["foodo", "menu-item"],
       });
     }

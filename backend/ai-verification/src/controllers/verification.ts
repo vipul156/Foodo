@@ -6,6 +6,10 @@ import {
   listVerificationsByOrder,
   type Verification,
 } from "@foodo/backend-common/dynamo";
+import {
+  resolveCloudinaryCredentials,
+  resolveUploadFolder,
+} from "@foodo/backend-common/cloudinary";
 import { verifyImage, type AiVerificationResult } from "../config/ai.js";
 import { publishVerificationEvent } from "../config/events.js";
 import { runProvider } from "../config/http.js";
@@ -28,19 +32,39 @@ const EVIDENCE_TTL_DAYS = Number(process.env.VERIFICATION_TTL_DAYS) || 90;
 // Goes through the shared external-egress breaker so a Cloudinary
 // outage fails fast and trips ONE shared circuit instead of piling
 // up sockets.
+//
+// The SDK is configured explicitly from the same credential resolver the
+// signers use, so either env shape works (CLOUDINARY_URL or the three
+// separate names) and a wrong cloud name fails HERE, loudly, instead of
+// being mistaken for an AI failure.
+const EVIDENCE_FOLDER = "verification";
 async function storeEvidence(
   dataUri: string,
 ): Promise<{ url: string | null; publicId: string | null }> {
   try {
-    const cloud = await runProvider(() => cloudinary.uploader.upload(dataUri));
+    const { cloudName, apiKey, apiSecret } = resolveCloudinaryCredentials();
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+
+    const cloud = await runProvider(() =>
+      cloudinary.uploader.upload(dataUri, {
+        folder: resolveUploadFolder(EVIDENCE_FOLDER),
+        tags: ["foodo", "verification", "evidence"],
+      }),
+    );
     return { url: cloud.secure_url, publicId: cloud.public_id };
   } catch (err) {
     // Evidence storage is critical for disputes but NOT for the packing
     // gate: record the failure, still return the AI verdict, and let the
     // record carry url=null. Retry-friendly and auditable.
+    const detail = err as { message?: string; http_code?: number } | undefined;
     console.error(
-      "Evidence upload failed (continuing without stored copy):",
-      err instanceof Error ? err.message : err,
+      `Evidence upload failed (continuing without stored copy) [${detail?.http_code ?? "no-status"}]:`,
+      detail?.message ?? err,
     );
     return { url: null, publicId: null };
   }

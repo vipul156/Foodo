@@ -219,25 +219,27 @@ policy at all — `bcrypt.hash(password, 10)` on whatever arrives.
 
 ## 4. Configuration inconsistencies
 
-### 4.1 `CLOUDINARY_URL` vs the three separate variables — **high (breaks image upload)**
+### 4.1 Cloudinary credential shape — **fixed**
 
-`backend/restaurant-service/serverless.yml` and `rider-service/serverless.yml` both declare:
-
-```yaml
-CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
-```
-
-But `packages/backend-common/src/cloudinary.ts` reads:
+`restaurant-service`, `rider-service`, `ai-verification` and `utils-service` declare
+`CLOUDINARY_URL`, while `ai-orchestrator` declares the three separate names.
+`packages/backend-common/src/cloudinary.ts` now accepts **either** shape:
 
 ```ts
-CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+resolveCloudinaryCredentials()   // CLOUDINARY_CLOUD_NAME/_API_KEY/_API_SECRET, or CLOUDINARY_URL
+resolveUploadFolder(kind)        // CLOUDINARY_FOLDER (default "foodo") + "/" + kind
 ```
 
-and throws `"Cloudinary credentials missing: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY
-and CLOUDINARY_API_SECRET"` if any is absent. So setting only `CLOUDINARY_URL` gives you a
-**500 on every `/upload-signature` call**.
+Every stack also carries `CLOUDINARY_FOLDER`, the root asset namespace for that service
+(`foodo/menu-items`, `foodo/restaurants`, `foodo/riders/kyc`, `foodo/dishes/<sellerId>`,
+`foodo/verification`, `foodo/disputes/evidence`), so relocating a stack's assets is an env
+change plus redeploy — no code edit.
 
-**Fix:** replace `CLOUDINARY_URL` with the three variables in restaurant, rider and utils.
+Operational note: the cloud name must match the API key's product environment. Cloudinary
+answers `401 {"error":{"message":"cloud_name mismatch"}}` when the key is valid but
+belongs to a different cloud, and the verification stack logs it as
+`Evidence upload failed (continuing without stored copy) [401]` while still persisting the
+AI verdict.
 
 ### 4.2 `infra/README.md` still describes the API as having CORS — **low (documentation)**
 

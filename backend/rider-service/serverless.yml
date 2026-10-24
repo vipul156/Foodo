@@ -44,6 +44,8 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
     CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}   # signed direct uploads (upload-signature)
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/riders/kyc.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}  # ai-verification calls (proof of delivery)
     # The AI verification tier lives on the same shared HTTP API.
     AI_VERIFICATION_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}

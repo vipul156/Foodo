@@ -24,6 +24,9 @@ import {
 
 const MAX_IMAGE_BASE64_CHARS = 14_000_000; // ≈10MB binary
 const VERIFICATION_TIMEOUT_MS = Number(process.env.VERIFICATION_TIMEOUT_MS) || 25_000;
+// How much of an upstream error body is copied into the log line. Enough
+// to name the cause, short enough to stay one readable entry.
+const UPSTREAM_DETAIL_CHARS = 300;
 
 const gateStatuses = ["placed", "accepted", "preparing", "ready_for_rider"];
 
@@ -45,7 +48,12 @@ interface VerificationVerdict {
 async function callVerification(
   path: string,
   body: unknown,
-): Promise<{ ok: boolean; status: number; verdict: VerificationVerdict | null }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  verdict: VerificationVerdict | null;
+  detail: string;
+}> {
   const base = process.env.AI_VERIFICATION_URL ?? "";
   const response = await fetch(`${base}/api/verification/${path}`, {
     method: "POST",
@@ -57,9 +65,22 @@ async function callVerification(
     signal: AbortSignal.timeout(VERIFICATION_TIMEOUT_MS),
   });
   if (!response.ok) {
-    return { ok: false, status: response.status, verdict: null };
+    // Keep the upstream reason: a 400 (bad photo) and a 500 (our bug)
+    // both used to collapse into one useless "unavailable" reply.
+    const detail = await response.text().catch(() => "");
+    return {
+      ok: false,
+      status: response.status,
+      verdict: null,
+      detail: detail.slice(0, UPSTREAM_DETAIL_CHARS),
+    };
   }
-  return { ok: true, status: response.status, verdict: (await response.json()) as VerificationVerdict };
+  return {
+    ok: true,
+    status: response.status,
+    verdict: (await response.json()) as VerificationVerdict,
+    detail: "",
+  };
 }
 
 // ─── POST /api/order/verification/:orderId/packing ───────────
@@ -118,6 +139,26 @@ export const submitPackingVerification = tryCatch(async (req: AuthRequest, res) 
       expected,
       image,
     });
+
+    if (!response.ok) {
+      console.error(
+        `Packing verification rejected upstream (${response.status}) for order ${orderId}:`,
+        response.detail || "<empty body>",
+      );
+      // A 4xx is about THIS photo — the seller can act on it (retake).
+      // Anything else is our side of the fence: retry is the only move.
+      const retake =
+        response.status === 400 ||
+        response.status === 413 ||
+        response.status === 422;
+      return res.status(retake ? 422 : 503).json({
+        code: retake ? "PHOTO_REJECTED" : "VERIFIER_UNAVAILABLE",
+        message: retake
+          ? "Packing photo was rejected — retake the photo and try again"
+          : "Verification service is temporarily unavailable — try again",
+      });
+    }
+
     verdict = response.verdict;
   } catch (err) {
     console.error(
@@ -125,13 +166,18 @@ export const submitPackingVerification = tryCatch(async (req: AuthRequest, res) 
       err instanceof Error ? err.message : err,
     );
     return res.status(502).json({
+      code: "VERIFIER_UNREACHABLE",
       message: "Verification service unreachable — try again",
     });
   }
 
   if (!verdict || typeof verdict.status !== "string") {
+    console.error(
+      `Verification service returned no verdict for order ${orderId}`,
+    );
     return res.status(502).json({
-      message: "Verification service unavailable — try again",
+      code: "VERIFIER_BAD_RESPONSE",
+      message: "Verification service returned no verdict — try again",
     });
   }
 

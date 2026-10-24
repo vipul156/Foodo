@@ -451,6 +451,12 @@ The returned payload **never contains the secret** — only `{ signature, timest
 cloudName, folder, publicId?, tags?, transformation? }`. The signature is valid only for
 that exact parameter set, so a client cannot escalate to another folder.
 
-The secret is read from `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` /
-`CLOUDINARY_API_SECRET` — note these are **not** the `CLOUDINARY_URL` shorthand that the
-restaurant/rider stacks still pass in their environment blocks.
+Credentials come from `resolveCloudinaryCredentials()`, which accepts **either** the
+`CLOUDINARY_URL` shorthand (`cloudinary://key:secret@cloud`) or
+`CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`, so a stack can
+carry whichever form it already has.
+
+Folders are built with `resolveUploadFolder(kind)`, which prefixes the stack's
+`CLOUDINARY_FOLDER` (default `foodo`) — e.g. `foodo/menu-items`, `foodo/riders/kyc`,
+`foodo/dishes/<sellerId>`, `foodo/verification`, `foodo/disputes/evidence`. Changing the
+namespace is an env change plus redeploy, never a code edit.

@@ -1,4 +1,8 @@
-import { createCloudinaryUploadSignature } from "@foodo/backend-common/cloudinary";
+import {
+  createCloudinaryUploadSignature,
+  resolveCloudinaryCredentials,
+  resolveUploadFolder,
+} from "@foodo/backend-common/cloudinary";
 
 // ─── AI dish-photo enhancement pipeline ───────────────────────
 // Foodo runs ZERO image code and ZERO GPUs: the "AI" is Cloudinary's
@@ -45,13 +49,9 @@ const PUBLIC_ID_PATTERN = /^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/;
 
 const MAX_PUBLIC_ID_LENGTH = 200;
 
-const cloudName = (): string => {
-  const name = process.env.CLOUDINARY_CLOUD_NAME;
-  if (!name) {
-    throw new Error("CLOUDINARY_CLOUD_NAME is not configured");
-  }
-  return name;
-};
+// Reads either CLOUDINARY_CLOUD_NAME or the CLOUDINARY_URL shorthand, so
+// the delivery URLs and the signer can never disagree about the cloud.
+const cloudName = (): string => resolveCloudinaryCredentials().cloudName;
 
 export const isSurfaceStyle = (value: unknown): value is SurfaceStyle =>
   typeof value === "string" &&
@@ -87,12 +87,16 @@ export interface DirectUploadSignature {
   uploadUrl: string;
 }
 
+// `kind` is the part AFTER the stack's namespace (CLOUDINARY_FOLDER), e.g.
+// "dishes/<sellerId>" → "foodo/dishes/<sellerId>". Keeping the root in env
+// is what lets an environment move its assets without a code change.
 export const createDirectUploadSignature = (
-  folder: string,
+  kind: string,
 ): DirectUploadSignature => {
-  if (!folder.startsWith("foodo/")) {
-    throw new Error("Upload folder must be namespaced under foodo/");
+  if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/.test(kind.trim())) {
+    throw new Error("Upload folder must be a plain Cloudinary path");
   }
+  const folder = resolveUploadFolder(kind);
   const signature = createCloudinaryUploadSignature({ folder });
   return {
     apiKey: signature.apiKey,
@@ -152,9 +156,7 @@ const cloudinaryAdmin = async (
   path: string,
   init: { method: string; body?: string; headers?: Record<string, string> },
 ): Promise<{ status: number; body: string }> => {
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
-  const name = cloudName();
+  const { apiKey, apiSecret, cloudName: name } = resolveCloudinaryCredentials();
   if (!apiKey || !apiSecret) {
     throw new Error("Cloudinary credentials are not configured");
   }
@@ -192,7 +194,7 @@ export const ensureUploadPreset = async (): Promise<string> => {
     body: JSON.stringify({
       name: PRESET_NAME,
       unsigned: true,
-      folder: "foodo/dishes",
+      folder: resolveUploadFolder("dishes"),
       allowed_formats: ["jpg", "jpeg", "png", "webp"],
       max_file_size: 10 * 1024 * 1024,
       transformation:

@@ -131,8 +131,9 @@ in the environment (or a `.env`, since `useDotenv: true`):
 | `NEXT_PUBLIC_REALTIME_WS_URL` | discovered export | set to override |
 | `AWS_DYNAMO_ENDPOINT` | — | point the shared client at DynamoDB Local / moto |
 
-⚠️ `CLOUDINARY_URL` appears in the restaurant/rider `environment:` blocks but the shared
-signer reads `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`.
+⚠️ Cloudinary credentials may arrive as `CLOUDINARY_URL` **or** as
+`CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` — the shared
+resolver parses either. `CLOUDINARY_FOLDER` (default `foodo`) is the per-stack asset root.
 See [14 Known Gaps](./14-known-gaps.md).
 
 ---
@@ -234,7 +235,8 @@ receives.
 | 401 loops in the browser | `refresh` is failing — check for a `refresh_token` cookie | the cookie is `path=/api/auth`; a request to another path will not carry it |
 | Socket never connects | `NEXT_PUBLIC_REALTIME_WS_URL` empty or a `$connect` 401 | check the export and the bootstrap token |
 | Socket connects, no events | the room row is missing, or the event never reached `foodo-realtime-*-emit` | query `room-index`, tail `logs:realtime` |
-| Upload signature 500 | `CLOUDINARY_*` env vars missing (they use the three separate names, not `CLOUDINARY_URL`) | set them on the restaurant/rider stacks |
+| Upload signature 500 | `CLOUDINARY_URL` (or the three `CLOUDINARY_*` names) missing on the stack | set them on the restaurant/rider/utils stacks |
+| Evidence upload 401 / `cloud_name mismatch` | the API key belongs to a different Cloudinary product environment than the configured cloud name | set the matching cloud name in `CLOUDINARY_URL` (cloudinary://key:secret@cloud) and redeploy |
 | Webhook always 400 | the body was JSON-parsed before `express.raw` | verify `index.ts` ordering in utils |
 | Orders visible to another user | always verify `order.userId === user.id` on read paths | see [14](./14-known-gaps.md) |
 | Hot catalog slow | CloudFront cache TTL expired, or `Cache-Control` was stripped | check the response headers on the origin |

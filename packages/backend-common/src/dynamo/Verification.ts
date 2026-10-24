@@ -75,6 +75,14 @@ const tableName = () => TABLE.verifications();
 const pk = (id: string) => `VERIFICATION#${id}`;
 const SK = "VERIFICATION";
 
+// GSI key attributes (order-index, restaurant-index, rider-index).
+// DynamoDB rejects an explicit NULL where an index key is defined
+// ("Type mismatch for Index Key … Expected: S Actual: NULL"), so an
+// absent actor must be OMITTED from the item — the standard sparse-index
+// pattern. `null` in the returned object is fine; only the stored item
+// has to stay sparse.
+const INDEX_KEY_ACTORS = ["restaurantId", "riderId"] as const;
+
 const DEFAULT_RETENTION_DAYS = 90;
 
 export async function createVerification(
@@ -108,10 +116,19 @@ export async function createVerification(
     ttl: Math.floor(expiresAt.getTime() / 1000),
   };
 
+  const item: Record<string, unknown> = {
+    ...verification,
+    pk: pk(verification.id),
+    sk: SK,
+  };
+  for (const key of INDEX_KEY_ACTORS) {
+    if (item[key] == null) delete item[key];
+  }
+
   await docClient().send(
     new PutCommand({
       TableName: tableName(),
-      Item: { ...verification, pk: pk(verification.id), sk: SK },
+      Item: item,
     }),
   );
 

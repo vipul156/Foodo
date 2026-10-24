@@ -52,7 +52,8 @@ router.post(
     }
 
     // Scope the folder to the seller so cleanup/audit stays per-partner.
-    const folder = `foodo/dishes/${user._id ?? user.sub ?? "unknown"}`;
+    // The "foodo" root itself comes from CLOUDINARY_FOLDER at sign time.
+    const folder = `dishes/${user._id ?? user.sub ?? "unknown"}`;
     const signature = createDirectUploadSignature(folder);
 
     return res.json({ success: true, ...signature });

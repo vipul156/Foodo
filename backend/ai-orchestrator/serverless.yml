@@ -55,11 +55,14 @@ provider:
     # would deploy an arbiter that 500s on intake, case reads and health.
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
     # Dispute evidence (the photo is the case's legal record). The shared
-    # uploader signs with the three separate names — CLOUDINARY_URL is
-    # NOT read here, and missing credentials 503 the intake.
+    # uploader accepts EITHER CLOUDINARY_URL or the three separate names;
+    # missing credentials 503 the intake.
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
     CLOUDINARY_CLOUD_NAME: ${env:CLOUDINARY_CLOUD_NAME, ''}
     CLOUDINARY_API_KEY: ${env:CLOUDINARY_API_KEY, ''}
     CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/disputes/evidence.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
     FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
     # Sync cross-service reads (order facts, refund execution, rider
     # telemetry) go through the shared HTTP API — internal endpoints
