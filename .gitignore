@@ -78,6 +78,9 @@ venv/
 .ruff_cache/
 dist/
 
+# serverless-python-requirements static cache (runtime-namespaced)
+.cache/
+
 # Transient copy of the shared pycommon package. The serverless-vendor-pycommon
 # plugin drops it into the service tree while the Lambda artifact is built and
 # removes it again afterwards; it is never source.

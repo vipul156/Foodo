@@ -65,6 +65,14 @@ custom:
       - '**/*.py[c|o]'
       - '**/__pycache__*'
     slimPatternsAppendDefaults: false
+    # serverless-python-requirements keys its static cache on
+    # <sha256(requirements.txt)>_<arch> — the Lambda runtime is NOT part of
+    # the key. A runtime bump that leaves the requirements content unchanged
+    # therefore reuses the previous interpreter's wheel tree (e.g. a cp312
+    # _pydantic_core .so inside a python3.14 runtime → ImportModuleError at
+    # init, so every route answers 500). Namespacing the cache by runtime
+    # makes the key runtime-aware, so a bump always rebuilds for the target ABI.
+    cacheLocation: ../../.cache/python-requirements/${self:provider.runtime}
     # Dependencies ride a Lambda layer instead of being injected into the
     # function zip: packaging then reuses the cached layer archive
     # (<requirements hash>_arm64_slspyc.zip) and neither function zip has
