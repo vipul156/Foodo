@@ -42,6 +42,10 @@ provider:
     RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}
     RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+    # AI escalation queue: where the arbitration agent parks the cases it
+    # can't decide alone. A table, not a service hop — the admin work list
+    # is one query against the shared data plane.
+    REVIEW_QUEUE_TABLE: ${cf:${self:custom.infra}.ReviewQueueTable}
   httpApi:
     id: ${cf:${self:custom.coreApi}.HttpApiId}
   iam:
@@ -76,6 +80,14 @@ provider:
             - Fn::Sub:
                 - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
                 - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            # Review queue: the admin work list reads pending items and
+            # closes them (status-board GSI included).
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.ReviewQueueTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.ReviewQueueTable}
 
 functions:
   http:

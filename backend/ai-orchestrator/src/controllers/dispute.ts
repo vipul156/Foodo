@@ -1,4 +1,8 @@
-import { listEscalatedCases, getCase as getCaseRow } from "../dynamo/cases.js";
+import {
+  listEscalatedCases,
+  listCasesByOrder,
+  getCase as getCaseRow,
+} from "../dynamo/cases.js";
 import { runArbitration } from "../graph/arbitration.graph.js";
 import { generateCaseId } from "../graph/caseId.js";
 import { publishDisputeWorkItem } from "../config/events.js";
@@ -107,6 +111,23 @@ export const submitDispute = tryCatch(async (req: Request, res: Response) => {
     caseId,
     message: "Arbitration queued — poll /api/agent/case/:caseId for progress",
   });
+});
+
+// ─── GET /api/agent/order/:orderId/cases ─────────────────────
+// Every dispute filed against one order, newest first. This is how the
+// order page knows a case already exists — the customer is looking at a
+// specific order, so an order-keyed read beats making the browser
+// remember a case id it can lose on another device.
+
+export const getOrderCases = tryCatch(async (req: Request, res: Response) => {
+  const rawOrderId = req.params?.orderId;
+  const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] : rawOrderId;
+  if (!orderId) {
+    return res.status(400).json({ message: "orderId is required" });
+  }
+
+  const cases = await listCasesByOrder(orderId, 10);
+  return res.status(200).json({ success: true, count: cases.length, cases });
 });
 
 // ─── GET /api/agent/case/:caseId ─────────────────────────────

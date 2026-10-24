@@ -20,6 +20,7 @@ import {
   BarChart3,
   Settings,
   Menu,
+  Inbox,
 } from "lucide-react";
 
 const NAV_ITEMS: SidebarItem[] = [
@@ -27,6 +28,7 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: "/admin/restaurants", label: "Restaurants", icon: Store },
   { href: "/admin/riders", label: "Riders", icon: Bike },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/reviews", label: "Review queue", icon: Inbox },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];

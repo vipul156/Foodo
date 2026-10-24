@@ -1,6 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { submitDispute, getCase, getEscalatedQueue } from "../controllers/dispute.js";
+import { submitDispute, getCase, getOrderCases, getEscalatedQueue } from "../controllers/dispute.js";
 import { isInternal } from "../middlewares/isInternal.js";
 import { createDynamoRateLimitStore } from "@foodo/backend-common/dynamo";
 
@@ -49,6 +49,9 @@ const caseReadLimiter = rateLimit({
   }),
 });
 router.get("/case/:caseId", caseReadLimiter, getCase);
+// Order-scoped read: the order page asks "is there already a case for
+// this order?" instead of remembering a case id in the browser.
+router.get("/order/:orderId/cases", caseReadLimiter, getOrderCases);
 
 // Review queue: internal only (admin tooling)
 router.get("/queue", isInternal, getEscalatedQueue);

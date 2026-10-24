@@ -9,6 +9,7 @@ import {
   verifyRider,
   getPlatformStats,
 } from "../controllers/admin.js";
+import { getPendingReviews, resolveReview } from "../controllers/reviews.js";
 import { isAuth, isAdmin } from "@foodo/backend-common";
 
 const router = Router();
@@ -26,5 +27,10 @@ router.get("/rider/all", getAllRiders);
 router.get("/user/all", getAllUsers);
 router.patch("/verify/rider/:id", verifyRider);
 router.patch("/verify/restaurant/:id", verifyRestaurant);
+
+// AI escalation queue — the human work list the arbitration agent
+// parks unresolved cases in.
+router.get("/reviews", getPendingReviews);
+router.patch("/reviews/:id/resolve", resolveReview);
 
 export { router as adminRoutes };
