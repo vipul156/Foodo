@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -26,6 +26,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
 
 from pycommon.llm import build_chat_model
 from pycommon.logging import get_logger
@@ -44,7 +45,12 @@ log = get_logger(__name__)
 # ─── Graph state ─────────────────────────────────────────────
 
 class AgentState(TypedDict):
-    messages: list[BaseMessage]
+    # `add_messages` is mandatory, not decoration: without a reducer the
+    # channel is last-value-wins, so the agent node's AIMessage REPLACED
+    # the human turn and the next LLM call saw a conversation with no
+    # user message — every tool loop died on the second call (the model
+    # API rejects a tool-only transcript).
+    messages: Annotated[list[BaseMessage], add_messages]
     # Serialized ToolContext inputs — the PlatformClient instance itself is
     # injected by the orchestrator into state via a private key.
     tool_context: dict[str, Any]

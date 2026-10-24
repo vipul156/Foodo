@@ -13,6 +13,7 @@ Two registries per tool:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 from langchain_core.tools import StructuredTool
@@ -46,6 +47,29 @@ class GetPastOrdersInput(BaseModel):
     limit: int = Field(default=5, ge=1, le=20, description="How many recent orders to fetch")
 
 
+def _as_float(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    """Parse a platform timestamp — absent/unparseable becomes None.
+
+    A single malformed `createdAt` must not fail the whole history lookup;
+    the agent only needs the date to recognise "last Tuesday".
+    """
+    if not value or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 async def _get_past_orders(input: GetPastOrdersInput, ctx: ToolContext) -> dict:
     try:
         orders = await ctx.platform.get_past_orders(
@@ -53,18 +77,30 @@ async def _get_past_orders(input: GetPastOrdersInput, ctx: ToolContext) -> dict:
         )
     except PlatformUnavailable as exc:
         return {"ok": False, "error": str(exc)}
-    refs = [
-        PastOrderRef(
-            order_id=str(o.get("_id", "")),
-            restaurant_id=str(o.get("restaurantId", "")),
-            restaurant_name=str(o.get("restaurantName", "")),
-            created_at=str(o.get("createdAt", "")),
-            status=str(o.get("status", "")),
-            total_amount=float(o.get("totalAmount", 0) or 0),
-            items=[str(i.get("name", "")) for i in (o.get("items") or [])],
-        ).model_dump()
-        for o in orders
-    ]
+
+    refs: list[dict[str, Any]] = []
+    for o in orders:
+        # Rows come from the DynamoDB era (`id`, camelCase columns); the
+        # Mongo era exposed `_id`. An order we can't identify is skipped
+        # rather than crashing the tool.
+        order_id = str(o.get("id") or o.get("_id") or "")
+        if not order_id:
+            continue
+        refs.append(
+            PastOrderRef(
+                order_id=order_id,
+                restaurant_id=str(o.get("restaurantId") or o.get("restaurant_id") or ""),
+                restaurant_name=str(o.get("restaurantName") or o.get("restaurant_name") or ""),
+                created_at=_as_datetime(o.get("createdAt") or o.get("created_at")),
+                status=str(o.get("status") or ""),
+                total_amount=_as_float(o.get("totalAmount") or o.get("total_amount")),
+                items=[
+                    str(i.get("name") or "")
+                    for i in (o.get("items") or [])
+                    if isinstance(i, dict)
+                ],
+            ).model_dump(mode="json")
+        )
     ctx.scratch["past_orders"] = refs
     return {"ok": True, "orders": refs}
 
@@ -72,7 +108,7 @@ async def _get_past_orders(input: GetPastOrdersInput, ctx: ToolContext) -> dict:
 # ─── Tool 2: semantic menu search ────────────────────────────
 
 class SearchMenuItemsInput(BaseModel):
-    restaurant_id: str = Field(description="Restaurant to search (24-hex ObjectId)")
+    restaurant_id: str = Field(description="Restaurant id exactly as returned by get_past_orders or given by the user")
     query: str = Field(min_length=2, max_length=120, description="Fuzzy item description")
     limit: int = Field(default=5, ge=1, le=10)
 
@@ -112,7 +148,7 @@ def _draft(scratch: dict[str, Any]) -> dict:
 
 
 class DraftAddInput(BaseModel):
-    item_id: str = Field(description="MenuItem ObjectId from search_menu_items")
+    item_id: str = Field(description="MenuItem id EXACTLY as returned by search_menu_items — never reformatted")
     name: str = Field(description="Exact menu name of the item")
     unit_price: float = Field(ge=0, description="Price PER UNIT from the menu — never estimated")
     quantity: int = Field(default=1, ge=1, le=20)
@@ -137,7 +173,7 @@ async def _draft_add_item(input: DraftAddInput, ctx: ToolContext) -> dict:
 
 class DraftSwapInput(BaseModel):
     remove_item_id: str = Field(description="item_id currently in the draft to remove")
-    add_item_id: str = Field(description="Replacement MenuItem ObjectId")
+    add_item_id: str = Field(description="Replacement MenuItem id EXACTLY as returned by search_menu_items")
     add_name: str
     add_unit_price: float = Field(ge=0)
     add_quantity: int = Field(default=1, ge=1, le=20)
@@ -192,7 +228,7 @@ async def _draft_update_quantity(input: DraftUpdateQtyInput, ctx: ToolContext) -
 # ─── Draft context (restaurant binding) ──────────────────────
 
 class DraftSetRestaurantInput(BaseModel):
-    restaurant_id: str = Field(description="Restaurant ObjectId (24-hex)")
+    restaurant_id: str = Field(description="Restaurant id exactly as returned by get_past_orders or given by the user")
     restaurant_name: str = Field(max_length=120)
 
 

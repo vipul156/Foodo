@@ -18,6 +18,13 @@ plugins:
 
 package:
   individually: true
+  patterns:
+    # Local test/pytest runs leave bytecode compiled for the developer's
+    # interpreter; shipping it only bloats the artifact (and shadows the
+    # sources if the local version ever matches the runtime).
+    - '!**/__pycache__/**'
+    - '!**/*.pyc'
+    - '!**/*.pyo'
 
 custom:
   stage: ${opt:stage, 'dev'}
@@ -31,6 +38,16 @@ custom:
     # Linux pip in Docker → correct aarch64 wheels for pydantic-core.
     dockerizePip: true
     slim: true
+    # `slim` also deletes every **/*.dist-info* — i.e. the installed
+    # distribution metadata. openai>=3 imports `httpx2`, whose version is
+    # read through importlib.metadata AT IMPORT TIME, so a stripped
+    # metadata tree kills the handler at init with "No package metadata
+    # was found for httpx2" and every route answers 500. Keep the
+    # bytecode cleanup, keep the metadata.
+    slimPatterns:
+      - '**/*.py[c|o]'
+      - '**/__pycache__*'
+    slimPatternsAppendDefaults: false
     # pip would byte-compile every module into the Windows bind-mounted
     # cache folder (~55x slower than container-local writes), only for
     # `slim` to delete all .pyc files again. Exact pins in

@@ -16,7 +16,19 @@ from pydantic import BaseModel, Field, field_validator
 
 # ─── Shared primitives ───────────────────────────────────────
 
-ObjectIdStr = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{24}$")]
+# The platform's ids are opaque handles: catalog rows are UUIDs (the
+# DynamoDB era) and older rows are 24-hex ObjectIds (the Mongo era).
+# Both are accepted; anything else is rejected before it can reach a
+# cart or payment call.
+PlatformIdStr = Annotated[
+    str,
+    Field(
+        pattern=(
+            r"^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+            r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{24})$"
+        )
+    ),
+]
 
 
 class Tone(str, Enum):
@@ -29,14 +41,17 @@ class PastOrderRef(BaseModel):
     order_id: str
     restaurant_id: str
     restaurant_name: str
-    created_at: datetime
+    # Optional: historical rows may predate `createdAt` being stamped, and a
+    # missing date only costs the agent's "last Tuesday" reasoning — it must
+    # not fail the whole history lookup.
+    created_at: datetime | None = None
     status: str
     total_amount: float
     items: list[str] = []
 
 
 class GetPastOrdersArgs(BaseModel):
-    user_id: ObjectIdStr
+    user_id: PlatformIdStr
     limit: int = Field(default=5, ge=1, le=20)
 
 
@@ -52,7 +67,7 @@ class MenuCandidate(BaseModel):
 
 
 class SearchMenuItemsArgs(BaseModel):
-    user_id: ObjectIdStr
+    user_id: PlatformIdStr
     query: str = Field(min_length=2, max_length=120)
     limit: int = Field(default=5, ge=1, le=10)
 
@@ -60,7 +75,7 @@ class SearchMenuItemsArgs(BaseModel):
 # ─── Step 3: cart mutation (strict — no free-text to the DB) ─
 
 class LineItem(BaseModel):
-    item_id: ObjectIdStr
+    item_id: PlatformIdStr
     name: str
     unit_price: float = Field(ge=0)
     quantity: int = Field(ge=1, le=20)
@@ -70,23 +85,23 @@ class LineItem(BaseModel):
 
 
 class AddToCartArgs(BaseModel):
-    user_id: ObjectIdStr
-    restaurant_id: ObjectIdStr
+    user_id: PlatformIdStr
+    restaurant_id: PlatformIdStr
     items: list[LineItem] = Field(min_length=1, max_length=25)
 
 
 class UpdateCartArgs(BaseModel):
-    user_id: ObjectIdStr
-    restaurant_id: ObjectIdStr
-    item_id: ObjectIdStr
+    user_id: PlatformIdStr
+    restaurant_id: PlatformIdStr
+    item_id: PlatformIdStr
     quantity: int = Field(ge=0, le=20)  # 0 = remove line
 
 
 class SwapItemArgs(BaseModel):
-    user_id: ObjectIdStr
-    restaurant_id: ObjectIdStr
-    remove_item_id: ObjectIdStr
-    add_item_id: ObjectIdStr
+    user_id: PlatformIdStr
+    restaurant_id: PlatformIdStr
+    remove_item_id: PlatformIdStr
+    add_item_id: PlatformIdStr
     add_name: str
     add_price: float = Field(ge=0)
     add_quantity: int = Field(default=1, ge=1, le=20)

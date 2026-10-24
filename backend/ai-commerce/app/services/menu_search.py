@@ -75,19 +75,24 @@ def rank_menu_sync(
     """Rank menu dicts against a fuzzy user phrase (deterministic).
 
     `candidates` are menu item dicts from the restaurant service:
-    { _id, restaurantId, name, category, price, isAvailable, ... }
-    Unavailable items are excluded; results are capped and thresholded.
+    { id, restaurantId, name, category, price, isAvailable, ... }
+    (`_id` is the pre-Dynamo field name — still accepted). Unavailable
+    items are excluded; results are capped and thresholded.
     """
     max_results = limit or settings.max_menu_candidates
     scored: list[MenuCandidate] = []
     for item in candidates:
-        if not item.get("isAvailable", True):
+        # The catalog moved from Mongo `_id` to DynamoDB `id`; a menu
+        # item without an id can never be added to a draft, so it is
+        # skipped rather than crashing the tool.
+        item_id = item.get("id") or item.get("_id")
+        if not item_id or not item.get("isAvailable", True):
             continue
         score = lexical_score(query, str(item.get("name", "")), str(item.get("category", "")))
         if score >= settings.semantic_match_threshold:
             scored.append(
                 MenuCandidate(
-                    item_id=str(item["_id"]),
+                    item_id=str(item_id),
                     restaurant_id=str(item.get("restaurantId", "")),
                     name=str(item.get("name", "")),
                     item=item,

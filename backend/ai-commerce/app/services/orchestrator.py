@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from pycommon.logging import get_logger
 
@@ -70,20 +70,45 @@ class Orchestrator:
             )
 
         # ─── Bounded graph invocation ────────────────────────────
-        ctx = ToolContext(user_id=user_id, cookie_header=cookie_header, platform=self.platform)
+        # The tools mutate `scratch` (the draft lives there), so the SAME
+        # dict the session loaded must be handed to the context — a fresh
+        # default dict would swallow every mutation.
+        ctx = ToolContext(
+            user_id=user_id,
+            cookie_header=cookie_header,
+            platform=self.platform,
+            scratch=scratch,
+        )
         config = {
             "configurable": {"thread_id": session_id},
             "recursion_limit": settings.max_graph_steps,
         }
         state = commerce_agent.AgentState(
-            messages=[HumanMessage(content=request.message)],
+            messages=[
+                *self._history_messages(history),
+                HumanMessage(content=request.message),
+            ],
             tool_context={"_ctx": ctx},
             scratch=scratch,
             reply="",
             tool_trace=[],
             error=None,
         )
-        final_state = await self._graph.ainvoke(state, config=config)
+        try:
+            final_state = await self._graph.ainvoke(state, config=config)
+        except Exception:  # noqa: BLE001 — provider/transport failure mid-turn
+            log.exception("turn failed before the graph completed (session %s)", session_id)
+            draft = self._draft_state(session_id, scratch)
+            return AgentTurnResponse(
+                session_id=session_id,
+                reply=(
+                    "I couldn't reach the ordering service just now. Nothing "
+                    "changed in your cart — please try again in a moment."
+                ),
+                draft=draft,
+                checkout_card=self._build_checkout_card(scratch),
+                tool_trace=[],
+            )
 
         # ─── Persist (history window + scratch incl. draft) ──────
         history = history + [
@@ -121,6 +146,25 @@ class Orchestrator:
         )
 
     # ─── internals ───────────────────────────────────────────
+
+    @staticmethod
+    def _history_messages(history: list[dict[str, str]]) -> list[BaseMessage]:
+        """Replay the stored window so follow-ups ('make it two') have context.
+
+        Capped at `history_window` MESSAGES (the session store keeps the full
+        transcript; the model only needs the recent tail).
+        """
+        window = history[-settings.history_window :] if settings.history_window else []
+        messages: list[BaseMessage] = []
+        for entry in window:
+            content = str(entry.get("content") or "")
+            if not content:
+                continue
+            if entry.get("role") == "assistant":
+                messages.append(AIMessage(content=content))
+            else:
+                messages.append(HumanMessage(content=content))
+        return messages
 
     async def _load_session(self, user_id: str, session_id: str | None) -> dict[str, Any]:
         if session_id:
