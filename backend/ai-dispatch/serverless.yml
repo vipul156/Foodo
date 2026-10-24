@@ -104,6 +104,12 @@ provider:
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
     RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
     EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  # The ops surface lives on the ONE platform API (see core). Without this
+  # id the httpApi events below would provision a private API and the
+  # /api/dispatch routes would 404 for every sibling (the admin proxy reads
+  # the swarm's snapshot over the shared HttpApiUrl).
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
   iam:
     role:
       permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
