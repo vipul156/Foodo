@@ -22,6 +22,10 @@ export interface ReviewItem {
   customerId: string | null;
   type: string;
   summary: string;
+  /** Cloudinary URL of the customer's evidence photo — the proof the
+   *  reviewer must SEE to decide. Null when the claim arrived without
+   *  one (the agent escalates "no photo evidence" cases too). */
+  photoUrl: string | null;
   priority: ReviewPriority;
   status: ReviewStatus;
   createdAt: string;
@@ -36,6 +40,7 @@ export interface CreateReviewItemInput {
   customerId?: string | null;
   type: string;
   summary: string;
+  photoUrl?: string | null;
   priority?: ReviewPriority;
 }
 
@@ -53,6 +58,7 @@ export async function createReviewItem(
     customerId: input.customerId ?? null,
     type: input.type,
     summary: input.summary,
+    photoUrl: input.photoUrl ?? null,
     priority: input.priority ?? "normal",
     status: "pending",
     createdAt: now,
@@ -133,6 +139,7 @@ const toReviewItem = (item: Record<string, any>): ReviewItem => ({
   customerId: item.customerId ?? null,
   type: String(item.type ?? "refund_arbitration"),
   summary: String(item.summary ?? ""),
+  photoUrl: item.photoUrl ?? null,
   priority: (item.priority ?? "normal") as ReviewPriority,
   status: (item.status ?? "pending") as ReviewStatus,
   createdAt: String(item.createdAt ?? ""),

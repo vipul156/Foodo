@@ -145,6 +145,8 @@ export const issueVoucher = async (
 // ─── HITL fallback: admin review queue ───────────────────────
 // Ambiguous or suspicious cases are summarized and parked for a human.
 // The LLM writes the summary; the case document carries the evidence.
+// The photo URL travels WITH the work item — a reviewer who has to go
+// dig the case row out of another service to see the proof won't.
 
 export interface EscalationSummary {
   summary: string;
@@ -157,6 +159,7 @@ export const escalateToHuman = async (
     orderId: string;
     customerId: string;
     complaint: string;
+    photoUrl: string | null;
     damageSeverity: string | null;
     trustScore: number | null;
     telemetryFlags: string[];
@@ -189,6 +192,7 @@ export const escalateToHuman = async (
       customerId: caseDoc.customerId,
       type: "refund_arbitration",
       summary,
+      photoUrl: caseDoc.photoUrl,
       priority: caseDoc.telemetryFlags.includes("LONG_DETOUR") ? "high" : "normal",
     });
     return { ok: true, summary };

@@ -16,6 +16,7 @@ related_targets: ["src/features/disputes/api/index.ts","backend/admin-service/sr
 - Above 1024px: `minmax(0,22rem)` queue rail + flexible detail panel, the panel sticky at `top-24` so scrolling a long brief never loses the "Mark handled" action.
 - Below 1024px: one column — the queue first, then the selected detail. Selection is state, not routing: triage means reading many briefs without page loads.
 - Default selection is the first (newest) item, so the panel is never empty while the queue is not.
+- The detail panel reads top-down as header → **evidence photo** → agent's field rows → action footer. The photo sits above the brief because for a damage claim the picture is the decision, not an appendix.
 
 ## Authority and truth
 
@@ -23,6 +24,8 @@ related_targets: ["src/features/disputes/api/index.ts","backend/admin-service/sr
 - **Resolving is bookkeeping, not payment.** "Mark handled" only closes the work item and records who did it. The copy says the money move happens at the payment provider *before* the button, so no one believes the click issues a refund.
 - Priority is a real field (`low` / `normal` / `high`), surfaced as a dot in the rail and a chip in the panel — `high` is when the delivery telemetry flagged a detour.
 - The queue is the server's list: pending only, newest first, refetched every 20s. There is no local mutation of the list beyond invalidation.
+- **The evidence is the customer's own photo**, served from Cloudinary: `photoUrl` on the work item, `object-contain` in a `max-h-80` frame, click-through and an "Open full size" link to the original. It is never cropped, enhanced, or hidden — the reviewer decides on the same pixels the agent's vision tier saw.
+- Three honest evidence states: the photo; a skeleton while a legacy item's URL is one `/api/agent/case/:id` read away; and "No photo was attached to this claim" — absence is itself a reason the agent escalated, so it is stated, never left as an empty frame.
 
 ## States that must all exist
 
@@ -32,6 +35,9 @@ related_targets: ["src/features/disputes/api/index.ts","backend/admin-service/sr
 | Empty | "Nothing waiting" + "New ones appear here as soon as the agent hands them over" |
 | Error | Named failure, "nothing is lost — the items are still parked", explicit retry |
 | Refreshing | Button label carries the age ("Updated 3 min ago"), icon spins |
+| Photo present | Image in a bordered frame, click-through + "Open full size" |
+| Photo missing | "No photo was attached to this claim — the customer's account is all the evidence there is." |
+| Photo loading (legacy item) | One skeleton block, no spinner-only state |
 | Closing | Button becomes `Closing…` with a spinner; the item disappears on success |
 | Already closed (404) | Toast "That item was already closed" — two admins, one queue |
 | High priority present | Destructive-tinted count chip in the header, next to refresh |
@@ -46,7 +52,7 @@ One authored moment: the refresh icon spins while fetching, and closed rows leav
 
 ## Accessibility
 
-Rows are real `<button>`s with `aria-current` on the selected one; the detail panel is a `<dl>` of the agent's fields; the resolve button carries its busy label rather than only a spinner; the priority chip is text, not colour alone; the header chip pairs the icon with the count.
+Rows are real `<button>`s with `aria-current` on the selected one; the detail panel is a `<dl>` of the agent's fields; the resolve button carries its busy label rather than only a spinner; the priority chip is text, not colour alone; the header chip pairs the icon with the count; the evidence is a `<figure>` with a real `alt` ("Photo the customer attached as evidence") and a link that opens in a new tab.
 
 ## Open verification
 

@@ -10,6 +10,10 @@
 // delivery flags, the agent's analysis and its recommendation. Money
 // moves happen with the payment provider; closing the item here is
 // the queue's bookkeeping, recorded against the admin's session.
+//
+// The customer's photo sits at the top of the panel: for a damage claim
+// the picture IS the evidence, and a reviewer who has to go hunting for
+// it is reviewing blind.
 
 "use client";
 
@@ -19,6 +23,7 @@ import { RoleGuard } from "@/components/shared/role-guard";
 import { useToast } from "@/components/ui/toaster";
 import { ApiError } from "@/lib/api-client";
 import {
+  useCaseEvidence,
   usePendingReviews,
   useResolveReview,
   type ReviewItem,
@@ -26,6 +31,8 @@ import {
 import {
   AlertTriangle,
   Check,
+  ExternalLink,
+  ImageOff,
   Inbox,
   Loader2,
   RefreshCw,
@@ -217,6 +224,12 @@ function DetailPanel({
   const [lead, ...rest] = lines;
   const fields = rest.map(parseField).filter((f) => f.value.length > 0);
 
+  // Items parked before the queue carried the photo keep it on the case
+  // row (same id), so a missing field is not yet a missing photo.
+  const evidence = useCaseEvidence(item.id, !item.photoUrl);
+  const photoUrl = item.photoUrl ?? evidence.data?.photoUrl ?? null;
+  const photoPending = !item.photoUrl && evidence.isPending;
+
   return (
     <GlassCard className="p-0">
       <div className="border-b border-border/60 p-5">
@@ -240,6 +253,8 @@ function DetailPanel({
           <span>{timeAgo(item.createdAt)}</span>
         </p>
       </div>
+
+      <EvidenceBlock photoUrl={photoUrl} pending={photoPending} />
 
       <dl className="divide-y divide-border/60">
         {fields.map((field) => (
@@ -274,6 +289,77 @@ function DetailPanel({
         </p>
       </div>
     </GlassCard>
+  );
+}
+
+// ─── Evidence ────────────────────────────────────────────────
+// Three states, all honest: the photo, "still loading" (a legacy item
+// whose URL is one read away), or "none attached" — which is itself a
+// reason the agent escalated, so the reviewer must be told plainly
+// rather than shown an empty frame.
+
+function EvidenceBlock({
+  photoUrl,
+  pending,
+}: {
+  photoUrl: string | null;
+  pending: boolean;
+}) {
+  if (pending) {
+    return (
+      <div className="border-b border-border/60 p-5">
+        <p className="text-xs font-medium text-muted-foreground">Customer photo</p>
+        <div
+          className="mt-2 h-40 animate-pulse rounded-xl bg-muted/60"
+          role="status"
+          aria-label="Loading the customer's photo"
+        />
+      </div>
+    );
+  }
+
+  if (!photoUrl) {
+    return (
+      <div className="flex items-center gap-2 border-b border-border/60 px-5 py-4">
+        <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <p className="text-xs text-muted-foreground">
+          No photo was attached to this claim — the customer&apos;s account is all the evidence
+          there is.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <figure className="border-b border-border/60 p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <figcaption className="text-xs font-medium text-muted-foreground">
+          Customer photo
+        </figcaption>
+        <a
+          href={photoUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          Open full size
+        </a>
+      </div>
+      <a
+        href={photoUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 block overflow-hidden rounded-xl border border-border bg-muted/40"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={photoUrl}
+          alt="Photo the customer attached as evidence"
+          className="mx-auto max-h-80 w-full object-contain"
+        />
+      </a>
+    </figure>
   );
 }
 

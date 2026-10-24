@@ -144,12 +144,40 @@ export interface ReviewItem {
   customerId: string | null;
   type: string;
   summary: string;
+  /**
+   * Cloudinary URL of the customer's evidence photo — the proof the
+   * reviewer has to see to decide. Null means the claim arrived with no
+   * photo, OR the item was parked before the queue carried the URL; the
+   * panel tells those apart via `useCaseEvidence`.
+   */
+  photoUrl: string | null;
   priority: ReviewPriority;
   status: "pending" | "resolved";
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
   resolvedBy: string | null;
+}
+
+// ─── Admin: Evidence fallback ────────────────────────────────
+// The work item is the queue's record; the case row is the agent's. Items
+// parked before the queue carried `photoUrl` still have their photo on
+// the case (same id), so one conditional read keeps old items reviewable
+// without a data backfill.
+
+export function useCaseEvidence(caseId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["disputes", "case", caseId],
+    queryFn: async () => {
+      const res = await restaurantApi.get<{ success: boolean; case: DisputeCase }>(
+        `/agent/case/${caseId}`,
+      );
+      return res.case;
+    },
+    enabled: enabled && Boolean(caseId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 }
 
 export function usePendingReviews(limit = 50) {

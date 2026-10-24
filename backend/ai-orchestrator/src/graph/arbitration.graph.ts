@@ -330,6 +330,7 @@ async function escalate(
       orderId: input.orderId,
       customerId: input.customerId,
       complaint: input.complaint,
+      photoUrl: input.photoUrl,
       damageSeverity: triage.severity,
       trustScore: trust.score,
       telemetryFlags,
