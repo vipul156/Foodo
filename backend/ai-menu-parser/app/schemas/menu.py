@@ -148,7 +148,11 @@ class NormalizedItem(BaseModel):
 class BulkPublishRequest(BaseModel):
     """One-click bulk seeding — the owner-verified review grid payload."""
 
-    restaurant_id: str = Field(pattern=r"^[0-9a-fA-F]{24}$")
+    # Optional. The restaurant service resolves ownership from the signed
+    # session and is the only authority on which menu may be written; this
+    # field exists so the client can assert which restaurant it believes it
+    # is publishing to. Platform ids are UUIDs (Dynamo), not 24-hex ObjectIds.
+    restaurant_id: str | None = Field(default=None, max_length=64)
     items: list[NormalizedItem] = Field(min_length=1, max_length=300)
     replace_existing: bool = False
 
@@ -156,7 +160,7 @@ class BulkPublishRequest(BaseModel):
 class BulkPublishResult(BaseModel):
     created: int
     skipped: list[str] = []
-    restaurant_id: str
+    restaurant_id: str | None = None
 
 
 # ─── Review-grid draft (returned to the UI) ──────────────────

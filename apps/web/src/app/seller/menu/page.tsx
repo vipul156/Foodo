@@ -15,6 +15,7 @@ import {
   useDeleteMenuItem,
 } from "@/features/restaurants/api";
 import { DishPhotoDialog, type ApprovedPhoto } from "@/features/photo/components";
+import { MenuImport } from "@/features/menu-parser/components";
 import type { IMenuItem } from "@/types";
 import {
   Loader2,
@@ -39,6 +40,7 @@ export default function SellerMenuPage() {
   const deleteItem = useDeleteMenuItem();
 
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -103,7 +105,7 @@ export default function SellerMenuPage() {
     <RoleGuard allowedRoles={["seller"]}>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold">Menu Items</h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -111,13 +113,23 @@ export default function SellerMenuPage() {
               {restaurant.isOpen ? "Restaurant open" : "Restaurant closed"}
             </p>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-110 transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            {showForm ? "Cancel" : "Add Item"}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => setShowImport(true)}
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl border border-border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
+            >
+              <ImageUp className="h-4 w-4" />
+              <span className="hidden sm:inline">Import from photo</span>
+              <span className="sm:hidden">Import</span>
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-110 transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              {showForm ? "Cancel" : "Add Item"}
+            </button>
+          </div>
         </div>
 
         {/* Add Item Form */}
@@ -262,6 +274,14 @@ export default function SellerMenuPage() {
           </div>
         )}
       </div>
+
+      <MenuImport
+        open={showImport}
+        restaurantId={restaurant.id}
+        existingCount={menuItems?.length ?? 0}
+        onClose={() => setShowImport(false)}
+        onPublished={() => refetch()}
+      />
     </RoleGuard>
   );
 }

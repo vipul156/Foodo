@@ -86,5 +86,7 @@ async def bulk_publish(
     return BulkPublishResult(
         created=int(data.get("created", 0)),
         skipped=list(data.get("skipped", [])),
-        restaurant_id=request.restaurant_id,
+        # The service resolved the restaurant from the session — prefer its
+        # answer over the (optional) echo the client sent.
+        restaurant_id=data.get("restaurantId") or request.restaurant_id,
     )

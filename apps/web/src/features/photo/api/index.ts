@@ -105,6 +105,17 @@ async function getPreview(
   });
 }
 
+// ─── Plain upload: sign → Cloudinary (no enhancement) ────────
+// Used by flows that need a hosted image URL but not the dish-photo
+// pipeline — e.g. the AI menu parser sending a menu photo for reading.
+
+export async function uploadPhotoToCloudinary(
+  file: File,
+): Promise<DirectUploadResult> {
+  const sign = await getUploadSignature();
+  return uploadToCloudinary(file, sign);
+}
+
 // ─── Orchestrated hook: pick file → upload → preview ─────────
 
 export interface UseEnhancePhotoOptions {
