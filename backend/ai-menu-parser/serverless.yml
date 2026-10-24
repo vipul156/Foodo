@@ -94,9 +94,12 @@ provider:
     LOG_LEVEL: ${env:MENU_PARSER_LOG_LEVEL, 'INFO'}
     # Same identity plane as the Node services: the gateway authorizer
     # only checks that a token exists, require_user re-verifies the
-    # session cookie in-app with these secrets.
-    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
-    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    # session cookie in-app with these secrets. No fallback, on purpose:
+    # a default value here silently deploys a stack whose every user
+    # route answers 401 (the cookie/JWT are signed with the real
+    # platform secret). Fail at deploy, not on the first request.
+    JWT_SECRET: ${env:JWT_SECRET}
+    COOKIE_SECRET: ${env:COOKIE_SECRET}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     # OpenAI-compatible vision model (required — the app fails closed).
     LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}

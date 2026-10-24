@@ -97,8 +97,12 @@ provider:
   environment:
     STAGE: ${self:custom.stage}
     LOG_LEVEL: ${env:COMMERCE_LOG_LEVEL, 'INFO'}
-    JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
-    COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
+    # No fallback, on purpose: the session cookie and access JWT are
+    # signed with the real platform secret. A default value here silently
+    # deploys a stack whose every user route answers 401. Fail at deploy,
+    # not on the first request.
+    JWT_SECRET: ${env:JWT_SECRET}
+    COOKIE_SECRET: ${env:COOKIE_SECRET}
     INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
     # Provider switch (pycommon.llm): any OpenAI-compatible endpoint.
     LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
