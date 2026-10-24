@@ -10,7 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, LogIn, User, Store, Bike, Zap } from "lucide-react";
+import { Eye, EyeOff, LogIn, User, Store, Bike, ShieldCheck, Zap } from "lucide-react";
 import { loginSchema, type LoginFormValues } from "@/features/auth/schemas";
 import { useLogin } from "@/features/auth/api";
 import type { IAuthResponse, UserRole } from "@/types";
@@ -64,6 +64,17 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     redirectTo: "/rider",
     icon: Bike,
     badge: "bg-primary/10 text-primary",
+  },
+  {
+    role: "admin",
+    label: "Admin",
+    subtitle: "Oversee platform & dispatch",
+    name: "Demo Admin",
+    email: "admin@demo.com",
+    password: "admin123",
+    redirectTo: "/admin",
+    icon: ShieldCheck,
+    badge: "bg-secondary text-secondary-foreground",
   },
 ];
 

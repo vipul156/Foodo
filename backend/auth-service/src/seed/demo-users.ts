@@ -7,9 +7,11 @@ import {
 // ─── Demo Accounts (DynamoDB) ────────────────────────────────
 // Idempotent one-time seeder — run via a Lambda invoke, a script, or a
 // custom resource on deploy; Lambda containers must not seed on boot.
-// Creates the demo customer/seller/rider users so the frontend "Demo
-// Login" quick-login buttons always have real, working credentials.
+// Creates the demo customer/seller/rider/admin users so the frontend
+// "Demo Login" quick-login buttons always have real, working credentials.
 // Profiles (restaurant/rider records) are seeded by their own services.
+// `admin` cannot self-register (see controllers/auth.ts allowedRoles), so
+// this seeder is the only way to bootstrap an admin account.
 
 export const DEMO_USERS = [
   {
@@ -35,6 +37,14 @@ export const DEMO_USERS = [
     role: "rider" as const,
     image:
       "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80",
+  },
+  {
+    name: "Priya Nair",
+    email: "admin@demo.com",
+    password: "admin123",
+    role: "admin" as const,
+    image:
+      "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&q=80",
   },
 ];
 
