@@ -1,5 +1,6 @@
 import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import type { SNSEvent, SQSEvent } from "aws-lambda";
 
 // ─── Event bus: SNS fanout + SQS work queues ─────────────────
 // Replaces the shared RabbitMQ layer (@foodo/backend-common/queue):
@@ -116,10 +117,20 @@ export async function sendWorkItem(
   );
 }
 
-// ─── Lambda SQS consumer skeleton ────────────────────────────
-export interface SqsHandlerResult {
-  /** Record indices that must be retried (reappear in the next poll). */
-  failures: number[];
+// ─── Lambda consumer skeleton ────────────────────────────────
+/**
+ * The record shape every consumer handler reads. Identical to an SQS
+ * record for the fields handlers use, so a function can be triggered
+ * by an SQS event source OR by a direct SNS subscription without a
+ * second code path (see `toSqsShape`).
+ */
+export interface SqsBatchEvent {
+  Records: Array<{ body: string; messageAttributes?: any; messageId?: string }>;
+}
+
+export interface SqsBatchResult {
+  /** Records that must be retried (SQS) — SNS ignores this (see handlePushBatch). */
+  batchItemFailures: Array<{ itemIdentifier: string }>;
 }
 
 /**
@@ -129,9 +140,9 @@ export interface SqsHandlerResult {
  * is at-least-once, exactly like the old RabbitMQ consumers.
  */
 export async function handleSqsBatch<T = any>(
-  event: { Records: Array<{ body: string; messageAttributes?: any; messageId?: string }> },
+  event: SqsBatchEvent,
   onMessage: (data: T, raw: { body: string }) => Promise<void>,
-): Promise<{ batchItemFailures: Array<{ itemIdentifier: string }> }> {
+): Promise<SqsBatchResult> {
   const failures: string[] = [];
 
   await Promise.all(
@@ -154,4 +165,60 @@ export async function handleSqsBatch<T = any>(
   );
 
   return { batchItemFailures: failures.map((id) => ({ itemIdentifier: id })) };
+}
+
+// ─── Push trigger (SNS → Lambda) ─────────────────────────────
+/**
+ * Normalise an SNS notification batch into the SQS record shape.
+ *
+ * A direct SNS subscription delivers `{ Records: [{ Sns }] }`. Raw
+ * message delivery is impossible for Lambda endpoints, so the inner
+ * `Sns.Message` is unwrapped here — handlers then see exactly the bytes
+ * a raw-delivery SQS subscription used to carry. SQS events pass
+ * through untouched, which keeps one handler usable on both triggers.
+ */
+export function toSqsShape(event: SNSEvent | SQSEvent): SqsBatchEvent {
+  const records = (event as SNSEvent)?.Records ?? [];
+  if (!(records[0] as any)?.Sns) return event as SqsBatchEvent;
+
+  return {
+    Records: records.map((record) => ({
+      messageId: record.Sns.MessageId,
+      body: record.Sns.Message,
+      messageAttributes: Object.fromEntries(
+        Object.entries(record.Sns.MessageAttributes ?? {}).map(
+          ([name, value]): [string, { stringValue: string }] => [
+            name,
+            { stringValue: value.Value ?? "" },
+          ],
+        ),
+      ),
+    })),
+  };
+}
+
+/**
+ * Entrypoint for a function subscribed DIRECTLY to the event topic.
+ *
+ * SNS ignores `batchItemFailures` — it retries on a thrown error — so a
+ * partial failure reported by `handleSqsBatch` has to be rethrown here.
+ * Without the throw the failed record would be acked and lost; with it,
+ * SNS retries the delivery and the subscription's `redrivePolicy` parks
+ * the poison message in the queue's DLQ.
+ */
+export async function handlePushBatch(
+  event: SNSEvent | SQSEvent,
+  onBatch: (batch: SqsBatchEvent) => Promise<SqsBatchResult | void>,
+): Promise<SqsBatchResult | void> {
+  const fromSns = Boolean((event as SNSEvent)?.Records?.[0]?.Sns);
+  const result = await onBatch(toSqsShape(event));
+
+  if (fromSns && result?.batchItemFailures?.length) {
+    throw new Error(
+      `Push delivery failed for ${result.batchItemFailures.length} event(s): ` +
+        result.batchItemFailures.map((failure) => failure.itemIdentifier).join(", "),
+    );
+  }
+
+  return result;
 }

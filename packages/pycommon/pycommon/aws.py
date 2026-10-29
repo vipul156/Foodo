@@ -251,3 +251,64 @@ def handle_sqs_batch(
             failures.append(str(message_id))
 
     return {"batchItemFailures": [{"itemIdentifier": f} for f in failures]}
+
+
+# ─── Push trigger (SNS → Lambda) ─────────────────────────────
+
+
+def to_sqs_shape(event: dict[str, Any]) -> dict[str, Any]:
+    """Normalise an SNS notification batch into the SQS record shape.
+
+    A direct SNS subscription delivers ``{Records: [{Sns}]}``. Raw message
+    delivery is impossible for Lambda endpoints, so the inner
+    ``Sns.Message`` is unwrapped here — handlers then see exactly the
+    bytes a raw-delivery SQS subscription used to carry. SQS events pass
+    through untouched, which keeps one handler usable on both triggers.
+    """
+    records = (event or {}).get("Records") or []
+    if not records or "Sns" not in records[0]:
+        return event
+
+    return {
+        "Records": [
+            {
+                "messageId": record["Sns"].get("MessageId"),
+                "body": record["Sns"].get("Message", ""),
+                "messageAttributes": {
+                    name: {"stringValue": value.get("Value")}
+                    for name, value in (record["Sns"].get("MessageAttributes") or {}).items()
+                },
+            }
+            for record in records
+        ]
+    }
+
+
+def is_sns_event(event: dict[str, Any]) -> bool:
+    """True when the Lambda was invoked by an SNS subscription rather than
+    an SQS event source mapping."""
+    records = (event or {}).get("Records") or []
+    return bool(records) and "Sns" in records[0]
+
+
+def handle_push_batch(
+    event: dict[str, Any],
+    handler: Callable[[Any, dict[str, Any]], Any],
+) -> dict[str, Any]:
+    """Entrypoint for a function subscribed DIRECTLY to the event topic.
+
+    SNS ignores ``batchItemFailures`` — it retries on a RAISED error — so a
+    partial failure from :func:`handle_sqs_batch` is re-raised here. Without
+    the raise the failed record would be acked and lost; with it, SNS
+    retries the delivery and the subscription's ``RedrivePolicy`` parks the
+    poison message in the queue's DLQ.
+
+    Handlers must stay idempotent — SNS is at-least-once, exactly like SQS.
+    """
+    result = handle_sqs_batch(to_sqs_shape(event), handler)
+
+    if is_sns_event(event) and result["batchItemFailures"]:
+        failed = ", ".join(f["itemIdentifier"] for f in result["batchItemFailures"])
+        raise RuntimeError(f"push delivery failed for record(s): {failed}")
+
+    return result
