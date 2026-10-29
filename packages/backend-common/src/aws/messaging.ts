@@ -1,4 +1,8 @@
-import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
+import {
+  SNSClient,
+  PublishBatchCommand,
+  PublishCommand,
+} from "@aws-sdk/client-sns";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import type { SNSEvent, SQSEvent } from "aws-lambda";
 
@@ -59,6 +63,63 @@ export function makeFanoutPublisher() {
   };
 }
 
+// ─── Batched fanout publisher ────────────────────────────────
+/**
+ * SNS accepts 10 messages per `PublishBatch` request, so a broadcast
+ * to N rooms costs `ceil(N/10)` requests instead of N — the one place
+ * in this platform where producer-side batching actually pays (fan-out
+ * is the only path that emits a variable, sometimes large, number of
+ * messages per event).
+ *
+ * Same fire-and-forget contract as `makeFanoutPublisher`: a failed
+ * entry is logged and dropped, never surfaced to the request. Entries
+ * that fail validation reject the WHOLE call in SNS, which is why the
+ * per-entry `Failed` list is read rather than assumed empty.
+ */
+export const FANOUT_BATCH_MAX = 10;
+
+export interface FanoutItem {
+  event: string;
+  room: string;
+  payload: unknown;
+}
+
+export async function publishFanoutBatch(
+  items: readonly FanoutItem[],
+): Promise<void> {
+  for (let start = 0; start < items.length; start += FANOUT_BATCH_MAX) {
+    const entries = items
+      .slice(start, start + FANOUT_BATCH_MAX)
+      .map((item, index) => ({
+        Id: `m${start + index}`,
+        Message: JSON.stringify(item),
+        MessageAttributes: {
+          event: { DataType: "String", StringValue: item.event },
+        },
+      }));
+
+    try {
+      const result = await getSns().send(
+        new PublishBatchCommand({
+          TopicArn: topicArn(),
+          PublishBatchRequestEntries: entries,
+        }),
+      );
+      for (const failure of result.Failed ?? []) {
+        console.error(
+          `Realtime batch publish failed (${failure.Id}):`,
+          failure.Code ?? failure.Message ?? "unknown",
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Realtime batch publish failed (${entries.length} event(s)):`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+}
+
 // ─── Domain-event publisher (bounded, must-know style) ───────
 /**
  * Publish onto the SNS event topic and surface failure to the caller:
@@ -94,6 +155,14 @@ export function makeDomainEventPublisher() {
 }
 
 // ─── Work-queue publisher (SQS) ──────────────────────────────
+// SQS meters a request per 64 KB of payload, so crossing that line
+// silently doubles the billed requests for one logical message, and
+// 256 KB is a hard rejection. Anything bigger than a profile worth of
+// JSON belongs in S3/Cloudinary with the reference in the body — the
+// claim-check shape the dispute work item already uses (`photoUrl`).
+const SQS_CHUNK_BYTES = 64 * 1024;
+const SQS_MAX_BYTES = 256 * 1024;
+
 /**
  * Send a { type, data } work item to an SQS queue. `type` rides as a
  * MessageAttribute so consumers can filter without deserializing, and
@@ -106,10 +175,26 @@ export async function sendWorkItem(
   type: string,
   data: unknown,
 ): Promise<void> {
+  const body = JSON.stringify({ type, data });
+  const bytes = Buffer.byteLength(body, "utf8");
+
+  if (bytes > SQS_MAX_BYTES) {
+    throw new Error(
+      `SQS body for ${type} is ${bytes} B — over the 256 KB limit. ` +
+        "Store the payload (S3/Cloudinary) and send its reference instead.",
+    );
+  }
+  if (bytes > SQS_CHUNK_BYTES) {
+    console.warn(
+      `[SQS] body for ${type} is ${bytes} B — bills ` +
+        `${Math.ceil(bytes / SQS_CHUNK_BYTES)} requests. Use a reference.`,
+    );
+  }
+
   await getSqs().send(
     new SendMessageCommand({
       QueueUrl: queueUrl,
-      MessageBody: JSON.stringify({ type, data }),
+      MessageBody: body,
       MessageAttributes: {
         type: { DataType: "String", StringValue: type },
       },

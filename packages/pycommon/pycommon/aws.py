@@ -186,14 +186,36 @@ def publish_realtime_event(event: str, room: str, payload: Any) -> bool:
 
 # ─── Work queues (SQS) ───────────────────────────────────────
 
+# SQS meters one request per 64 KB of payload and rejects anything over
+# 256 KB. A message body that crosses the 64 KB line silently doubles
+# the billed requests; megabytes of base64 (a photo) are 100+ requests
+# and would be rejected outright. Big payloads belong in S3/Cloudinary
+# with the reference in the body — the claim-check shape.
+SQS_CHUNK_BYTES = 64 * 1024
+SQS_MAX_BYTES = 256 * 1024
+
 
 def send_work_item(queue_url: str, work_type: str, data: Any) -> None:
     """Send a {type, data} work item; `type` rides both as a MessageAttribute
     (consumers filter without deserializing) and in the body (payload-only
     consumers). Raises — the caller surfaces a retryable failure."""
+    body = json.dumps({"type": work_type, "data": data}, default=str)
+    size = len(body.encode("utf-8"))
+
+    if size > SQS_MAX_BYTES:
+        raise ValueError(
+            f"SQS body for {work_type} is {size} B — over the 256 KB limit. "
+            "Store the payload (S3/Cloudinary) and send its reference."
+        )
+    if size > SQS_CHUNK_BYTES:
+        print(
+            f"[pycommon][SQS] body for {work_type} is {size} B — bills "
+            f"{-(-size // SQS_CHUNK_BYTES)} requests. Use a reference."
+        )
+
     _get_sqs().send_message(
         QueueUrl=queue_url,
-        MessageBody=json.dumps({"type": work_type, "data": data}, default=str),
+        MessageBody=body,
         MessageAttributes={
             "type": {"DataType": "String", "StringValue": work_type[:256]},
         },
