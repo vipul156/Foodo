@@ -249,6 +249,7 @@ receives.
 |---|---|---|
 | `params.<stage>.natGateways` | `infra` | **~$32/month per NAT.** `0` in dev, `2` in prod. Currently unused since nothing runs in the VPC |
 | `BillingMode: PAY_PER_REQUEST` | all tables | no idle cost; scales to zero |
+| `- sqs:` event-source mappings | all services | **~130,000 SQS requests/month per queue at rest** — a Lambda trigger polls an empty queue forever. Fan-out consumers use `- sns:` (push, 0 idle cost); only buffered/redriven work queues keep a queue. See [15](./15-sqs-cost-and-event-driven-fanout.md) |
 | DynamoDB gateway endpoints | `infra` | free; keeps S3/DynamoDB traffic off NAT |
 | CloudFront `/api/*` TTL 0 + `Cache-Control` | `apps/web/sst.config.ts` + services | edge caching of hot catalog GETs is the single biggest HTTP-cost lever |
 | `authorizer` 128 MB, no result cache | `core` | cheap per-request verify; caching would be faster but incorrect with cookie identity |

@@ -24,6 +24,7 @@ Every statement here is derived from the source at repo revision `4e76e2c4`.
 | 12 | [Operations](./12-operations.md) | Local dev, deploy order, env vars, teardown, logs, cost knobs |
 | 13 | [FAQ / Interview Q&A](./13-faq.md) | "If someone asked about X" — ~70 answered questions |
 | 14 | [Known Gaps & Risks](./14-known-gaps.md) | Honest list of what is incomplete, fragile, or dead |
+| 15 | [SQS Idle Polling & Push-Native Fanout](./15-sqs-cost-and-event-driven-fanout.md) | Why 7 queue pollers burned ~900k requests/month while idle, and the direct SNS subscriptions that replaced four of them |
 | **A** | **[Architecture & Code Audit](./ARCHITECTURE_AND_CODE_AUDIT.md)** | **Independent deep audit — health scores, 36-flaw matrix, 15 deep-dives with remediation code, P0/P1/P2 roadmap** |
 
 ---
@@ -47,6 +48,9 @@ Every statement here is derived from the source at repo revision `4e76e2c4`.
 
 **Understanding money**
 → 10 Payments → 05 Authentication (token model) → 04 Data Model (TTL)
+
+**Understanding AWS cost**
+→ 15 SQS Idle Polling → 03 Infrastructure (queue topology) → 12 Operations (cost knobs)
 
 ---
 

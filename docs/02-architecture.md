@@ -122,15 +122,18 @@ cross-Lambda hops, no circuit breakers, and no error mangling between services.
 
 ### 4.2 SNS topic — domain + realtime events
 
-One topic, `foodo-infra-<stage>-events`. Every consumer declares its **own** SQS queue
-and its **own** `AWS::SNS::Subscription` with a `FilterPolicy` on the `event` message
-attribute. This is the correct SNS fan-out pattern: the publisher never knows its consumers.
+One topic, `foodo-infra-<stage>-events`. Every consumer declares its **own** direct
+subscription with a `FilterPolicy` on the `event` message attribute, and SNS **pushes**
+to the Lambda. There is no intermediate queue: an SQS queue with a Lambda trigger is
+polled 24/7 whether or not work exists (~130k requests/month at rest per queue — see
+[15](./15-sqs-cost-and-event-driven-fanout.md)). The publisher never knows its consumers.
 
-| Subscriber queue | Filter `event` values |
-|---|---|
-| `foodo-restaurant-<stage>-rider-events` | `rider.order_accepted`, `rider.order_status_changed`, `payment.intent.created` |
-| `foodo-rider-<stage>-rider-events` | `rider.order_rejected`, `order.cancelled`, `order.delivered` |
-| `foodo-realtime-<stage>-emit` | *(no filter — everything)* |
+| Subscriber | Filter `event` values | DLQ (`redrivePolicy`) |
+|---|---|---|
+| `foodo-restaurant-<stage>-rider-events` | `rider.order_accepted`, `rider.order_status_changed`, `payment.intent.created` | `foodo-restaurant-<stage>-rider-events-dlq` |
+| `foodo-rider-<stage>-rider-events` | `rider.order_rejected`, `order.cancelled`, `order.delivered` | `foodo-rider-<stage>-rider-events-dlq` |
+| `foodo-ai-dispatch-<stage>-dispatch-orders` | `order:ready_for_rider` | `foodo-ai-dispatch-<stage>-dispatch-orders-dlq` |
+| `foodo-realtime-<stage>-events` | *(no filter — everything)* | `foodo-realtime-<stage>-events-dlq` |
 
 Two publisher shapes exist, and the difference is deliberate:
 
@@ -152,7 +155,8 @@ trigger queue):
 | `foodo-infra-<stage>-order` | `{ type: "order:ready_for_rider", data }` | rider `orderReadyConsumer` |
 
 Both have `VisibilityTimeout: 180`, `maxReceiveCount: 3`, and a dedicated DLQ.
-Batches of 5 with `reportBatchItemFailures: true`, so only failed records redrive.
+Batches of 5 with `functionResponseType: ReportBatchItemFailures` (the Serverless v3
+spelling), so only failed records redrive.
 
 ### 4.4 WebSockets
 
