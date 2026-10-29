@@ -131,6 +131,11 @@ functions:
       - sqs:
           arn: ${cf:${self:custom.infra}.OrderQueueArn}
           batchSize: 5
+          # Wait up to 5 s to top up a partial batch: a ready-order burst
+          # then costs one invocation and one ReceiveMessage instead of
+          # one each. Queue visibility is 180 s = 6 × this function's 30 s
+          # timeout (infra/serverless.yml).
+          maximumBatchingWindow: 5
           functionResponseType: ReportBatchItemFailures
 
   riderEventsConsumer:

@@ -217,6 +217,12 @@ functions:
       - sqs:
           arn: ${cf:${self:custom.infra}.PaymentQueueArn}
           batchSize: 5
+          # The poller fills a batch for free when 5 items are already
+          # queued; the window only buys the PARTIAL batch, so 5 s is the
+          # whole saving (a rush of payment items → one invocation, one
+          # ReceiveMessage instead of one per item). Latency cost: up to
+          # 5 s before the cart is cleared and the kitchen socket fires.
+          maximumBatchingWindow: 5
           functionResponseType: ReportBatchItemFailures
 
   riderEventsConsumer:

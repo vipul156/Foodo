@@ -155,4 +155,10 @@ functions:
       - sqs:
           arn: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
           batchSize: 5
+          # An arbitration run is seconds-scale (120 s ceiling), so 10 s
+          # of accumulation is noise against the graph and collapses a
+          # burst of intake into one invocation. The queue's visibility
+          # timeout is 720 s — 6 × THIS function's timeout, never less, or
+          # a still-running batch is handed out a second time.
+          maximumBatchingWindow: 10
           functionResponseType: ReportBatchItemFailures

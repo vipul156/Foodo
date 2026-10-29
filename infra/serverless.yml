@@ -773,7 +773,7 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${sls:stage}-payment
-        VisibilityTimeout: 180          # > 6× Lambda timeout
+        VisibilityTimeout: 180          # 6× the 30 s paymentConsumer timeout
         MessageRetentionPeriod: 345600  # 4 days
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt PaymentQueueDLQ.Arn
@@ -789,7 +789,7 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${sls:stage}-order
-        VisibilityTimeout: 180
+        VisibilityTimeout: 180          # 6× the 30 s orderReadyConsumer timeout
         MessageRetentionPeriod: 345600
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt OrderQueueDLQ.Arn
@@ -809,7 +809,14 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${sls:stage}-agent-disputes
-        VisibilityTimeout: 180
+        # 6× the 120 s disputeConsumer timeout. The 180 s this used to be
+        # was 1.5×: a batch of arbitration graphs (LLM nodes, 120 s each)
+        # outlives the visibility window, so SQS hands the SAME records to
+        # a second invocation while the first is still paying for tokens.
+        # Every retry attempt then waits 12 min before redelivery (max 3
+        # receives → DLQ), which is the price of never double-billing a
+        # vision + reasoning run.
+        VisibilityTimeout: 720
         MessageRetentionPeriod: 345600
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt AgentDisputesQueueDLQ.Arn
