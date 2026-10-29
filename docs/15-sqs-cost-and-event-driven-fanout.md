@@ -2,7 +2,7 @@
 
 **Status:** implemented — the four event-fanout subscriptions are push-native as of
 2026-10-29. `payment`, `order` and `agent-disputes` stay on SQS by design. See §11.1 for
-the exact diff, and §11 for the plan it came from.
+the exact diff, §11.2 for the producer/consumer metering pass, and §11 for the plan it came from.
 **Trigger:** AWS Free Tier alert, October 2026, account `411835552824`.
 **Question answered:** *"Why is SQS usage ~878k requests when I am a single user, and can we make requests happen only when there is actually something to do?"*
 
@@ -452,6 +452,25 @@ Deliberately not done:
   path; the queue's buffering and redrive are worth 130k requests/month.
 - **The $1 budget** (step 13) is a Billing-console action, not something this repo deploys.
 - **Unit tests for the two normalisers** (step 5) were left to the platform owner.
+
+---
+
+### 11.2 Producer/consumer metering pass (2026-10-29)
+
+The three remaining queues were re-checked against the five standard SQS cost levers. Only three of
+them move a number in this platform; the other two have no caller, or nothing left to gain.
+
+| Lever | Verdict here | Where |
+|---|---|---|
+| `SendMessageBatch` (10 per request) | **N/A on SQS** — every work-queue producer emits exactly one item per action (`publishEvent`, `publishPaymentSuccess`, `publishDisputeWorkItem`); batching a single message is a byte-identical request. The one variable-size producer is the SNS fan-out (one `Publish` per nearby rider), so that path moved to `PublishBatch`: 10 per request, a 25-rider pool = 3 requests. | `publishFanoutBatch` in `packages/backend-common/src/aws/messaging.ts`; rider `order:available` broadcast; restaurant `order:new` / `order:update` trios |
+| `functionResponseType: ReportBatchItemFailures` | **Already set** on all three consumers; `handleSqsBatch` returns only the failed message ids, so one crash re-drives one record, not the batch. | `restaurant-service`, `rider-service`, `ai-orchestrator` |
+| `maximumBatchingWindow` | **Added, deliberately small.** The poller already fills a batch for free when `batchSize` items are queued, so the window only buys the *partial* batch — exactly the rush case. 5 s on payment/order, 10 s on disputes bounds the added latency (payment: cart cleared + kitchen socket up to 5 s later). | the three `sqs:` events |
+| 64 KB request metering / claim-check | **Already solved where it matters.** No queue carries image bytes: dispute evidence is uploaded to Cloudinary at intake and only `photoUrl` rides the queue; the consumer downloads it again for the vision call. A producer guard now fails loudly above 256 KB and warns above 64 KB, so a future base64 payload cannot silently bill 100+ requests per message. | `sendWorkItem` / `send_work_item` |
+| Visibility timeout ≥ 6× function timeout | **One real defect fixed.** payment 180 s = 6 × 30 s ✅, order 180 s = 6 × 30 s ✅, agent-disputes was **180 s against a 120 s function** (1.5×): a batch of arbitration graphs outlived its own visibility window, so SQS re-delivered records that were still consuming tokens. Now 720 s = 6 × 120 s. | `AgentDisputesQueue.VisibilityTimeout` |
+
+What none of this buys: the remaining ~390k requests/month are idle `ReceiveMessage` calls from three
+event-source mappings. No batching, size or visibility setting touches that number — removing the
+poller does (§9.1), and these three queues are the ones where buffering and redrive earn it.
 
 ---
 
