@@ -1,6 +1,7 @@
 import {
   makeFanoutPublisher,
   makeDomainEventPublisher,
+  publishFanoutBatch,
   sendWorkItem,
 } from "@foodo/backend-common/aws";
 
@@ -13,10 +14,18 @@ import {
 //
 // Publishers stay the same three shapes the controllers already call:
 //   publishRealtimeEvent(event, room, payload)  — fire-and-forget SNS
+//   publishRealtimeBatch([{ event, room, payload }]) — same, 10 per request
 //   publishOrderEvent(event, payload)           — bounded SNS (bool)
 //   publishEvent(type, data)                    — SQS work item (throws)
 
 export const publishRealtimeEvent = makeFanoutPublisher();
+
+/**
+ * Batched form of `publishRealtimeEvent`: SNS takes 10 messages per
+ * request, so one action that targets several rooms (customer, the
+ * restaurant room, the owner's user room) costs one request, not three.
+ */
+export const publishRealtimeBatch = publishFanoutBatch;
 
 export const publishOrderEvent = makeDomainEventPublisher();
 

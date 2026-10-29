@@ -19,6 +19,7 @@ import {
 import {
   publishEvent,
   publishOrderEvent,
+  publishRealtimeBatch,
   publishRealtimeEvent,
 } from "../config/events.js";
 import { checkReadyGate } from "./verification.js";
@@ -178,16 +179,23 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   );
 
   if (isCod) {
-    await publishRealtimeEvent("order:new", `restaurant:${restaurantId}`, {
-      orderId: order.id,
-    });
-    await publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
-      orderId: order.id,
-    });
-    await publishRealtimeEvent("order:update", `user:${req.user.id}`, {
-      orderId: order.id,
-      status: "placed",
-    });
+    await publishRealtimeBatch([
+      {
+        event: "order:new",
+        room: `restaurant:${restaurantId}`,
+        payload: { orderId: order.id },
+      },
+      {
+        event: "order:new",
+        room: `user:${restaurant.ownerId}`,
+        payload: { orderId: order.id },
+      },
+      {
+        event: "order:update",
+        room: `user:${req.user.id}`,
+        payload: { orderId: order.id, status: "placed" },
+      },
+    ]);
   }
 
   return res.status(201).json({
@@ -409,19 +417,24 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Order not paid");
   }
 
-  await publishRealtimeEvent("order:update", `user:${updated.userId}`, {
-    orderId: updated.id,
-    status: updated.status,
-  });
-  await publishRealtimeEvent(
-    "order:update",
-    `restaurant:${updated.restaurantId}`,
-    { orderId: updated.id, status: updated.status },
-  );
-  await publishRealtimeEvent("order:update", `user:${restaurant.ownerId}`, {
-    orderId: updated.id,
-    status: updated.status,
-  });
+  // One SNS request for all three rooms (SNS takes 10 per call).
+  await publishRealtimeBatch([
+    {
+      event: "order:update",
+      room: `user:${updated.userId}`,
+      payload: { orderId: updated.id, status: updated.status },
+    },
+    {
+      event: "order:update",
+      room: `restaurant:${updated.restaurantId}`,
+      payload: { orderId: updated.id, status: updated.status },
+    },
+    {
+      event: "order:update",
+      room: `user:${restaurant.ownerId}`,
+      payload: { orderId: updated.id, status: updated.status },
+    },
+  ]);
 
   if (status === "ready_for_rider") {
     const readyPayload = {
