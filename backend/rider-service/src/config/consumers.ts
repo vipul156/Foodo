@@ -9,9 +9,10 @@ import { makeFanoutPublisher } from "@foodo/backend-common/aws";
 // ─── SQS consumers (rider-service, Lambda event sources) ─────
 // Replaces config/orderReady.consumer.ts + config/riderEvent.consumer.ts.
 //
-//   ORDER_QUEUE_URL        — order:ready_for_rider matcher work items
-//   RIDER_EVENTS_QUEUE_URL — SNS-filtered compensation events
-//     (rider.order_rejected / order.cancelled / order.delivered)
+//   orderQueue  — order:ready_for_rider matcher work items (SQS)
+//   riderEvents — SNS-filtered compensation events, pushed straight to
+//     the function (no queue): rider.order_rejected /
+//     order.cancelled / order.delivered
 //
 // The saga semantics are unchanged: every release is a CONDITIONAL
 // update keyed to the order the rider is claimed by.

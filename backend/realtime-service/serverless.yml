@@ -4,10 +4,12 @@
 #   wsRouter        $connect (JWT handshake, auto room joins) /
 #                   $disconnect (cleanup) / $default (client
 #                   actions: order:track, rider:location)
-#   eventConsumer   consumes EVERY domain event (SNS fan-out via
-#                   this stack's own SQS queue — no filter policy,
-#                   same as the old fanout exchange binding) and
-#                   broadcasts to rooms through the Management API.
+#   eventConsumer   consumes EVERY domain event (direct SNS
+#                   subscription — no filter policy, same as the old
+#                   fanout exchange binding) and broadcasts to rooms
+#                   through the Management API. Push, not poll: no
+#                   queue, so an idle platform costs 0 SQS requests.
+#                   The DLQ only catches deliveries SNS gave up on.
 #
 # Owns its ConnectionsTable (ephemeral runtime state — lives with
 # the service that uses it, not in the shared data tier).
@@ -77,34 +79,15 @@ provider:
 
 resources:
   Resources:
-    # ── Inbound fan-out: realtime consumes EVERY event ──────
-    RealtimeQueue:
+    # ── Inbound fan-out: the function subscribes to the topic
+    #    DIRECTLY (push). The DLQ is the only queue left here — a
+    #    subscription with nothing to deliver costs nothing, while the
+    #    old emit queue polled ~4,320 empty receives/day at rest.
+    RealtimeEventsDLQ:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: ${self:service}-${sls:stage}-emit
-        VisibilityTimeout: 120
-
-    RealtimeQueuePolicy:
-      Type: AWS::SQS::QueuePolicy
-      Properties:
-        Queues: [!Ref RealtimeQueue]
-        PolicyDocument:
-          Statement:
-            - Effect: Allow
-              Principal: { Service: sns.amazonaws.com }
-              Action: sqs:SendMessage
-              Resource: !GetAtt RealtimeQueue.Arn
-              Condition:
-                ArnEquals:
-                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
-
-    RealtimeSubscription:
-      Type: AWS::SNS::Subscription
-      Properties:
-        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
-        Protocol: sqs
-        Endpoint: !GetAtt RealtimeQueue.Arn
-        RawMessageDelivery: true
+        QueueName: ${self:service}-${sls:stage}-events-dlq
+        MessageRetentionPeriod: 1209600
 
     # ── Ephemeral connection registry (connectionId + room, TTL'd) ──
     ConnectionsTable:
@@ -212,7 +195,11 @@ functions:
         - "!**"
         - dist/**
     events:
-      - sqs:
-          arn: !GetAtt RealtimeQueue.Arn
-          batchSize: 5
-          functionResponseType: ReportBatchItemFailures
+      # Direct subscription = SNS invokes the function per event. A queue
+      # here would be polled 24/7 (~130k SQS requests/month at rest).
+      # `redrivePolicy` parks deliveries SNS retried and gave up on.
+      - sns:
+          arn: ${cf:${self:custom.infra}.EventsTopicArn}
+          # no filterPolicy — realtime consumes every event, as before
+          redrivePolicy:
+            deadLetterTargetRef: RealtimeEventsDLQ

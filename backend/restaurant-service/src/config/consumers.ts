@@ -13,14 +13,14 @@ import { publishRealtimeEvent, publishOrderEvent } from "./events.js";
 
 // ─── SQS consumers (Lambda event sources) ────────────────────
 // Replaces config/payment.consumer.ts + config/riderEvent.consumer.ts.
-// Queue attach / ack policy / retry / DLQ / reconnect re-attachment all
-// disappear: Lambda is invoked per message batch, SQS redrive policy
-// owns retries, and the DLQ is declared on the queue (IaC, later).
+// Queue attach / ack policy / reconnect re-attachment all disappear:
+// Lambda is invoked per message batch off the shared payment queue,
+// and per event (pushed from the topic) for the domain events.
 //
-//   PAYMENT_QUEUE_URL  — payment.success work items ({ type, data })
-//   RIDER_EVENTS_QUEUE_URL — SNS subscriptions filtered on `event`
+//   payment queue — payment.success work items ({ type, data })
+//   event topic   — direct SNS subscription filtered on `event`
 //
-// Handlers must stay idempotent (SQS is at-least-once):
+// Handlers must stay idempotent (both triggers are at-least-once):
 //   - markOrderPaid: conditional on paymentStatus <> paid
 //   - stampPaymentIntent: conditional on paymentStatus <> paid
 //   - transitions: exact from-status guards
@@ -78,8 +78,8 @@ export const paymentQueueHandler = async (event: any) =>
   );
 
 // ─── Rider/domain events (was riderEvent.consumer.ts) ────────
-// SNS → SQS subscription: the fanout envelope { event, room, payload }
-// arrives inside the SNS notification wrapper.
+// Direct SNS subscription: the fanout envelope { event, room, payload }
+// arrives as the notification's Message (unwrapped by toSqsShape).
 
 const unwrapSnsEnvelope = (record: any): {
   event: string;

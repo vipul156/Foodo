@@ -2,12 +2,13 @@
 # Event-driven assigner for ready orders:
 #   http            ops surface only (snapshot / simulate / health) —
 #                   internal endpoints, gated in-app by x-internal-key.
-#   dispatchConsumer runs the LangGraph swarm off the service's OWN
-#                   dispatch-orders queue, fed by the foodo-events SNS
-#                   topic with a filter on order:ready_for_rider (raw
-#                   delivery). Idempotency + batching pool live in
-#                   DISPATCH_STATE_TABLE, enrichment reads ORDERS_TABLE,
-#                   the rider roster comes from RIDERS_TABLE.
+#   dispatchConsumer runs the LangGraph swarm off a DIRECT SNS
+#                   subscription on the foodo-events topic, filtered on
+#                   order:ready_for_rider (push — no queue to poll, so
+#                   an idle platform costs 0 SQS requests). Idempotency +
+#                   batching pool live in DISPATCH_STATE_TABLE, enrichment
+#                   reads ORDERS_TABLE, the rider roster comes from
+#                   RIDERS_TABLE.
 #
 # Decisions fan out on SNS (dispatch.decision) for analytics/dashboards.
 #
@@ -180,54 +181,26 @@ functions:
     layers:
       - { Ref: PythonRequirementsLambdaLayer }
     events:
-      - sqs:
-          arn: !GetAtt DispatchOrdersQueue.Arn
-          batchSize: 5
-          # v3 spelling — turns on the event source mapping's
-          # ReportBatchItemFailures so only failed records are retried.
-          functionResponseType: ReportBatchItemFailures
+      # Push, not poll: SNS invokes the function per matching event. A
+      # queue here would cost ~130k SQS requests/month while idle, and
+      # the READY#<orderId>/SEEN conditional claim already makes the
+      # handler idempotent under SNS's at-least-once delivery.
+      - sns:
+          arn: ${cf:${self:custom.infra}.EventsTopicArn}
+          filterPolicy:
+            event:
+              - order:ready_for_rider
+          # Deliveries SNS retried and gave up on land here.
+          redrivePolicy:
+            deadLetterTargetRef: DispatchOrdersQueueDLQ
 
 resources:
   Resources:
-    # Inbound fan-out: dispatch-owned queue + DLQ + SNS filter
-    # subscription (ready-order events only).
+    # Inbound fan-out: direct SNS subscription (see the dispatchConsumer
+    # event) with a filter on ready-order events only. The DLQ is the
+    # only queue left here — storage, free while idle.
     DispatchOrdersQueueDLQ:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${sls:stage}-dispatch-orders-dlq
         MessageRetentionPeriod: 1209600
-
-    DispatchOrdersQueue:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-${sls:stage}-dispatch-orders
-        VisibilityTimeout: 240   # > consumer timeout (180)
-        MessageRetentionPeriod: 345600
-        RedrivePolicy:
-          deadLetterTargetArn: !GetAtt DispatchOrdersQueueDLQ.Arn
-          maxReceiveCount: 3
-
-    DispatchOrdersQueuePolicy:
-      Type: AWS::SQS::QueuePolicy
-      Properties:
-        Queues: [!Ref DispatchOrdersQueue]
-        PolicyDocument:
-          Statement:
-            - Effect: Allow
-              Principal: { Service: sns.amazonaws.com }
-              Action: sqs:SendMessage
-              Resource: !GetAtt DispatchOrdersQueue.Arn
-              Condition:
-                ArnEquals:
-                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
-
-    DispatchOrdersSubscription:
-      Type: AWS::SNS::Subscription
-      Properties:
-        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
-        Protocol: sqs
-        Endpoint: !GetAtt DispatchOrdersQueue.Arn
-        RawMessageDelivery: true
-        FilterPolicy:
-          event:
-            - order:ready_for_rider
