@@ -6,13 +6,8 @@
 
 declare module "sst" {
   export interface Resource {
-    "FoodoWeb": {
-      "type": "sst.aws.Nextjs"
-      "url": string
-    }
   }
 }
-/// <reference path="sst-env.d.ts" />
 
 import "sst"
 export {}
