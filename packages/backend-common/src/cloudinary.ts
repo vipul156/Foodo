@@ -58,18 +58,56 @@ export interface CloudinaryUploadSignature {
 // after serialization to their wire format (tags joined with commas, etc.)
 type SignableParams = Record<string, string>;
 
-function resolveCredentials(): { cloudName: string; apiKey: string; apiSecret: string } {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+// ─── Credentials ─────────────────────────────────────────────
+// Two shapes are accepted, so a stack can carry either one:
+//   CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET
+//   CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+// The URL shorthand is what the cloudinary SDK reads, and what the
+// restaurant/rider/verification stacks have always been given — parsing it
+// here keeps both forms in sync instead of silently throwing on every
+// /upload-signature call.
+const CLOUDINARY_URL_RE = /^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/;
+
+export function resolveCloudinaryCredentials(): {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+} {
+  let cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  let apiKey = process.env.CLOUDINARY_API_KEY;
+  let apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+  if ((!cloudName || !apiKey || !apiSecret) && process.env.CLOUDINARY_URL) {
+    const match = CLOUDINARY_URL_RE.exec(process.env.CLOUDINARY_URL.trim());
+    if (match) {
+      apiKey = apiKey || match[1];
+      apiSecret = apiSecret || match[2];
+      cloudName = cloudName || match[3];
+    }
+  }
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error(
-      "Cloudinary credentials missing: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET",
+      "Cloudinary credentials missing: set CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET",
     );
   }
 
   return { cloudName, apiKey, apiSecret };
+}
+
+// ─── Folder namespacing ──────────────────────────────────────
+// Each service declares CLOUDINARY_FOLDER (its own root namespace, default
+// "foodo") and appends the resource kind here, so moving a service's assets
+// is an env change + redeploy rather than a code change.
+export function resolveUploadFolder(kind: string): string {
+  const root = (process.env.CLOUDINARY_FOLDER || "foodo").trim().replace(/^\/+|\/+$/g, "");
+  const leaf = kind.trim().replace(/^\/+|\/+$/g, "");
+
+  if (!root) {
+    throw new Error("CLOUDINARY_FOLDER is empty — set it to a namespace such as \"foodo\"");
+  }
+
+  return leaf ? `${root}/${leaf}` : root;
 }
 
 // ─── Core: Cloudinary's signature algorithm, by the book ─────
@@ -95,7 +133,7 @@ export function apiSignRequest(params: SignableParams, apiSecret: string): strin
 export function createCloudinaryUploadSignature(
   options: CloudinarySignatureOptions,
 ): CloudinaryUploadSignature {
-  const { cloudName, apiKey, apiSecret } = resolveCredentials();
+  const { cloudName, apiKey, apiSecret } = resolveCloudinaryCredentials();
 
   const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
 

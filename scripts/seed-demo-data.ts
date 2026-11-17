@@ -55,7 +55,7 @@ async function main() {
   console.log(`  MENU_ITEMS_TABLE:  ${process.env.MENU_ITEMS_TABLE || "foodo-menu-items"}`);
 
   // 1. Seed Demo Users
-  console.log("\n[seed] Step 1/3: Seeding Demo Users (customer, seller, rider)...");
+  console.log("\n[seed] Step 1/3: Seeding Demo Users (customer, seller, rider, admin)...");
   const { seedDemoUsers } = await import("../backend/auth-service/src/seed/demo-users.js");
   await seedDemoUsers();
 

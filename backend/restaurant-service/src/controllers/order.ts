@@ -19,8 +19,10 @@ import {
 import {
   publishEvent,
   publishOrderEvent,
+  publishRealtimeBatch,
   publishRealtimeEvent,
 } from "../config/events.js";
+import { checkReadyGate } from "./verification.js";
 
 function releaseRider(riderId: unknown, orderId?: unknown) {
   if (!riderId) return;
@@ -177,16 +179,23 @@ export const createOrder = tryCatch(async (req: AuthRequest, res) => {
   );
 
   if (isCod) {
-    await publishRealtimeEvent("order:new", `restaurant:${restaurantId}`, {
-      orderId: order.id,
-    });
-    await publishRealtimeEvent("order:new", `user:${restaurant.ownerId}`, {
-      orderId: order.id,
-    });
-    await publishRealtimeEvent("order:update", `user:${req.user.id}`, {
-      orderId: order.id,
-      status: "placed",
-    });
+    await publishRealtimeBatch([
+      {
+        event: "order:new",
+        room: `restaurant:${restaurantId}`,
+        payload: { orderId: order.id },
+      },
+      {
+        event: "order:new",
+        room: `user:${restaurant.ownerId}`,
+        payload: { orderId: order.id },
+      },
+      {
+        event: "order:update",
+        room: `user:${req.user.id}`,
+        payload: { orderId: order.id, status: "placed" },
+      },
+    ]);
   }
 
   return res.status(201).json({
@@ -392,34 +401,62 @@ export const updateOrderStatus = tryCatch(async (req: AuthRequest, res) => {
     throw new Error("Unauthorized");
   }
 
+  // Kitchen gate: a flagged (or unverified, AI down) packing check must
+  // be repacked/re-verified or explicitly overridden before the order
+  // can be handed to a rider. Unpaid/invalid transitions still fall
+  // through to the repo's own guards.
+  if (status === "ready_for_rider") {
+    const gateError = checkReadyGate(order);
+    if (gateError) {
+      return res.status(409).json({ message: gateError });
+    }
+  }
+
   const updated = await setOrderStatus(orderId, status);
   if (!updated) {
     throw new Error("Order not paid");
   }
 
-  await publishRealtimeEvent("order:update", `user:${updated.userId}`, {
-    orderId: updated.id,
-    status: updated.status,
-  });
-  await publishRealtimeEvent(
-    "order:update",
-    `restaurant:${updated.restaurantId}`,
-    { orderId: updated.id, status: updated.status },
-  );
-  await publishRealtimeEvent("order:update", `user:${restaurant.ownerId}`, {
-    orderId: updated.id,
-    status: updated.status,
-  });
+  // One SNS request for all three rooms (SNS takes 10 per call).
+  await publishRealtimeBatch([
+    {
+      event: "order:update",
+      room: `user:${updated.userId}`,
+      payload: { orderId: updated.id, status: updated.status },
+    },
+    {
+      event: "order:update",
+      room: `restaurant:${updated.restaurantId}`,
+      payload: { orderId: updated.id, status: updated.status },
+    },
+    {
+      event: "order:update",
+      room: `user:${restaurant.ownerId}`,
+      payload: { orderId: updated.id, status: updated.status },
+    },
+  ]);
 
   if (status === "ready_for_rider") {
-    await publishEvent("order:ready_for_rider", {
+    const readyPayload = {
       orderId: updated.id,
       restaurantId: updated.restaurantId,
       location: {
         type: "Point",
         coordinates: restaurant.autoLocation.coordinates,
       },
-    });
+    };
+    // Work queue — the rider matcher's direct consumer (existing path).
+    await publishEvent("order:ready_for_rider", readyPayload);
+    // SNS fanout — the AI dispatch swarm subscribes with its own queue
+    // (FilterPolicy on the event attribute). The work queue is the
+    // rider assignment path and already succeeded; losing the fanout
+    // only degrades dispatch to a later round, so log-and-continue.
+    const fanned = await publishOrderEvent("order:ready_for_rider", readyPayload);
+    if (!fanned) {
+      console.warn(
+        `Ready-order fanout to dispatch failed (order ${updated.id}) — the swarm will not see this order`,
+      );
+    }
   }
 
   if (status === "cancelled" && updated.riderId) {

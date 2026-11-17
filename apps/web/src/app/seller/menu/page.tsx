@@ -14,6 +14,8 @@ import {
   useToggleMenuItem,
   useDeleteMenuItem,
 } from "@/features/restaurants/api";
+import { DishPhotoDialog, type ApprovedPhoto } from "@/features/photo/components";
+import { MenuImport } from "@/features/menu-parser/components";
 import type { IMenuItem } from "@/types";
 import {
   Loader2,
@@ -25,6 +27,7 @@ import {
   ImageUp,
   AlertCircle,
   UtensilsCrossed,
+  Sparkles,
 } from "lucide-react";
 
 export default function SellerMenuPage() {
@@ -37,40 +40,40 @@ export default function SellerMenuPage() {
   const deleteItem = useDeleteMenuItem();
 
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [approvedPhoto, setApprovedPhoto] = useState<ApprovedPhoto | null>(null);
 
   const resetForm = () => {
     setName("");
     setDescription("");
     setPrice("");
-    setImageFile(null);
-    setImagePreview(null);
+    setApprovedPhoto(null);
     setShowForm(false);
+    setShowPhotoDialog(false);
   };
 
   const handleAddItem = async () => {
-    if (!name || !price || !imageFile) return;
-    // Image goes browser → Cloudinary directly (signed params from the
-    // service); the create call only carries the resulting URL.
+    if (!name || !price || !approvedPhoto) return;
+    // The photo already went browser → Cloudinary (via the AI pipeline's
+    // signed upload) and came back as a transformed URL — the create call
+    // only carries that URL.
     await createItem.mutateAsync({
       name,
       description,
       price,
-      imageFile,
+      image: approvedPhoto.enhancedUrl,
     });
     resetForm();
     refetch();
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+  const handlePhotoApproved = (photo: ApprovedPhoto) => {
+    setApprovedPhoto(photo);
+    setShowPhotoDialog(false);
   };
 
   const handleToggle = async (itemId: string) => {
@@ -102,7 +105,7 @@ export default function SellerMenuPage() {
     <RoleGuard allowedRoles={["seller"]}>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold">Menu Items</h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -110,13 +113,23 @@ export default function SellerMenuPage() {
               {restaurant.isOpen ? "Restaurant open" : "Restaurant closed"}
             </p>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-110 transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            {showForm ? "Cancel" : "Add Item"}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => setShowImport(true)}
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl border border-border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
+            >
+              <ImageUp className="h-4 w-4" />
+              <span className="hidden sm:inline">Import from photo</span>
+              <span className="sm:hidden">Import</span>
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-110 transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              {showForm ? "Cancel" : "Add Item"}
+            </button>
+          </div>
         </div>
 
         {/* Add Item Form */}
@@ -124,6 +137,45 @@ export default function SellerMenuPage() {
           <GlassCard className="p-5">
             <h3 className="font-semibold mb-4">New Menu Item</h3>
             <div className="space-y-3">
+              {/* AI-enhanced photo capture */}
+              {approvedPhoto ? (
+                <div className="flex items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-2.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={approvedPhoto.enhancedUrl}
+                    alt="Approved dish"
+                    className="h-14 w-14 rounded-lg object-cover"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      <Sparkles className="h-3 w-3" /> AI-enhanced photo ready
+                    </p>
+                    <button
+                      onClick={() => setShowPhotoDialog(true)}
+                      className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                    >
+                      Review or retake
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowPhotoDialog(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-4 text-sm font-medium hover:bg-accent/40 transition-colors"
+                >
+                  <ImageUp className="h-4 w-4" />
+                  Add Dish Photo (AI-enhanced) *
+                </button>
+              )}
+
+              {showPhotoDialog && (
+                <GlassCard className="p-4">
+                  <DishPhotoDialog
+                    onApprove={handlePhotoApproved}
+                    onCancel={() => setShowPhotoDialog(false)}
+                  />
+                </GlassCard>
+              )}
               <input
                 type="text"
                 value={name}
@@ -145,26 +197,9 @@ export default function SellerMenuPage() {
                 placeholder="Price *"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
-              <div className="flex items-center gap-3">
-                {imagePreview ? (
-                  <div className="relative w-16 h-16 rounded-lg overflow-hidden">
-                    <img src={imagePreview} alt="" className="h-full w-full object-cover" />
-                    <button aria-label="Remove selected image" onClick={() => { setImageFile(null); setImagePreview(null); }} className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"><X className="h-3.5 w-3.5" /></button>
-                  </div>
-                ) : (
-                  <div className="flex w-16 h-16 items-center justify-center rounded-lg border-2 border-dashed border-border">
-                    <ImageUp className="h-5 w-5 text-muted-foreground/50" />
-                  </div>
-                )}
-                <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent">
-                  <ImageUp className="h-3.5 w-3.5" />
-                  {imagePreview ? "Change" : "Upload Image *"}
-                  <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                </label>
-              </div>
               <button
                 onClick={handleAddItem}
-                disabled={createItem.isPending || !name || !price || !imageFile}
+                disabled={createItem.isPending || !name || !price || !approvedPhoto}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:brightness-110 transition-all disabled:opacity-50"
               >
                 {createItem.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -239,6 +274,14 @@ export default function SellerMenuPage() {
           </div>
         )}
       </div>
+
+      <MenuImport
+        open={showImport}
+        restaurantId={restaurant.id}
+        existingCount={menuItems?.length ?? 0}
+        onClose={() => setShowImport(false)}
+        onPublished={() => refetch()}
+      />
     </RoleGuard>
   );
 }

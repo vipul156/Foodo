@@ -1,0 +1,12 @@
+{
+  "name": "@foodo/ai-menu-parser",
+  "version": "1.0.0",
+  "description": "Foodo AI menu parser service (serverless Lambda — Python 3.14, OpenAI-compatible structured vision). No build step: the Python deps are bundled by serverless-python-requirements at deploy time.",
+  "private": true,
+  "scripts": {
+    "build": "node -e \"process.stdout.write('no build step: serverless-python-requirements bundles app/ at deploy time\\n')\"",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "info": "serverless info"
+  }
+}

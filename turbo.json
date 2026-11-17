@@ -1,6 +1,30 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalPassThroughEnv": [
+    "CLOUDINARY_API_KEY",
+    "CLOUDINARY_API_SECRET",
+    "CLOUDINARY_CLOUD_NAME",
+    "CLOUDINARY_URL",
+    "COMMERCE_LOG_LEVEL",
+    "COOKIE_SECRET",
+    "DISPATCH_LOG_LEVEL",
+    "FRONTEND_URL",
+    "IAM_PERMISSIONS_BOUNDARY_ARN",
+    "INTERNAL_SERVICE_KEY",
+    "JWT_SECRET",
+    "LLM_API_KEY",
+    "LLM_BASE_URL",
+    "LLM_MODEL",
+    "LLM_PROVIDER",
+    "MENU_PARSER_LOG_LEVEL",
+    "RAZORPAY_KEY_ID",
+    "RAZORPAY_KEY_SECRET",
+    "RAZORPAY_WEBHOOK_SECRET",
+    "REFRESH_COOKIE_NAME",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

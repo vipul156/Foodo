@@ -1,0 +1,165 @@
+# ─── Foodo AI conversational commerce stack ──────────────────
+# Pure HTTP: the ordering agent (/turn, /draft, /summary, /sessions,
+# /session). Protected surface rides the shared JWT authorizer (cookie
+# session); sessions live in COMMERCE_SESSIONS_TABLE (TTL-bounded),
+# per-user rate limits in the shared rate-limits counter table, and
+# turn events fan out on the platform SNS topic.
+#
+#   turbo run deploy --filter=@foodo/ai-commerce (or: serverless deploy here)
+
+service: foodo-ai-commerce
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+  # Packs the shared `pycommon` package into the artifact (see the
+  # plugin's header for why pip cannot install it from the monorepo).
+  - ../../scripts/serverless-vendor-pycommon.js
+
+package:
+  # Shared artifact: the deps ride the layer below, so one function does
+  # not need a per-function zip of the 3.8k-file tree rebuilt per deploy.
+  # Shared packaging also lets the plugin junction the static cache
+  # instead of copying it into `.serverless` on every run.
+  individually: false
+  patterns:
+    # Local test/pytest runs leave bytecode compiled for the developer's
+    # interpreter; shipping it only bloats the artifact (and shadows the
+    # sources if the local version ever matches the runtime).
+    - '!**/__pycache__/**'
+    - '!**/*.pyc'
+    - '!**/*.pyo'
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+  pythonRequirements:
+    # Linux pip in Docker → correct aarch64 wheels for the compiled
+    # deps (pydantic-core, langchain stack). Docker is a build tool
+    # only; the shipped artifact is the standard Lambda zip.
+    # Exact pins in requirements.txt keep this cache warm; a changed
+    # requirements.txt is the only trigger for a fresh pip install.
+    dockerizePip: true
+    slim: true
+    # `slim` also deletes every **/*.dist-info* — i.e. the installed
+    # distribution metadata. openai>=3 imports `httpx2`, whose version is
+    # read through importlib.metadata AT IMPORT TIME, so a stripped
+    # metadata tree kills the handler at init with "No package metadata
+    # was found for httpx2" and every route answers 500. Keep the
+    # bytecode cleanup, keep the metadata.
+    slimPatterns:
+      - '**/*.py[c|o]'
+      - '**/__pycache__*'
+    slimPatternsAppendDefaults: false
+    # serverless-python-requirements keys its static cache on
+    # <sha256(requirements.txt)>_<arch> — the Lambda runtime is NOT part of
+    # the key. A runtime bump that leaves the requirements content unchanged
+    # therefore reuses the previous interpreter's wheel tree (e.g. a cp312
+    # _pydantic_core .so inside a python3.14 runtime → ImportModuleError at
+    # init, so every route answers 500). Namespacing the cache by runtime
+    # makes the key runtime-aware, so a bump always rebuilds for the target ABI.
+    cacheLocation: ../../.cache/python-requirements/${self:provider.runtime}
+    # Dependencies ride a Lambda layer instead of being injected into the
+    # function zip: packaging reuses the cached layer archive
+    # (<requirements hash>_arm64_slspyc.zip) and the hot artifact stays
+    # under 100 KB, so code-only deploys upload a fraction of the old zip.
+    layer: true
+    # pip would byte-compile every module into the Windows bind-mounted
+    # cache folder (~55x slower than container-local writes), only for
+    # `slim` to delete all .pyc files again.
+    pipCmdExtraArgs:
+      - --no-compile
+    noDeploy:
+      - boto3
+      - botocore
+      - s3transfer
+      - jmespath
+      - urllib3
+      - python-dateutil
+      - six
+
+provider:
+  name: aws
+  runtime: python3.14
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024
+  timeout: 60              # multi-LLM-call turns
+  logRetentionInDays: 14
+  environment:
+    STAGE: ${self:custom.stage}
+    LOG_LEVEL: ${env:COMMERCE_LOG_LEVEL, 'INFO'}
+    # No fallback, on purpose: the session cookie and access JWT are
+    # signed with the real platform secret. A default value here silently
+    # deploys a stack whose every user route answers 401. Fail at deploy,
+    # not on the first request.
+    JWT_SECRET: ${env:JWT_SECRET}
+    COOKIE_SECRET: ${env:COOKIE_SECRET}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    # Provider switch (pycommon.llm): any OpenAI-compatible endpoint.
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
+    # Sibling reads/writes ride the shared HTTP API (cookie-forwarded
+    # identity plane; utils' payment create is the money path).
+    AUTH_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    UTILS_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    COMMERCE_SESSIONS_TABLE: ${cf:${self:custom.infra}.CommerceSessionsTable}
+    RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.CommerceSessionsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.CommerceSessionsTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+functions:
+  http:
+    handler: app/handlers/http.handler
+    memorySize: 1024
+    timeout: 60
+    # The plugin only DECLARES the layer (see pythonRequirements.layer);
+    # each function has to attach it or the deps are simply not there.
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
+    events:
+      - httpApi:
+          path: /api/commerce/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /health/commerce
+          method: get

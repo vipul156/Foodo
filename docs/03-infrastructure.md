@@ -11,7 +11,7 @@ Two foundation stacks: `infra` (network + data + events + identity) and `core`
 
 ```
 service: foodo-infra
-provider: aws / nodejs20.x / ap-south-1
+provider: aws / nodejs24.x / ap-south-1
 ```
 
 ### 1.1 VPC — `10.0.0.0/16`
@@ -332,7 +332,7 @@ custom:
   prune: { automatic: true, number: 3 }
 
 provider:
-  runtime: nodejs20.x
+  runtime: nodejs24.x
   architecture: arm64
   memorySize: 512
   timeout: 15
@@ -375,7 +375,8 @@ uses 256 MB / 120 s.
 ```bash
 pnpm run deploy:infra       # 1 — must be first
 pnpm run deploy:core        # 2
-pnpm run deploy:services    # 3
+pnpm run deploy:services    # 3 — 6 domain services + the 5 AI stacks
+pnpm run deploy:ai          # 3b — AI stacks only
 pnpm run deploy:frontend    # 4
 pnpm run deploy:all         # all four, in order
 

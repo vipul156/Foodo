@@ -1,0 +1,34 @@
+# ─── ai-commerce runtime (Lambda python3.14, arm64) ──────────
+# EXACT PINS ON PURPOSE. serverless-python-requirements keys its static
+# cache on this file's contents; with ranges every upstream LangChain /
+# OpenAI release changed the resolved set and triggered a fresh ~10 min
+# Dockerized pip install. Bump a pin when you mean to — a changed file
+# here is the only thing that re-runs pip.
+fastapi==0.162.0
+pydantic==2.14.1
+pydantic-settings==2.16.1
+pyjwt==2.15.1
+python-multipart==0.0.32
+
+# — LangChain / LangGraph stack —
+langchain-core==1.7.0
+langchain-openai==1.7.2  # OpenAI-compatible vendors: Groq, OpenRouter, Ollama, vLLM
+langgraph==1.2.17
+
+# — Infra —
+mangum==0.22.0            # ASGI → Lambda HTTP adapter (≡ serverless-http)
+httpx==0.28.1             # async HTTP with connection pooling
+tenacity==9.2.1           # retries with exponential backoff
+
+# — Shared monorepo package (FastAPI skeleton, config, logging, resilience,
+#   security, DynamoDB/SNS/SQS, rate limiting) —
+#   NOT a pip requirement: pip resolves local paths against the current
+#   working directory and the Dockerized Lambda build never sees the
+#   monorepo. It is packed into the artifact instead, by the
+#   serverless-vendor-pycommon plugin (repo-root scripts/).
+#   For local development install it editable — see requirements-dev.txt.
+
+# boto3/botocore are NOT bundled (Lambda runtime ships them — see
+# noDeploy in serverless.yml). For local dev: pip install -r requirements-dev.txt
+# Mongo (motor), Redis and RabbitMQ (pika) clients removed with the
+# serverless migration.

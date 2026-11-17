@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foodo-pycommon"
+version = "0.1.0"
+description = "Shared Python utilities for Foodo serverless services (FastAPI skeleton, config, logging, resilience, security, DynamoDB/SNS/SQS, rate limiting) — the python analog of @foodo/backend-common."
+requires-python = ">=3.10"
+# boto3 ships inside the Lambda Python runtime; bundling it (and botocore,
+# urllib3, ...) would only add MBs per service. Local development installs
+# it via pip (the services' requirements.txt keep it out too).
+#
+# The web-tier deps below are already declared by every consuming service
+# (ai-commerce, ai-dispatch, ai-menu-parser) — pip resolves them once, so
+# listing them here adds no bytes to the Lambda bundle.
+dependencies = [
+    "fastapi>=0.115.6",
+    "httpx>=0.28.1",
+    "mangum>=0.17.0",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.0",
+    "pyjwt>=2.10.1",
+    "tenacity>=9.0.0",
+]
+
+[tool.pyrefly]
+# Pyrefly config for the shared package. The settings repeat the
+# monorepo-root pyrefly.toml on purpose: Pyrefly only gained layered
+# configs (`extends`) in 1.4, and this file has to work with the older
+# binary too.
+preset = "basic"
+python-version = "3.12"
+
+# The package root is its own import root, so `from pycommon.x import y`
+# resolves. Services install this package editable — a runtime finder
+# shim in site-packages that type checkers cannot follow — so the root
+# has to be on the search path explicitly.
+search-path = ["."]
+project-includes = ["**/*.py"]
+
+[tool.setuptools.packages.find]
+include = ["pycommon*"]
+
+[tool.setuptools.package-data]
+# PEP 561: without this marker a type checker cannot see the package's
+# inline annotations, and every consumer falls back to `Any`.
+pycommon = ["py.typed"]

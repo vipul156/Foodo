@@ -15,7 +15,7 @@ import { loginSchema, type LoginFormValues } from "@/features/auth/schemas";
 import { useLogin } from "@/features/auth/api";
 import type { IAuthResponse, UserRole } from "@/types";
 
-// ─── Demo accounts (one per role) ────────────────────────────
+// ─── Demo accounts (customer, restaurant, rider) ─────────────
 // These users are seeded automatically by the auth service at startup
 // (auth/src/seed/demo-users.ts), so real login always works.
 

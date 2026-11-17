@@ -7,6 +7,8 @@
 import { useState, useCallback } from "react";
 import { GlassCard } from "@/components/shared/glass-card";
 import { RoleGuard } from "@/components/shared/role-guard";
+import { PackingVerifyDialog } from "@/features/verification/components/packing-verify-dialog";
+import { ScanSearch } from "lucide-react";
 import { useGetMyRestaurant } from "@/features/restaurants/api";
 import {
   useRestaurantOrdersFlat,
@@ -102,12 +104,14 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 function OrderCard({
   order,
   onStatusUpdate,
+  onVerifyPack,
   onCancel,
   isUpdating,
   isCancelling,
 }: {
   order: IOrder;
   onStatusUpdate: (orderId: string, status: string) => void;
+  onVerifyPack: (order: IOrder) => void;
   onCancel: (orderId: string) => void;
   isUpdating: boolean;
   isCancelling: boolean;
@@ -206,7 +210,18 @@ function OrderCard({
         <div className="shrink-0 flex flex-col items-end gap-2">
           {nextStatus && (
             <button
-              onClick={() => onStatusUpdate(order.id, nextStatus)}
+              onClick={() => {
+                // "Verify & Pack" must go through the AI packing check
+                // first: the service blocks the ready_for_rider
+                // transition until the bag is verified (or an audited
+                // override is recorded). The parent flips the status
+                // once the dialog reports back via onVerified.
+                if (nextStatus === "ready_for_rider") {
+                  onVerifyPack(order);
+                  return;
+                }
+                onStatusUpdate(order.id, nextStatus);
+              }}
               disabled={isUpdating || isCancelling}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:brightness-110 transition-all disabled:opacity-50"
             >
@@ -217,13 +232,13 @@ function OrderCard({
               ) : nextStatus === "preparing" ? (
                 <CookingPot className="h-3.5 w-3.5" />
               ) : (
-                <Bike className="h-3.5 w-3.5" />
+                <ScanSearch className="h-3.5 w-3.5" />
               )}
               {nextStatus === "accepted"
                 ? "Accept"
                 : nextStatus === "preparing"
                 ? "Start Preparing"
-                : "Mark Ready"}
+                : "Verify & Pack"}
             </button>
           )}
           {/* Cancellable until picked up — rider is released automatically */}
@@ -277,6 +292,8 @@ export default function SellerOrdersPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  // Order currently inside the packing-verification dialog
+  const [verifyOrder, setVerifyOrder] = useState<IOrder | null>(null);
 
   const handleCancelOrder = useCallback(
     async (orderId: string) => {
@@ -311,6 +328,15 @@ export default function SellerOrdersPage() {
       setUpdatingId(null);
     }
   }, [updateStatus, refetch]);
+
+  // Called when verification clears the bag (verified, or an audited
+  // override was recorded) — flips the order to ready_for_rider.
+  const handleVerified = useCallback(
+    async (orderId: string) => {
+      await handleStatusUpdate(orderId, "ready_for_rider");
+    },
+    [handleStatusUpdate],
+  );
 
   // Listen for new orders (payment completed) — auto-refresh + show notification
   useSocketEvent(
@@ -428,6 +454,7 @@ export default function SellerOrdersPage() {
                     key={order.id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
+                    onVerifyPack={setVerifyOrder}
                     onCancel={handleCancelOrder}
                     isUpdating={updatingId === order.id}
                     isCancelling={cancellingId === order.id}
@@ -447,6 +474,7 @@ export default function SellerOrdersPage() {
                     key={order.id}
                     order={order}
                     onStatusUpdate={handleStatusUpdate}
+                    onVerifyPack={setVerifyOrder}
                     onCancel={handleCancelOrder}
                     isUpdating={updatingId === order.id}
                     isCancelling={cancellingId === order.id}
@@ -481,6 +509,16 @@ export default function SellerOrdersPage() {
             </p>
           </div>
         )}
+
+        {/* Packing verification dialog (pre-seal AI checkpoint) */}
+        <PackingVerifyDialog
+          order={verifyOrder}
+          open={verifyOrder !== null}
+          onClose={() => setVerifyOrder(null)}
+          onVerified={() => {
+            if (verifyOrder) void handleVerified(verifyOrder.id);
+          }}
+        />
       </div>
     </RoleGuard>
   );

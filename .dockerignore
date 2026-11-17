@@ -1,7 +1,17 @@
-node_modules
-.next
-.open-next
-.sst
-.turbo
-dist
-.git
+# Docker matches these patterns against the path relative to the build context,
+# so a bare name like `.next` only excludes the entry at the repo root. Every
+# rule below is `**/...` on purpose: the nested copies were being copied in.
+#
+# apps/web/.next (327 MB), apps/web/.open-next (570 MB) and apps/web/.sst
+# (536 MB) shipped inside the image, which is what pushed it to 4.3 GB and made
+# every build re-transfer the context and spend minutes exporting layers.
+**/node_modules/
+**/.next/
+**/.open-next/
+**/.sst/
+**/.turbo/
+**/dist/
+**/.git/
+**/.agents/
+**/tsconfig.tsbuildinfo
+**/*.log

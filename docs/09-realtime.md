@@ -12,8 +12,13 @@ Stack: `foodo-realtime` · `backend/realtime-service/`
 | `WsRouterIntegration` | `AWS::ApiGatewayV2::Integration` | `AWS_PROXY` |
 | `WsConnectRoute` / `WsDisconnectRoute` / `WsDefaultRoute` | `AWS::ApiGatewayV2::Route` | `$connect`, `$disconnect`, `$default` |
 | `ConnectionsTable` | `AWS::DynamoDB::Table` | PK `connectionId`, SK `room`, TTL 24 h, GSI `room-index` |
-| `RealtimeQueue` | `AWS::SQS::Queue` | `foodo-realtime-<stage>-emit`, `VisibilityTimeout: 120`, no DLQ |
-| `RealtimeSubscription` | `AWS::SNS::Subscription` | **no FilterPolicy** — receives everything |
+| `RealtimeEventsDLQ` | `AWS::SQS::Queue` | `foodo-realtime-<stage>-events-dlq` — `redrivePolicy` target of the SNS subscription; storage only, never polled |
+
+`eventConsumer` is triggered by a **direct SNS subscription** on the platform topic
+(**no `FilterPolicy`** — it receives everything). Nothing polls: the function runs once
+per published event, so an idle platform costs zero SQS requests. (This used to be a
+`RealtimeQueue` read by a Lambda event-source mapping — see
+[15](./15-sqs-cost-and-event-driven-fanout.md).)
 
 **One Lambda serves all three routes** (`wsRouter`, 256 MB / 10 s). The stated reason: one
 function keeps the connection registry warm across a client's whole

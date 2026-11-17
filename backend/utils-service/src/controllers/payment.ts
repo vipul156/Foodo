@@ -202,7 +202,10 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
 
         await publishPaymentSuccess({
             orderId,
-            paymentId: payment?.id ?? "unknown",
+            // The captured payment id — the refund path resolves the
+            // provider payment from the order record, so it has to
+            // travel with the success event.
+            providerPaymentId: payment?.id ?? "unknown",
             provider: "razorpay",
         });
 
@@ -264,7 +267,9 @@ export const stripeWebhook = async (req: Request, res: Response) => {
 
         await publishPaymentSuccess({
             orderId,
-            paymentId: session.id,
+            // Stripe's Checkout SESSION id — the refund path resolves
+            // the PaymentIntent from it.
+            providerPaymentId: session.id,
             provider: "stripe",
         });
 

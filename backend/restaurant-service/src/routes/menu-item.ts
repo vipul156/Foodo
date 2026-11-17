@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getMenuItems,
   createMenuItemController,
+  bulkCreateMenuItems,
   deleteMenuItemController,
   toogleMenuItemAvailability,
 } from "../controllers/menuItem.js";
@@ -21,6 +22,8 @@ router.use(isAuth);
 router.get("/upload-signature", isSeller, getMenuItemImageSignature);
 
 router.post("/new", isSeller, uploadFile, createMenuItemController);
+// AI menu parser publish: the owner-verified review grid → one batch.
+router.post("/bulk", isSeller, bulkCreateMenuItems);
 router.delete("/delete/:id", isSeller, deleteMenuItemController);
 router.put("/toggle/:id", isSeller, toogleMenuItemAvailability);
 

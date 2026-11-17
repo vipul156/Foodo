@@ -26,6 +26,10 @@
     "./dynamo": {
       "types": "./dist/dynamo/index.d.ts",
       "default": "./dist/dynamo/index.js"
+    },
+    "./llm": {
+      "types": "./dist/llm/index.d.ts",
+      "default": "./dist/llm/index.js"
     }
   },
   "scripts": {
@@ -43,6 +47,7 @@
   },
   "peerDependencies": {
     "express": "^4.0.0 || ^5.0.0",
+    "express-rate-limit": "^8.0.0",
     "jsonwebtoken": "^9.0.0",
     "multer": "^2.0.0"
   },
@@ -52,6 +57,7 @@
     "@types/jsonwebtoken": "catalog:",
     "@types/multer": "catalog:",
     "@types/node": "catalog:",
+    "express-rate-limit": "catalog:",
     "typescript": "catalog:"
   }
 }

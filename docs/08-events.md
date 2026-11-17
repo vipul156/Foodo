@@ -35,20 +35,29 @@ deserializing) **and** in the body (so handlers see the exact envelope).
 ### Consumer skeleton
 
 ```ts
-handleSqsBatch(event, async (data, raw) => { … })
+handleSqsBatch(event, async (data, raw) => { … })            // SQS work queue
+handlePushBatch(event, (batch) => riderEventsHandler(batch)) // direct SNS subscription
 ```
 
-Parses each record, unwraps `{ type, data }` if present, and returns
+`handleSqsBatch` parses each record, unwraps `{ type, data }` if present, and returns
 `{ batchItemFailures: [...] }` so **only** failed records redrive. Batches of 5.
 
-### SNS envelope unwrapping (every fan-out consumer uses this)
+`handlePushBatch` is the entrypoint for a function the topic invokes **directly**. It
+normalises the notification into the SQS record shape (`toSqsShape`) and — because SNS
+ignores `batchItemFailures` — re-throws a reported failure, so SNS retries the delivery
+and the subscription's `redrivePolicy` parks the poison message in the DLQ. A handler
+that swallowed the failure instead would silently ack a lost event.
+
+### Envelope unwrapping (every fan-out consumer uses this)
+
+`toSqsShape` (`to_sqs_shape` in pycommon) sets `body` to the notification's inner
+`Message`. Raw message delivery is impossible for Lambda endpoints, so handlers keep the
+old guard and stay indifferent to which trigger delivered the record:
 
 ```ts
 const body  = JSON.parse(record.body);
 const inner = body.TopicArn ? JSON.parse(body.Message) : body;
 ```
-
-Handles raw-SQS work items and SNS-wrapped events with one code path.
 
 ---
 
@@ -80,37 +89,49 @@ subscriptions.
 
 ## 3. Subscriptions
 
-Each service declares its own queue + subscription **in its own stack**.
+Every service declares its own **direct Lambda subscription** in its own stack. SNS
+pushes; nothing polls, so an idle platform costs zero SQS requests. The DLQ is reached
+through the subscription's `redrivePolicy`, not a queue's redrive policy.
 
 ### restaurant-service — `foodo-restaurant-<stage>-rider-events`
 
-```
-FilterPolicy:
-  event: [rider.order_accepted, rider.order_status_changed, payment.intent.created]
+```yaml
+- sns:
+    arn: ${cf:foodo-infra-<stage>.EventsTopicArn}
+    filterPolicy:
+      event: [rider.order_accepted, rider.order_status_changed, payment.intent.created]
+    redrivePolicy: { deadLetterTargetRef: RiderEventsQueueDLQ }
 ```
 
-Plus `RiderEventsQueuePolicy` allowing `sns.amazonaws.com` to `sqs:SendMessage`
-**conditioned on `ArnEquals: aws:SourceArn = <infra EventsTopicArn>`**. The condition is
-what stops anyone else delivering into the queue.
-
-Plus `RiderEventsQueueDLQ` (14-day retention), `VisibilityTimeout: 180`,
-`maxReceiveCount: 3`.
+Serverless generates the subscription **and** the `AWS::SQS::QueuePolicy` that lets
+`sns.amazonaws.com` write into `RiderEventsQueueDLQ` — conditioned on
+`ArnEquals: aws:SourceArn = <infra EventsTopicArn>`, which is what stops anyone else
+delivering into it. The DLQ itself is a plain queue (14-day retention, no consumer).
 
 ### rider-service — `foodo-rider-<stage>-rider-events`
 
-```
-FilterPolicy:
+```yaml
+filterPolicy:
   event: [rider.order_rejected, order.cancelled, order.delivered]
 ```
 
-Identical DLQ + queue-policy shape.
+Identical DLQ + redrive shape.
 
-### realtime-service — `foodo-realtime-<stage>-emit`
+### ai-dispatch — `foodo-ai-dispatch-<stage>-dispatch-orders`
+
+```yaml
+filterPolicy:
+  event: [order:ready_for_rider]
+```
+
+Same shape again; the handler's `READY#<orderId>/SEEN` conditional claim is what makes
+one-invocation-per-event safe.
+
+### realtime-service — `foodo-realtime-<stage>-events`
 
 **No `FilterPolicy`** — consumes every event, exactly like the old RabbitMQ fanout
-exchange binding. It only acts when the envelope has both `room` and `event`.
-
-`VisibilityTimeout: 120` (no DLQ — a broadcast that fails twice is not worth parking).
+exchange binding. It only acts when the envelope has both `room` and `event`, and a
+failed broadcast is logged rather than retried (one stale panel, never a stuck flow).
 
 ---
 
@@ -271,7 +292,7 @@ Customer or Seller  PATCH /api/order/:orderId/cancel
 | Lost payment webhook | hourly reconciliation finds `pending` older than 20 min | re-publishes `PAYMENT_SUCCESS` from provider truth |
 | Duplicate webhook | `isDuplicateEvent` conditional put fails | returns `200 "Duplicate event"`, nothing published |
 | SNS attach lost | `stampPaymentIntent` → `null` | logs `[ALERT][RECONCILE]`; the orphan provider intent is flagged by reconciliation |
-| Exhausted retries | SQS `maxReceiveCount: 3` | message lands in the queue's **DLQ** (14-day retention) for manual inspection |
+| Exhausted retries | SQS `maxReceiveCount: 3` (work queues) / SNS delivery retries (pushed events) | message lands in the queue's **DLQ** (14-day retention) for manual inspection |
 
 ---
 
@@ -279,11 +300,13 @@ Customer or Seller  PATCH /api/order/:orderId/cancel
 
 No publisher changes are needed — that is the payoff of SNS fan-out:
 
-1. In your service's `serverless.yml`, add a queue + DLQ + `QueuePolicy` (conditioned on
-   the infra topic ARN) + an `AWS::SNS::Subscription` with a `FilterPolicy` on `event`.
+1. In your service's `serverless.yml`, add a `- sns:` event with the infra topic ARN, a
+   `filterPolicy` on `event`, and a `redrivePolicy: { deadLetterTargetRef: <YourDLQ> }`
+   pointing at a DLQ resource in the same stack. Serverless writes the queue policy.
 2. Add `sns:Publish`? No — consumers need no publish permission at all.
-3. Add a handler using `handleSqsBatch` + `unwrapSnsEnvelope`, and call it from a new
-   `dist/<name>.handler` Lambda with `events: - sqs: { arn: !GetAtt …, batchSize: 5,
-   reportBatchItemFailures: true }`.
+3. Add a handler that calls `handlePushBatch(event, yourHandler)` where `yourHandler` is a
+   `handleSqsBatch(...)` body. Do **not** add a queue + Lambda event-source mapping: a
+   queue with a trigger polls 24/7 and costs ~130k SQS requests/month at rest
+   ([15](./15-sqs-cost-and-event-driven-fanout.md)).
 4. Write the handler idempotently. There is no dedupe store — conditional DynamoDB writes
-   **are** the dedupe.
+   **are** the dedupe, and it is the only thing that absorbs at-least-once delivery.

@@ -9,13 +9,16 @@
 //      services. auth-service's STRICT isAuth is intentionally NOT here.
 //
 // Subpath exports: ./dynamo (repositories), ./aws (doc client + SNS/SQS),
-// ./cloudinary, ./files. The old mongoose models/, Mongo connection
-// (db.ts) and RabbitMQ queue/ layers were removed when the platform moved
-// to DynamoDB + SNS/SQS.
+// ./cloudinary, ./files, ./llm (OpenAI-compatible request helpers). The old
+// mongoose models/, Mongo connection (db.ts) and RabbitMQ queue/ layers were
+// removed when the platform moved to DynamoDB + SNS/SQS.
 
 // ─── Middlewares ─────────────────────────────────────────────
 // Permissive JWT middleware + role guards (restaurant/rider/admin/utils).
 export * from "./middlewares/isAuth.js";
+
+// Internal service-to-service auth via x-internal-key (AI tier).
+export * from "./middlewares/isInternal.js";
 
 // tryCatch (plain) + tryCatchStatus (admin's status-preserving variant)
 export * from "./middlewares/trycatch.js";

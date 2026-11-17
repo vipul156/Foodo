@@ -18,6 +18,7 @@
     "@foodo/types": "workspace:*",
     "@aws-sdk/lib-dynamodb": "catalog:",
     "axios": "catalog:",
+    "cookie-session": "catalog:",
     "dotenv": "catalog:",
     "express": "catalog:",
     "express-rate-limit": "catalog:",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "catalog:",
+    "@types/cookie-session": "catalog:",
     "@types/dotenv": "catalog:",
     "@types/express": "catalog:",
     "@types/jsonwebtoken": "catalog:",

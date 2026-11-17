@@ -20,6 +20,7 @@ import {
 } from "@/features/rider/api";
 import { useSocketEvent } from "@/hooks/use-socket-event";
 import { useRiderLocationStream } from "@/hooks/use-rider-location-stream";
+import { PodCaptureDialog } from "@/features/verification/components/pod-capture-dialog";
 import {
   SOCKET_EVENTS,
   type OrderAvailablePayload,
@@ -80,6 +81,8 @@ export default function RiderDashboardPage() {
   const [socketOffer, setSocketOffer] = useState<OrderAvailablePayload | null>(null);
   // Which offer's Accept button is mid-flight (per-card spinner)
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
+  // Proof-of-delivery capture before the final status flip
+  const [podOpen, setPodOpen] = useState(false);
 
   // Listen for new available orders
   useSocketEvent(
@@ -114,6 +117,8 @@ export default function RiderDashboardPage() {
     }
   };
 
+  // Picked-up tap still flips status directly; the DELIVERED tap now
+  // goes through the proof-of-delivery capture dialog first.
   const handleUpdateOrderStatus = async () => {
     if (!currentOrder?.id) return;
     try {
@@ -121,8 +126,6 @@ export default function RiderDashboardPage() {
       // Order flips to picked_up / delivered — refresh card + availability
       queryClient.invalidateQueries({ queryKey: ["rider", "order", "current"] });
       queryClient.invalidateQueries({ queryKey: ["rider", "profile"] });
-      // A delivered order also lands in the history feed
-      queryClient.invalidateQueries({ queryKey: ["rider", "history"] });
     } catch {
       // Error is surfaced by the mutation hook
     }
@@ -286,6 +289,17 @@ export default function RiderDashboardPage() {
             <ListeningState isAvailable={isAvailable} />
           )}
         </section>
+
+        {/* Proof-of-delivery capture (AI-verified drop-off photo) */}
+        <PodCaptureDialog
+          open={podOpen}
+          onClose={() => setPodOpen(false)}
+          onCompleted={() => {
+            queryClient.invalidateQueries({ queryKey: ["rider", "order", "current"] });
+            queryClient.invalidateQueries({ queryKey: ["rider", "profile"] });
+            queryClient.invalidateQueries({ queryKey: ["rider", "history"] });
+          }}
+        />
       </div>
     </RoleGuard>
   );

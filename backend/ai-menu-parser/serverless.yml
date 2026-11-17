@@ -1,0 +1,147 @@
+# ─── Foodo AI menu parser stack ──────────────────────────────
+# Stateless vision service: menu photo URL → structured parse draft for
+# the seller review grid, then bulk-publish proxy into the restaurant
+# service (data ownership stays with the domain service).
+#
+#   turbo run deploy --filter=@foodo/ai-menu-parser (or: serverless deploy here)
+
+service: foodo-ai-menu-parser
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+  # Packs the shared `pycommon` package into the artifact (see the
+  # plugin's header for why pip cannot install it from the monorepo).
+  - ../../scripts/serverless-vendor-pycommon.js
+
+package:
+  # Shared artifact: the deps ride the layer below, so one function does
+  # not need a per-function zip of the dependency tree rebuilt per deploy.
+  # Shared packaging also lets the plugin junction the static cache
+  # instead of copying it into `.serverless` on every run.
+  individually: false
+  patterns:
+    # Local test/pytest runs leave bytecode compiled for the developer's
+    # interpreter; shipping it only bloats the artifact (and shadows the
+    # sources if the local version ever matches the runtime).
+    - '!**/__pycache__/**'
+    - '!**/*.pyc'
+    - '!**/*.pyo'
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+  pythonRequirements:
+    # Linux pip in Docker → correct aarch64 wheels for pydantic-core.
+    dockerizePip: true
+    slim: true
+    # `slim` also deletes every **/*.dist-info* — i.e. the installed
+    # distribution metadata. openai>=3 imports `httpx2`, whose version is
+    # read through importlib.metadata AT IMPORT TIME, so a stripped
+    # metadata tree kills the handler at init with "No package metadata
+    # was found for httpx2" and every route answers 500. Keep the
+    # bytecode cleanup, keep the metadata.
+    slimPatterns:
+      - '**/*.py[c|o]'
+      - '**/__pycache__*'
+    slimPatternsAppendDefaults: false
+    # serverless-python-requirements keys its static cache on
+    # <sha256(requirements.txt)>_<arch> — the Lambda runtime is NOT part of
+    # the key. A runtime bump that leaves the requirements content unchanged
+    # therefore reuses the previous interpreter's wheel tree (e.g. a cp312
+    # _pydantic_core .so inside a python3.14 runtime → ImportModuleError at
+    # init, so every route answers 500). Namespacing the cache by runtime
+    # makes the key runtime-aware, so a bump always rebuilds for the target ABI.
+    cacheLocation: ../../.cache/python-requirements/${self:provider.runtime}
+    # Dependencies ride a Lambda layer instead of being injected into the
+    # function zip: packaging reuses the cached layer archive
+    # (<requirements hash>_arm64_slspyc.zip) and the hot artifact stays
+    # small, so code-only deploys upload a fraction of the old zip.
+    layer: true
+    # pip would byte-compile every module into the Windows bind-mounted
+    # cache folder (~55x slower than container-local writes), only for
+    # `slim` to delete all .pyc files again. Exact pins in
+    # requirements.txt keep the static cache warm between deploys.
+    pipCmdExtraArgs:
+      - --no-compile
+    noDeploy:
+      - boto3
+      - botocore
+      - s3transfer
+      - jmespath
+      - urllib3
+      - python-dateutil
+      - six
+
+provider:
+  name: aws
+  runtime: python3.14
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024
+  timeout: 90              # structured-vision calls are slow
+  logRetentionInDays: 14
+  environment:
+    STAGE: ${self:custom.stage}
+    LOG_LEVEL: ${env:MENU_PARSER_LOG_LEVEL, 'INFO'}
+    # Same identity plane as the Node services: the gateway authorizer
+    # only checks that a token exists, require_user re-verifies the
+    # session cookie in-app with these secrets. No fallback, on purpose:
+    # a default value here silently deploys a stack whose every user
+    # route answers 401 (the cookie/JWT are signed with the real
+    # platform secret). Fail at deploy, not on the first request.
+    JWT_SECRET: ${env:JWT_SECRET}
+    COOKIE_SECRET: ${env:COOKIE_SECRET}
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, ''}
+    # OpenAI-compatible vision model (required — the app fails closed).
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
+    # Bulk publish forwards the seller session to the restaurant
+    # service through the shared HTTP API.
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:UpdateItem
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+
+functions:
+  http:
+    handler: app/handlers/http.handler
+    memorySize: 1024
+    timeout: 90
+    # The plugin only DECLARES the layer (see pythonRequirements.layer);
+    # each function has to attach it or the deps are simply not there.
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
+    events:
+      # Seller surface: the shared JWT authorizer (cookie session) blocks
+      # unauthenticated traffic; require_user re-verifies in-app.
+      - httpApi:
+          path: /api/menu-parser/{proxy+}
+          method: '*'
+          authorizer:
+            type: request
+            id: ${cf:${self:custom.coreApi}.AuthorizerId}
+      - httpApi:
+          path: /health/menu-parser
+          method: get

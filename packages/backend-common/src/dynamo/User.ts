@@ -133,11 +133,29 @@ export async function getUserByRefreshTokenHash(tokenHash: string): Promise<{
   };
 }
 
+// The users table also holds one REFRESH#<hash> row per issued session,
+// so a bare scan returns those too (no name/email/role → "Unknown" in the
+// admin roster). Filter to PROFILE rows and page until enough are found,
+// since a scan FilterExpression is applied after Limit is taken.
 export async function listUsers(limit = 500): Promise<DynamoUser[]> {
-  const out = await docClient().send(
-    new ScanCommand({ TableName: TABLE.users(), Limit: limit }),
-  );
-  return (out.Items as DynamoUser[]) ?? [];
+  const users: DynamoUser[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const out = await docClient().send(
+      new ScanCommand({
+        TableName: TABLE.users(),
+        FilterExpression: "#sk = :profile",
+        ExpressionAttributeNames: { "#sk": "sk" },
+        ExpressionAttributeValues: { ":profile": PROFILE_SK },
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    users.push(...((out.Items as DynamoUser[]) ?? []));
+    lastKey = out.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey && users.length < limit);
+
+  return users.slice(0, limit);
 }
 
 // ─── Writes ──────────────────────────────────────────────────

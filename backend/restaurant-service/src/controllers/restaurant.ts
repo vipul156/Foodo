@@ -1,4 +1,7 @@
-import { uploadToCloudinary } from "@foodo/backend-common/cloudinary";
+import {
+  uploadToCloudinary,
+  resolveUploadFolder,
+} from "@foodo/backend-common/cloudinary";
 import { dataUri } from "@foodo/backend-common/files";
 import { AuthRequest } from "@foodo/backend-common";
 import { tryCatch } from "@foodo/backend-common";
@@ -61,7 +64,7 @@ export const addRestaurant = tryCatch(async (req: AuthRequest, res) => {
 
     resolvedImageUrl = await uploadToCloudinary({
       fileContent: buffer,
-      folder: "foodo/restaurants",
+      folder: resolveUploadFolder("restaurants"),
       tags: ["foodo", "restaurant"],
     });
   }
@@ -157,7 +160,7 @@ export const updateRestaurantDetails = tryCatch(
       if (buffer) {
         updateFields.image = await uploadToCloudinary({
           fileContent: buffer,
-          folder: "foodo/restaurants",
+          folder: resolveUploadFolder("restaurants"),
           tags: ["foodo", "restaurant"],
         });
       }

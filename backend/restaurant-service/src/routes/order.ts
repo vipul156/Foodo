@@ -11,6 +11,11 @@ import {
   cancelOrderController,
 } from "../controllers/order.js";
 import { isAuth, isSeller } from "@foodo/backend-common";
+import {
+  submitPackingVerification,
+  overridePackingVerification,
+  getPackingVerification,
+} from "../controllers/verification.js";
 
 const router = Router();
 
@@ -27,6 +32,14 @@ router.get("/order/:restaurantId", isAuth, isSeller, fetchRestaurantOrders);
 // Seller analytics — MUST be registered before the /:orderId wildcard so
 // "analytics" isn't captured as an order id
 router.get("/analytics/:restaurantId", isAuth, isSeller, getRestaurantAnalytics);
+
+// ─── Visual packing verification (kitchen flow) ──────────────
+// Registered before the /:orderId wildcard so "verification" isn't
+// captured as an order id.
+router.post("/verification/:orderId/packing", isAuth, isSeller, submitPackingVerification);
+router.put("/verification/:orderId/override", isAuth, isSeller, overridePackingVerification);
+router.get("/verification/:orderId", isAuth, isSeller, getPackingVerification);
+
 router.put("/:orderId", isAuth, isSeller, updateOrderStatus);
 router.get("/my", isAuth, getMyOrders);
 // Read-only payment status for frontend polling after the gateway redirect

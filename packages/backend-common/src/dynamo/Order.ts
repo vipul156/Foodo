@@ -68,8 +68,29 @@ export interface DynamoOrder {
   paymentIntent?: {
     provider: "razorpay" | "stripe";
     providerOrderId?: string;
+    providerPaymentId?: string;
     initiatedAt?: string;
   };
+
+  /**
+   * Refunds granted against this order (AI tier + human refunds).
+   * The list is the platform's own cumulative-cap ledger: utils-service
+   * reads it before every refund and refuses anything that would push
+   * the total above `totalAmount`.
+   */
+  refunds?: OrderRefund[];
+
+  /**
+   * Denormalized packing-verification verdict (the full AI row lives in
+   * the verifications table). Kept on the order so the kitchen UI and
+   * the ready_for_rider gate read one item — no cross-table join in the
+   * hot path. Written by restaurant-service after every check/override.
+   */
+  packingVerification?: PackingVerification | null;
+
+  /** Lifecycle stamps — delivery telemetry is derived from these. */
+  pickedUpAt?: string;
+  deliveredAt?: string;
 
   /** ISO timestamp; DynamoDB TTL sweeps unpaid expired orders. */
   expiresAt?: string;
@@ -81,6 +102,16 @@ export interface DynamoOrder {
 
 export const orderPk = (id: string) => `ORDER#${id}`;
 export const ORDER_SK = "ORDER";
+
+/** One refund granted against an order. */
+export interface OrderRefund {
+  provider: string;
+  providerRefundId: string | null;
+  amount: number;
+  reason: string;
+  at: string;
+  initiatedBy: string;
+}
 
 /** paymentIntent.initiatedAt, projected flat for the payment-status GSI. */
 export const paymentIntentInitiatedAt = (o: DynamoOrder): string | undefined =>
@@ -359,6 +390,138 @@ export async function createOrder(
 }
 
 /**
+ * Append a refund to the order's refund ledger.
+ *
+ * The cumulative cap is enforced by utils-service BEFORE it calls the
+ * payment provider; this write is what makes that cap real across
+ * requests (and across services). `list_append` keeps concurrent
+ * refunds from clobbering each other.
+ */
+export async function attachRefund(
+  orderId: string,
+  refund: OrderRefund,
+): Promise<DynamoOrder | null> {
+  const out = await docClient()
+    .send(
+      new UpdateCommand({
+        TableName: TABLE.orders(),
+        Key: { pk: orderPk(orderId), sk: ORDER_SK },
+        UpdateExpression:
+          "SET #refunds = list_append(if_not_exists(#refunds, :empty), :refund), updatedAt = :now",
+        ExpressionAttributeNames: { "#refunds": "refunds" },
+        ExpressionAttributeValues: {
+          ":empty": [],
+          ":refund": [refund],
+          ":now": new Date().toISOString(),
+        },
+        ReturnValues: "ALL_NEW",
+      }),
+    )
+    .catch(() => null);
+  return (out?.Attributes as DynamoOrder | undefined) ?? null;
+}
+
+/** Total already refunded against an order. */
+export function refundedTotal(order: DynamoOrder): number {
+  return (order.refunds ?? []).reduce(
+    (sum, r) => sum + Number(r.amount ?? 0),
+    0,
+  );
+}
+
+// ─── Packing verification (visual checks, AI tier) ──────────
+
+export type PackingVerificationStatus = "verified" | "flagged" | "unverified";
+
+/** Denormalized verdict summary (full AI row lives in the verifications table). */
+export interface PackingVerification {
+  status: PackingVerificationStatus;
+  flag: string | null;
+  confidence: number;
+  missing: string[];
+  override: { at: string; byUserId: string; note: string } | null;
+  verifiedAt: string | null;
+  evidenceUrl: string | null;
+}
+
+/**
+ * Store (or overwrite) the packing verdict on the order. Last write
+ * wins, which is correct: a repack + re-shoot replaces the earlier flag.
+ */
+export async function setPackingVerification(
+  orderId: string,
+  verification: Pick<
+    PackingVerification,
+    "status" | "flag" | "confidence" | "missing" | "evidenceUrl"
+  >,
+): Promise<DynamoOrder | null> {
+  const now = new Date().toISOString();
+  const summary: PackingVerification = {
+    status: verification.status,
+    flag: verification.flag,
+    confidence: verification.confidence,
+    missing: verification.missing,
+    // A fresh verdict clears any previous seller override — the order
+    // contents changed since it was recorded, so it no longer applies.
+    override: null,
+    verifiedAt: now,
+    evidenceUrl: verification.evidenceUrl,
+  };
+
+  const out = await docClient()
+    .send(
+      new UpdateCommand({
+        TableName: TABLE.orders(),
+        Key: { pk: orderPk(orderId), sk: ORDER_SK },
+        UpdateExpression: "SET packingVerification = :pv, updatedAt = :now",
+        ExpressionAttributeValues: { ":pv": summary, ":now": now },
+        ReturnValues: "ALL_NEW",
+      }),
+    )
+    .catch(() => null);
+  return (out?.Attributes as DynamoOrder | undefined) ?? null;
+}
+
+/**
+ * Record the seller's explicit "ship anyway" decision on a flagged or
+ * unverified verification. Conditional on an existing verdict that is
+ * not already verified (verified needs no override, and false would
+ * silently clear a gate someone else re-flagged).
+ */
+export async function setPackingVerificationOverride(
+  orderId: string,
+  override: { byUserId: string; note: string },
+): Promise<PackingVerification | null> {
+  const now = new Date().toISOString();
+  const out = await docClient()
+    .send(
+      new UpdateCommand({
+        TableName: TABLE.orders(),
+        Key: { pk: orderPk(orderId), sk: ORDER_SK },
+        UpdateExpression:
+          "SET packingVerification.#override = :o, updatedAt = :now",
+        // #pv must exist and not be verified — otherwise the override
+        // would invent a verdict on a never-checked order.
+        ConditionExpression:
+          "attribute_exists(pk) AND attribute_exists(packingVerification) AND packingVerification.#status <> :verified",
+        ExpressionAttributeNames: {
+          "#pv": "packingVerification",
+          "#override": "override",
+          "#status": "status",
+        },
+        ExpressionAttributeValues: {
+          ":o": { at: now, byUserId: override.byUserId, note: override.note },
+          ":verified": "verified",
+          ":now": now,
+        },
+        ReturnValues: "ALL_NEW",
+      }),
+    )
+    .catch(() => null);
+  return (out?.Attributes as DynamoOrder | undefined)?.packingVerification ?? null;
+}
+
+/**
  * Atomic rider claim — the double-assignment guard. Conditional update:
  * no rider yet AND still ready_for_rider AND paid. No match → the order
  * is gone/taken/expired and the caller compensates (frees the rider).
@@ -445,17 +608,28 @@ export async function transitionRiderStatus(
         : null;
   if (!next) return null;
 
+  const now = new Date().toISOString();
+
+  // Lifecycle stamps: the rider-telemetry endpoint derives the delivery
+  // duration from pickedUpAt → deliveredAt. Stamping them here (the
+  // only place a status transition is authoritative) keeps the
+  // telemetry honest — no separate clock, no estimates.
+  const stamp =
+    next === "picked_up"
+      ? "pickedUpAt = :now"
+      : "deliveredAt = :now";
+
   const out = await docClient().send(
     new UpdateCommand({
       TableName: TABLE.orders(),
       Key: { pk: orderPk(orderId), sk: ORDER_SK },
-      UpdateExpression: "SET #s = :next, updatedAt = :now",
+      UpdateExpression: `SET #s = :next, ${stamp}, updatedAt = :now`,
       ConditionExpression: "#s = :expected",
       ExpressionAttributeNames: { "#s": "status" },
       ExpressionAttributeValues: {
         ":next": next,
         ":expected": current.status,
-        ":now": new Date().toISOString(),
+        ":now": now,
       },
       ReturnValues: "ALL_NEW",
     }),
@@ -484,6 +658,67 @@ export async function markOrderPaid(
     }),
   ).catch(() => null); // already paid → no-op (webhook redeliveries)
   return (out?.Attributes as DynamoOrder | undefined) ?? null;
+}
+
+/**
+ * Stamp the CAPTURED provider payment id onto a paid order.
+ *
+ * The webhook is the only place that knows the captured id (Razorpay
+ * `pay_…`, Stripe Checkout `cs_…`). The refund path resolves the
+ * provider payment from the ORDER record — never from the caller — so
+ * the id has to live here.
+ *
+ * The nested SET keeps `providerOrderId` / `initiatedAt` intact; it
+ * only works when the intent map already exists. When it does not (the
+ * intent-created event lost the race with the webhook, or the order
+ * was created without an intent), a second attempt writes a complete
+ * map so the refund path still finds a payment id.
+ */
+export async function stampProviderPaymentId(
+  orderId: string,
+  provider: "razorpay" | "stripe",
+  providerPaymentId: string,
+): Promise<DynamoOrder | null> {
+  const now = new Date().toISOString();
+
+  const nested = await docClient()
+    .send(
+      new UpdateCommand({
+        TableName: TABLE.orders(),
+        Key: { pk: orderPk(orderId), sk: ORDER_SK },
+        UpdateExpression:
+          "SET paymentIntent.providerPaymentId = :ppid, updatedAt = :now",
+        ConditionExpression: "paymentStatus = :paid",
+        ExpressionAttributeValues: {
+          ":ppid": providerPaymentId,
+          ":paid": "paid",
+          ":now": now,
+        },
+        ReturnValues: "ALL_NEW",
+      }),
+    )
+    .catch(() => null);
+
+  if (nested?.Attributes) return nested.Attributes as DynamoOrder;
+
+  const fallback = await docClient()
+    .send(
+      new UpdateCommand({
+        TableName: TABLE.orders(),
+        Key: { pk: orderPk(orderId), sk: ORDER_SK },
+        UpdateExpression: "SET paymentIntent = :intent, updatedAt = :now",
+        ConditionExpression: "paymentStatus = :paid",
+        ExpressionAttributeValues: {
+          ":intent": { provider, providerPaymentId, initiatedAt: now },
+          ":paid": "paid",
+          ":now": now,
+        },
+        ReturnValues: "ALL_NEW",
+      }),
+    )
+    .catch(() => null);
+
+  return (fallback?.Attributes as DynamoOrder | undefined) ?? null;
 }
 
 /** Stamp the provider intent (idempotent $set semantics). */

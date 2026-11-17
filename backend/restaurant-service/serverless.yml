@@ -6,9 +6,10 @@
 # authenticates via x-internal-key, not a user session, so it is
 # also public at the gateway.
 #
-# Events: this stack owns its inbound fan-out queue + SNS filter
-# subscription. paymentConsumer consumes the SHARED payment work
-# queue (foodo-infra) directly.
+# Events: the rider/payment events arrive on a direct SNS
+# subscription (push) with their own filter policy + DLQ.
+# paymentConsumer consumes the SHARED payment work queue
+# (foodo-infra) directly.
 #
 #   turbo run deploy --filter=@foodo/restaurant-service
 
@@ -33,7 +34,7 @@ custom:
 
 provider:
   name: aws
-  runtime: nodejs20.x
+  runtime: nodejs24.x
   architecture: arm64
   region: ${self:custom.region}
   stage: ${self:custom.stage}
@@ -45,8 +46,17 @@ provider:
     STAGE: ${self:custom.stage}
     JWT_SECRET: ${env:JWT_SECRET, 'dev-only-change-me'}
     COOKIE_SECRET: ${env:COOKIE_SECRET, 'dev-only-change-me'}
-    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY, 'dev-only-change-me'}
-    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
+    # Same secret as every sibling stack. The old `dev-only-change-me`
+    # fallback was a published value on a money path (it gates the
+    # payment claim) and guaranteed a 403 mismatch with any service that
+    # used the real key, so the value is now required, not defaulted.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}    # signed direct uploads (parsed by the shared signer)
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/menu-items.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
+    # The AI verification tier lives on the same shared HTTP API; the
+    # kitchen proxies packing checks there server-side.
+    AI_VERIFICATION_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
     USERS_TABLE: ${cf:${self:custom.infra}.UsersTable}
     RESTAURANTS_TABLE: ${cf:${self:custom.infra}.RestaurantsTable}
     ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
@@ -104,54 +114,24 @@ provider:
 
 resources:
   Resources:
-    # ── Inbound fan-out: this service OWNS its queue, DLQ, and the
-    #    SNS filter subscription (previously mis-wired across two
-    #    stacks). RawMessageDelivery + queue policy allow SNS delivery.
+    # ── Inbound fan-out: direct SNS subscription (see the
+    #    riderEventsConsumer event) — the filter policy lives on the
+    #    subscription now, not on an SQS queue we would poll 24/7.
+    #    The DLQ is storage only: free while idle.
     RiderEventsQueueDLQ:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${sls:stage}-rider-events-dlq
         MessageRetentionPeriod: 1209600
 
-    RiderEventsQueue:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-${sls:stage}-rider-events
-        VisibilityTimeout: 180
-        RedrivePolicy:
-          deadLetterTargetArn: !GetAtt RiderEventsQueueDLQ.Arn
-          maxReceiveCount: 3
-
-    RiderEventsQueuePolicy:
-      Type: AWS::SQS::QueuePolicy
-      Properties:
-        Queues: [!Ref RiderEventsQueue]
-        PolicyDocument:
-          Statement:
-            - Effect: Allow
-              Principal: { Service: sns.amazonaws.com }
-              Action: sqs:SendMessage
-              Resource: !GetAtt RiderEventsQueue.Arn
-              Condition:
-                ArnEquals:
-                  aws:SourceArn: ${cf:${self:custom.infra}.EventsTopicArn}
-
-    RiderEventsSubscription:
-      Type: AWS::SNS::Subscription
-      Properties:
-        TopicArn: ${cf:${self:custom.infra}.EventsTopicArn}
-        Protocol: sqs
-        Endpoint: !GetAtt RiderEventsQueue.Arn
-        RawMessageDelivery: true
-        FilterPolicy:
-          event:
-            - rider.order_accepted
-            - rider.order_status_changed
-            - payment.intent.created
-
 functions:
   http:
     handler: dist/http.handler
+    # The packing gate proxies to ai-verification and aborts at
+    # VERIFICATION_TIMEOUT_MS (25s default). The function has to outlive
+    # that abort, or a slow vision call kills the Lambda and the seller
+    # gets a dead 502 instead of the explanation.
+    timeout: 30
     package:
       patterns:
         - "!**"
@@ -237,7 +217,13 @@ functions:
       - sqs:
           arn: ${cf:${self:custom.infra}.PaymentQueueArn}
           batchSize: 5
-          reportBatchItemFailures: true
+          # The poller fills a batch for free when 5 items are already
+          # queued; the window only buys the PARTIAL batch, so 5 s is the
+          # whole saving (a rush of payment items → one invocation, one
+          # ReceiveMessage instead of one per item). Latency cost: up to
+          # 5 s before the cart is cleared and the kitchen socket fires.
+          maximumBatchingWindow: 5
+          functionResponseType: ReportBatchItemFailures
 
   riderEventsConsumer:
     handler: dist/riderEventsConsumer.handler
@@ -247,7 +233,15 @@ functions:
         - "!**"
         - dist/**
     events:
-      - sqs:
-          arn: !GetAtt RiderEventsQueue.Arn
-          batchSize: 5
-          reportBatchItemFailures: true
+      # Rider/domain events, pushed straight from the event topic: one
+      # invocation per matching event, no queue to poll at rest. The
+      # filter policy is identical to the SQS subscription it replaces.
+      - sns:
+          arn: ${cf:${self:custom.infra}.EventsTopicArn}
+          filterPolicy:
+            event:
+              - rider.order_accepted
+              - rider.order_status_changed
+              - payment.intent.created
+          redrivePolicy:
+            deadLetterTargetRef: RiderEventsQueueDLQ

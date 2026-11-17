@@ -10,10 +10,10 @@
 
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
 import { GlassCard } from "@/components/shared/glass-card";
 import { useGetOrder, useCancelOrder } from "@/features/orders/api";
 import { LiveTracking } from "@/features/tracking/components";
+import { ReportProblem } from "@/features/disputes/components";
 import { useSocketEvent } from "@/hooks/use-socket-event";
 import { SOCKET_EVENTS, type OrderUpdatePayload } from "@/lib/socket-events";
 import { useAuthStore } from "@/store/auth-store";
@@ -102,6 +102,9 @@ export default function OrderDetailPage() {
   const live = isLiveTrip(order);
   const canCancel =
     order.status === "placed" || order.status === "accepted" || order.status === "preparing";
+  // Disputes are about food you received: once it's in hand (or on the
+  // bike to you) the AI arbitration agent can refund or issue a voucher.
+  const canReport = order.status === "delivered" || order.status === "picked_up";
 
   return (
     <Shell>
@@ -293,6 +296,10 @@ export default function OrderDetailPage() {
             {order.paymentStatus}
           </span>
         </GlassCard>
+
+        {canReport && user && (
+          <ReportProblem orderId={order.id} customerId={user.id} />
+        )}
 
         {canCancel && user && (
           <button

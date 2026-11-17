@@ -32,7 +32,8 @@ backend/<svc>/      foodo-<svc>        One stack per domain service:
 ```bash
 pnpm deploy:infra      # VPC, S3, Cognito, DynamoDB, SNS, SQS  (rarely changes)
 pnpm deploy:core       # shared HTTP API + JWT authorizer      (rarely changes)
-pnpm deploy:services   # ALL six service stacks (turbo, parallel)
+pnpm deploy:services   # ALL 11 service stacks: 6 domain + 5 AI (turbo, parallel)
+pnpm deploy:ai         # only the AI stacks
 ```
 
 Or everything at once: `pnpm deploy:all`.

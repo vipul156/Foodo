@@ -11,7 +11,7 @@ import { useGetCart } from "@/features/restaurants/api";
 import { useLogout } from "@/features/auth/api";
 import { useRealtimeOrderSync } from "@/hooks/use-realtime-order-sync";
 import { CartSheet } from "@/features/cart/components";
-import { ShoppingCart, User, LogOut, LayoutDashboard } from "lucide-react";
+import { ShoppingCart, User, LogOut, LayoutDashboard, Sparkles } from "lucide-react";
 
 export default function CustomerLayout({
   children,
@@ -65,6 +65,16 @@ export default function CustomerLayout({
           <nav className="flex items-center gap-3">
             {isAuthenticated ? (
               <>
+                {/* Conversational ordering — the flagship entry point */}
+                <Link
+                  href="/assistant"
+                  aria-label="Ask Foodo to build your order"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                >
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">Ask Foodo</span>
+                </Link>
+
                 {/* Cart */}
                 <button
                   onClick={() => setCartOpen(true)}
@@ -117,6 +127,14 @@ export default function CustomerLayout({
                         {user?.email}
                       </p>
                       <hr className="border-border/50 my-1" />
+                      <Link
+                        href="/assistant"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Ask Foodo
+                      </Link>
                       {dashboardLink && (
                         <Link
                           href={dashboardLink}
@@ -187,6 +205,9 @@ export default function CustomerLayout({
           <div className="mt-3 flex items-center justify-center gap-4 text-xs">
             <Link href="/" className="hover:text-primary transition-colors">
               Home
+            </Link>
+            <Link href="/assistant" className="hover:text-primary transition-colors">
+              Ask Foodo
             </Link>
             <Link href="/restaurants" className="hover:text-primary transition-colors">
               Restaurants

@@ -2,12 +2,28 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
+import cookieSession from "cookie-session";
 import { cloudinaryRouter } from "./routers/cloudinary.js";
+import { photoRouter } from "./routers/photo.js";
 import paymentRouter from "./routers/payment.js";
+import refundRouter from "./routers/refund.js";
 
 
 
 export const app = express();
+
+// ─── Cookie-session: SAME identity plane as sibling services ─
+// The photo-pipeline signing endpoint (/photo/sign, /photo/preview)
+// authenticates SELLERS via the same session cookie the auth service
+// mints — no separate login, no token plumbing. Config matches the
+// restaurant/rider services (name "session", shared COOKIE_SECRET).
+app.use(
+  cookieSession({
+    name: "session",
+    keys: [process.env.COOKIE_SECRET!],
+    maxAge: 15 * 60 * 1000, // access-token parity: 15 minutes
+  }),
+);
 
 // ─── Body parser: restrictive default, scoped override ─────
 // ORDER MATTERS. The 15mb upload parser must be registered BEFORE the
@@ -24,6 +40,9 @@ app.use("/api/utils/payment/webhooks", express.raw({ type: "application/json" })
 //    (see routers/cloudinary.ts). Signed direct uploads no longer send
 //    image bytes through this service.
 
+// 2b) Verification routes moved to the dedicated ai-verification
+//     service — this file keeps only uploads + payments.
+
 // 3) Global default: 1mb is far above any legit JSON body this API
 //    accepts (payments, internal claims). The old 50mb global limit was
 //    a trivial DoS amplification — every request could force 50MB of
@@ -33,7 +52,9 @@ app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
 // ─── Routers ────────────────────────────────────────────────
 app.use("/api/utils/", cloudinaryRouter);
+app.use("/api/utils/", photoRouter);
 app.use("/api/utils/payment", paymentRouter);
+app.use("/api/utils/refund", refundRouter);
 
 // The reconciliation job is an EventBridge Scheduler target invoking the
 // exported `reconcile` handler — no setInterval boot code (Lambda has no

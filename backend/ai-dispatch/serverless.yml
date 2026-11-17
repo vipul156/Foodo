@@ -1,0 +1,206 @@
+# ─── Foodo AI dispatch swarm stack ───────────────────────────
+# Event-driven assigner for ready orders:
+#   http            ops surface only (snapshot / simulate / health) —
+#                   internal endpoints, gated in-app by x-internal-key.
+#   dispatchConsumer runs the LangGraph swarm off a DIRECT SNS
+#                   subscription on the foodo-events topic, filtered on
+#                   order:ready_for_rider (push — no queue to poll, so
+#                   an idle platform costs 0 SQS requests). Idempotency +
+#                   batching pool live in DISPATCH_STATE_TABLE, enrichment
+#                   reads ORDERS_TABLE, the rider roster comes from
+#                   RIDERS_TABLE.
+#
+# Decisions fan out on SNS (dispatch.decision) for analytics/dashboards.
+#
+#   turbo run deploy --filter=@foodo/ai-dispatch (or: serverless deploy here)
+
+service: foodo-ai-dispatch
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+  # Packs the shared `pycommon` package into the artifact (see the
+  # plugin's header for why pip cannot install it from the monorepo).
+  - ../../scripts/serverless-vendor-pycommon.js
+
+package:
+  # One artifact for the whole service, on purpose: both functions share
+  # the same handler tree and the same 3.8k-file dependency tree, so
+  # per-function zips meant building the identical 12 MB zip twice per
+  # deploy (plus a full Windows copy of .serverless/requirements for each
+  # module). Shared packaging also lets the plugin junction the static
+  # cache instead of copying it.
+  individually: false
+  patterns:
+    # Local test/pytest runs leave bytecode compiled for the developer's
+    # interpreter; shipping it only bloats the artifact (and shadows the
+    # sources if the local version ever matches the runtime).
+    - '!**/__pycache__/**'
+    - '!**/*.pyc'
+    - '!**/*.pyo'
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+  pythonRequirements:
+    # Windows/cross-OS workstations cannot build the linux-aarch64 wheels
+    # the Lambda runtime needs — pip runs inside a Linux container to
+    # produce a Lambda-compatible bundle. Docker is a build tool here,
+    # never a deploy artifact.
+    dockerizePip: true
+    slim: true
+    # `slim` also deletes every **/*.dist-info* — i.e. the installed
+    # distribution metadata. openai>=3 imports `httpx2`, whose version is
+    # read through importlib.metadata AT IMPORT TIME, so a stripped
+    # metadata tree kills the handler at init with "No package metadata
+    # was found for httpx2" and every route answers 500. Keep the
+    # bytecode cleanup, keep the metadata.
+    slimPatterns:
+      - '**/*.py[c|o]'
+      - '**/__pycache__*'
+    slimPatternsAppendDefaults: false
+    # serverless-python-requirements keys its static cache on
+    # <sha256(requirements.txt)>_<arch> — the Lambda runtime is NOT part of
+    # the key. A runtime bump that leaves the requirements content unchanged
+    # therefore reuses the previous interpreter's wheel tree (e.g. a cp312
+    # _pydantic_core .so inside a python3.14 runtime → ImportModuleError at
+    # init, so every route answers 500). Namespacing the cache by runtime
+    # makes the key runtime-aware, so a bump always rebuilds for the target ABI.
+    cacheLocation: ../../.cache/python-requirements/${self:provider.runtime}
+    # Dependencies ride a Lambda layer instead of being injected into the
+    # function zip: packaging then reuses the cached layer archive
+    # (<requirements hash>_arm64_slspyc.zip) and neither function zip has
+    # to be rebuilt over 3.8k files on every deploy.
+    layer: true
+    # pip would byte-compile every module into the Windows bind-mounted
+    # cache folder (~55x slower than container-local writes), only for
+    # `slim` to delete all .pyc files again. Exact pins in
+    # requirements.txt keep the static cache warm between deploys.
+    pipCmdExtraArgs:
+      - --no-compile
+    noDeploy:
+      - boto3
+      - botocore
+      - s3transfer
+      - jmespath
+      - urllib3
+      - python-dateutil
+      - six
+
+provider:
+  name: aws
+  runtime: python3.14
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024
+  timeout: 30
+  logRetentionInDays: 14
+  environment:
+    STAGE: ${self:custom.stage}
+    LOG_LEVEL: ${env:DISPATCH_LOG_LEVEL, 'INFO'}
+    # No fallback, on purpose: pycommon's settings validate at import and
+    # raise without a key, so an empty value deploys a stack whose every
+    # route (health included) 500s. Fail at deploy, not on first request.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
+    # Provider switch (pycommon.llm): any OpenAI-compatible endpoint.
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
+    # Sync cross-service reads (kitchen stats proxy, realtime emit) ride
+    # the shared HTTP API; roster/enrichment are direct table reads.
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RIDER_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    REALTIME_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    DISPATCH_STATE_TABLE: ${cf:${self:custom.infra}.DispatchStateTable}
+    ORDERS_TABLE: ${cf:${self:custom.infra}.OrdersTable}
+    RIDERS_TABLE: ${cf:${self:custom.infra}.RidersTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+  # The ops surface lives on the ONE platform API (see core). Without this
+  # id the httpApi events below would provision a private API and the
+  # /api/dispatch routes would 404 for every sibling (the admin proxy reads
+  # the swarm's snapshot over the shared HttpApiUrl).
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.DispatchStateTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.OrdersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RidersTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+
+functions:
+  http:
+    handler: app/handlers/http.handler
+    memorySize: 512
+    timeout: 30
+    # The plugin only DECLARES the layer (see pythonRequirements.layer);
+    # each function has to attach it or the deps are simply not there.
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
+    events:
+      # No gateway authorizer: snapshot/simulate are internal-key gated
+      # in-app (fail-closed), health is the platform probe.
+      - httpApi:
+          path: /api/dispatch/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/dispatch
+          method: get
+
+  dispatchConsumer:
+    handler: app/handlers/dispatchConsumer.handler
+    memorySize: 1024
+    timeout: 180               # LLM nodes + enrichment per record
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
+    events:
+      # Push, not poll: SNS invokes the function per matching event. A
+      # queue here would cost ~130k SQS requests/month while idle, and
+      # the READY#<orderId>/SEEN conditional claim already makes the
+      # handler idempotent under SNS's at-least-once delivery.
+      - sns:
+          arn: ${cf:${self:custom.infra}.EventsTopicArn}
+          filterPolicy:
+            event:
+              - order:ready_for_rider
+          # Deliveries SNS retried and gave up on land here.
+          redrivePolicy:
+            deadLetterTargetRef: DispatchOrdersQueueDLQ
+
+resources:
+  Resources:
+    # Inbound fan-out: direct SNS subscription (see the dispatchConsumer
+    # event) with a filter on ready-order events only. The DLQ is the
+    # only queue left here — storage, free while idle.
+    DispatchOrdersQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-dispatch-orders-dlq
+        MessageRetentionPeriod: 1209600

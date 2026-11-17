@@ -4,14 +4,15 @@ import {
   releaseRiderFromOrder,
   type DynamoRider,
 } from "@foodo/backend-common/dynamo";
-import { makeFanoutPublisher } from "@foodo/backend-common/aws";
+import { makeFanoutPublisher, publishFanoutBatch } from "@foodo/backend-common/aws";
 
 // ─── SQS consumers (rider-service, Lambda event sources) ─────
 // Replaces config/orderReady.consumer.ts + config/riderEvent.consumer.ts.
 //
-//   ORDER_QUEUE_URL        — order:ready_for_rider matcher work items
-//   RIDER_EVENTS_QUEUE_URL — SNS-filtered compensation events
-//     (rider.order_rejected / order.cancelled / order.delivered)
+//   orderQueue  — order:ready_for_rider matcher work items (SQS)
+//   riderEvents — SNS-filtered compensation events, pushed straight to
+//     the function (no queue): rider.order_rejected /
+//     order.cancelled / order.delivered
 //
 // The saga semantics are unchanged: every release is a CONDITIONAL
 // update keyed to the order the rider is claimed by.
@@ -33,13 +34,13 @@ const unwrapSnsEnvelope = (record: any): {
 };
 
 // ─── Order-ready matcher (was orderReady.consumer.ts) ────────
+// `handleSqsBatch` already unwraps the { type, data } work envelope, so
+// the callback receives the ready-order payload itself — not the
+// envelope. (It used to look for `data.type` on the already-unwrapped
+// payload, which never matched and acked every message as "not ours".)
 export const orderReadyHandler = async (event: any) =>
   handleSqsBatch(event, async (data: any) => {
-    if (data?.type !== "order:ready_for_rider") {
-      return;
-    }
-
-    const { orderId, restaurantId, location } = data.data;
+    const { orderId, restaurantId, location } = data ?? {};
     if (!orderId || !restaurantId || !location) return;
 
     const [lon, lat] = location.coordinates ?? [];
@@ -57,15 +58,14 @@ export const orderReadyHandler = async (event: any) =>
       return;
     }
 
-    // One realtime broadcast per rider — SNS fanout, fire-and-forget.
-    await Promise.all(
-      riders.map((rider: DynamoRider) =>
-        publishRealtimeEvent(
-          "order:available",
-          `user:${rider.userId}`,
-          { orderId, restaurantId },
-        ),
-      ),
+    // One broadcast per rider, but 10 per SNS request: a 25-rider pool
+    // costs 3 PublishBatch calls instead of 25 Publish calls.
+    await publishFanoutBatch(
+      riders.map((rider: DynamoRider) => ({
+        event: "order:available",
+        room: `user:${rider.userId}`,
+        payload: { orderId, restaurantId },
+      })),
     );
   });
 

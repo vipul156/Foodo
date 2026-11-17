@@ -1,0 +1,21 @@
+# Pyrefly config for the ai-commerce service.
+#
+# The service's own `app` package is resolved from this directory (the
+# import root inferred from the config location), so `from app.x import y`
+# always points at THIS service — ai-dispatch and ai-menu-parser ship an
+# `app` package with the same name.
+#
+# The settings repeat the monorepo-root pyrefly.toml on purpose: Pyrefly
+# only gained layered configs (`extends`) in 1.4, and this file has to
+# work with the older binary too.
+preset = "basic"
+python-version = "3.14"
+
+# The shared monorepo package. It is installed editable (a runtime finder
+# shim in site-packages that type checkers cannot follow), so its root
+# has to be on the search path. Relative to this file.
+search-path = ["../../packages/pycommon"]
+
+# This service only — a root-level check covers the shared package
+# instead (see the root pyrefly.toml).
+project-includes = ["**/*.py"]

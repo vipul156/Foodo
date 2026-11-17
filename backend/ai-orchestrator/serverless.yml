@@ -1,0 +1,164 @@
+# ─── Foodo AI arbiter stack (refund arbitration agent) ───────
+# Disputes arrive via two doors, both wired to the same graph:
+#   http            POST /api/agent/dispute (support form) — validates,
+#                   stores the evidence photo on Cloudinary and enqueues
+#                   a work item. No graph execution in the HTTP Lambda:
+#                   background work frozen after a response is the #1
+#                   Lambda bug, and the queue makes retries real.
+#   disputeConsumer runs the graph off the agent-disputes work queue
+#                   (chat/email channels enqueue directly; SQS redrive
+#                   owns retries, the DLQ catches poison messages).
+#
+# The review queue / vouchers tables are shared business data hosted in
+# foodo-infra — this stack only needs table-level IAM on them.
+#
+#   turbo run deploy --filter=@foodo/ai-orchestrator
+
+service: foodo-arbiter
+frameworkVersion: "3"
+useDotenv: true
+
+plugins:
+  - serverless-prune-plugin
+
+package:
+  individually: true
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-south-1'}
+  infra: foodo-infra-${self:custom.stage}
+  coreApi: foodo-core-api-${self:custom.stage}
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: nodejs24.x
+  architecture: arm64
+  region: ${self:custom.region}
+  stage: ${self:custom.stage}
+  memorySize: 1024           # 15MB base64 intake bodies + graph state
+  timeout: 30
+  logRetentionInDays: 14
+  environment:
+    NODE_ENV: production
+    STAGE: ${self:custom.stage}
+    # OpenAI-compatible reasoning model; unset = deterministic fallback.
+    LLM_PROVIDER: ${env:LLM_PROVIDER, 'openai'}
+    LLM_MODEL: ${env:LLM_MODEL, ''}
+    LLM_API_KEY: ${env:LLM_API_KEY, ''}
+    LLM_BASE_URL: ${env:LLM_BASE_URL, ''}
+    # Validates INBOUND internal calls (queue reads). No fallback, on
+    # purpose: the settings refuse to boot without it, so an empty value
+    # would deploy an arbiter that 500s on intake, case reads and health.
+    INTERNAL_SERVICE_KEY: ${env:INTERNAL_SERVICE_KEY}
+    # Dispute evidence (the photo is the case's legal record). The shared
+    # uploader accepts EITHER CLOUDINARY_URL or the three separate names;
+    # missing credentials 503 the intake.
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
+    CLOUDINARY_CLOUD_NAME: ${env:CLOUDINARY_CLOUD_NAME, ''}
+    CLOUDINARY_API_KEY: ${env:CLOUDINARY_API_KEY, ''}
+    CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
+    # Root asset namespace for this stack, e.g. "foodo" → foodo/disputes/evidence.
+    CLOUDINARY_FOLDER: ${env:CLOUDINARY_FOLDER, 'foodo'}
+    FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:3000'}
+    # Sync cross-service reads (order facts, refund execution, rider
+    # telemetry) go through the shared HTTP API — internal endpoints
+    # (x-internal-key) are public at the gateway, gated in-app.
+    UTILS_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RESTAURANT_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    RIDER_SERVICE_URL: ${cf:${self:custom.coreApi}.HttpApiUrl}
+    ARBITRATION_CASES_TABLE: ${cf:${self:custom.infra}.ArbitrationCasesTable}
+    REFUND_LEDGER_TABLE: ${cf:${self:custom.infra}.RefundLedgerTable}
+    VOUCHERS_TABLE: ${cf:${self:custom.infra}.VouchersTable}
+    REVIEW_QUEUE_TABLE: ${cf:${self:custom.infra}.ReviewQueueTable}
+    RATE_LIMITS_TABLE: ${cf:${self:custom.infra}.RateLimitsTable}
+    EVENTS_TOPIC_ARN: ${cf:${self:custom.infra}.EventsTopicArn}
+    AGENT_DISPUTES_QUEUE_URL: ${cf:${self:custom.infra}.AgentDisputesQueueUrl}
+  httpApi:
+    id: ${cf:${self:custom.coreApi}.HttpApiId}
+  iam:
+    role:
+      permissionsBoundary: ${env:IAM_PERMISSIONS_BOUNDARY_ARN, null}
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+          Resource:
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.ArbitrationCasesTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}/index/*
+                - TableName: ${cf:${self:custom.infra}.ArbitrationCasesTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RefundLedgerTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.VouchersTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.ReviewQueueTable}
+            - Fn::Sub:
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+                - TableName: ${cf:${self:custom.infra}.RateLimitsTable}
+        - Effect: Allow
+          Action: sns:Publish
+          Resource: ${cf:${self:custom.infra}.EventsTopicArn}
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+          Resource: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
+        - Effect: Allow
+          Action:
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
+
+functions:
+  http:
+    handler: dist/http.handler
+    memorySize: 1024
+    timeout: 30
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      # No gateway authorizer: dispute intake is user-driven (the
+      # platform's session identity stays with the caller), the review
+      # queue is in-app gated by x-internal-key, and case reads are
+      # polling endpoints for the support UI.
+      - httpApi:
+          path: /api/agent/{proxy+}
+          method: '*'
+      - httpApi:
+          path: /health/arbiter
+          method: get
+
+  disputeConsumer:
+    handler: dist/disputeConsumer.handler
+    memorySize: 1024
+    timeout: 120               # vision call (30s ceiling) + tools
+    package:
+      patterns:
+        - "!**"
+        - dist/**
+    events:
+      - sqs:
+          arn: ${cf:${self:custom.infra}.AgentDisputesQueueArn}
+          batchSize: 5
+          # An arbitration run is seconds-scale (120 s ceiling), so 10 s
+          # of accumulation is noise against the graph and collapses a
+          # burst of intake into one invocation. The queue's visibility
+          # timeout is 720 s — 6 × THIS function's timeout, never less, or
+          # a still-running batch is handed out a second time.
+          maximumBatchingWindow: 10
+          functionResponseType: ReportBatchItemFailures
